@@ -293,6 +293,20 @@ for (const relativePath of walk("api/modules/missionPilot")) {
 		);
 }
 
+for (const relativePath of walk(corePersistenceRoot)) {
+	for (const specifier of importedSpecifiers(relativePath)) {
+		const resolved = resolveRelativeModule(relativePath, specifier);
+		if (
+			resolved === "api/modules/taskOperator" ||
+			resolved?.startsWith("api/modules/taskOperator/")
+		) {
+			errors.push(
+				`${relativePath}: Mission Pilot persistence must receive Task Operator data through its composition host input (${specifier})`,
+			);
+		}
+	}
+}
+
 const capabilityImporters = [...walk("api"), ...walk("src")].filter(
 	(relativePath) =>
 		importedSpecifiers(relativePath).some((specifier) =>

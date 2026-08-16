@@ -1,6 +1,7 @@
 import { Info, Palette } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { readJsonResponse } from "../../lib/api-error";
 import {
 	fetchBlueprintDesignSettings,
 	saveBlueprintDesignSettings,
@@ -76,10 +77,7 @@ export function BlueprintPreview({
 		if (!sessionId) return;
 		const controller = new AbortController();
 		fetchBlueprintDesignSettings(sessionId, { signal: controller.signal })
-			.then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as { settings?: unknown };
-			})
+			.then((res) => readJsonResponse<{ settings?: unknown }>(res))
 			.then((data) => {
 				if (controller.signal.aborted || !data?.settings) return;
 				setSettings(createBlueprintPreviewDesignSettings(data.settings));
@@ -114,13 +112,7 @@ export function BlueprintPreview({
 			if (!sessionId) return;
 			const requestSeq = ++saveRequestSeqRef.current;
 			saveBlueprintDesignSettings(sessionId, next)
-				.then((res) => {
-					if (!res.ok)
-						throw new Error(
-							`Failed to save Blueprint design settings: ${res.status}`,
-						);
-					return res.json();
-				})
+				.then((res) => readJsonResponse<{ settings?: unknown }>(res))
 				.then((data: { settings?: unknown }) => {
 					if (requestSeq !== saveRequestSeqRef.current || !data.settings)
 						return;

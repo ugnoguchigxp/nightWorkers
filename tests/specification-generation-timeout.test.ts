@@ -28,6 +28,7 @@ vi.mock(
 	"../api/modules/nightworkers/nightworkers.verification.repository",
 	() => ({
 		createVerificationDocument: vi.fn(async () => ({})),
+		getVerificationSourceMessage: vi.fn(async () => ({ taskId: "task-1" })),
 	}),
 );
 

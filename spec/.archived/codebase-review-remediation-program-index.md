@@ -136,9 +136,9 @@ change setとして完了させ、同じ行にないticketを一つの巨大な�
 | 7 | `C-T7`, `C-T8`, `C-T10` | provider/tool failureとabortを小さい独立変更で先に安定させる |
 | 8 | `C-T2`, `C-T3`, `C-T4`, `C-T5`, `C-T6` | port定義、adapter、caller移行、architecture guardの順でrole境界を移す |
 | 9 | `C-T9` | estimatorは観測結果から必要な差分だけを変更する |
-| 10 | `E-T1`, `E-T2`, `E-T3a`〜`E-T3e` | 一般REST errorの正本とFrontend decoderを先に提供する |
-| 11 | `D-T0`〜`D-T6`, `E-T5` | Frontendをfeature単位で移行し、同じchange setでbehaviorを証明する |
-| 12 | `E-T4` | 最新coverageに未達が残る場合だけ限定補強する |
+| 10 | `E-T1`, `E-T2`, `E-T3a`, `E-T3b`, `E-T3c`, `E-T3d`, `E-T3e` | 一般REST errorの正本とFrontend decoderを先に提供する |
+| 11 | `D-T0`, `D-T1`, `D-T2`, `D-T3`, `D-T4`, `D-T5`, `D-T6`, `E-T5` | Frontendをfeature単位で移行し、同じchange setでbehaviorを証明する |
+| 12 | `E-T4`, `E-T6` | 最新coverageに未達がある場合だけ補強し、600行guardを再確認する |
 | 13 | program verification | 全Areaの限定test成功後にfull gateを直列実行する |
 
 `A-T1`〜`A-T3`と`B-T1`はproduction fileが重ならない場合に限り並行実装できる。ただし

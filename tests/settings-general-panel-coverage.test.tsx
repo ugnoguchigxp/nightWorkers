@@ -12,11 +12,12 @@ let importPublicPricingRows = vi.fn();
 let applyAppLanguage = vi.fn();
 
 function response(json: unknown, ok = true, text = "request failed") {
-	return {
-		ok,
-		json: vi.fn(async () => json),
-		text: vi.fn(async () => text),
-	};
+	return new Response(
+		JSON.stringify(
+			ok ? json : { error: { code: "TEST_REQUEST_FAILED", message: text } },
+		),
+		{ status: ok ? 200 : 500 },
+	);
 }
 
 async function createHarness(initialState: unknown[] = []) {
@@ -167,6 +168,8 @@ function requiredElement(
 }
 
 async function flushPromises() {
+	for (let index = 0; index < 10; index += 1) await Promise.resolve();
+	await new Promise<void>((resolve) => setImmediate(resolve));
 	for (let index = 0; index < 10; index += 1) await Promise.resolve();
 }
 

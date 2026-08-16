@@ -13,10 +13,13 @@ import { createThread, finishRun, toCancelled } from "./codex-runtime-closeout";
 import {
 	closeProviderIteratorWithoutWaiting,
 	persistCodexProviderThreadIfPresent,
-	readPromptPartObservabilityEnabled,
 	updateCodexSessionKey,
 	updateOpenProviderItems,
 } from "./codex-runtime-support";
+import {
+	recordCodexLlmUsage,
+	recordCodexRuntimeUsage,
+} from "./codex-runtime-usage";
 import type { CodexThreadFactory } from "./codex-sdk/codex-sdk-client";
 import {
 	createCodexEventMapperState,
@@ -27,10 +30,11 @@ import {
 	buildCodexRuntimeTurnInput,
 	isMinimalReviewRuntime,
 } from "./codex-sdk/codex-sdk-runtime-prompt";
+import type { RuntimeUsageRecorder } from "./codex-sdk/codex-sdk-usage";
 import {
-	type RuntimeUsageRecorder,
-	recordCodexRuntimeUsageIfPresent,
-} from "./codex-sdk/codex-sdk-usage";
+	preflightCodexRuntimeSecurityContract,
+	type RuntimeSecurityPreflight,
+} from "./runtime-security-contract";
 import type {
 	AgentRunContext,
 	AgentRuntime,
@@ -67,6 +71,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 		candidateRevision?: number;
 		finalCandidate?: string;
 	}) => Promise<FinalizeGuardResult>;
+	private readonly securityPreflight: (
+		context: AgentRunContext,
+	) => Promise<RuntimeSecurityPreflight>;
+	private readonly enforceSecurityPreflight: boolean;
 
 	constructor(
 		input: {
@@ -76,6 +84,7 @@ export class CodexAgentRuntime implements AgentRuntime {
 			collectWorkspaceDiff?: boolean;
 			persistRuntimeUsage?: boolean;
 			usageRecorder?: RuntimeUsageRecorder;
+			securityPreflight?: CodexAgentRuntime["securityPreflight"];
 			evaluateCompletionCandidate?: CodexAgentRuntime["evaluateCompletionCandidate"];
 		} = {},
 	) {
@@ -92,6 +101,10 @@ export class CodexAgentRuntime implements AgentRuntime {
 		this.evaluateCompletionCandidate =
 			input.evaluateCompletionCandidate ??
 			((candidate) => runFinalizeController.evaluateCandidate(candidate));
+		this.securityPreflight =
+			input.securityPreflight ?? preflightCodexRuntimeSecurityContract;
+		this.enforceSecurityPreflight =
+			!input.threadFactory || input.securityPreflight !== undefined;
 	}
 
 	async start(
@@ -125,6 +138,29 @@ export class CodexAgentRuntime implements AgentRuntime {
 		try {
 			if (this.isCancelled(context, signal))
 				return toCancelled(logs.join("\n"));
+			if (this.enforceSecurityPreflight) {
+				const preflight = await this.securityPreflight(context);
+				if (!preflight.ok) {
+					const message = `[Codex] ${preflight.message}`;
+					logs.push(message);
+					await sink.emit({
+						type: "runtime_error",
+						message,
+						payload: {
+							code: preflight.code,
+							provider: "codex",
+							securityPreflight: preflight.contract,
+						},
+					});
+					return this.finish(context, sink, logs, {
+						terminalState: "blocked",
+						finalReport: message,
+						stoppedBy: "policy",
+						riskLevel: "high",
+						humanActionRequired: true,
+					});
+				}
+			}
 			const minimalReview = isMinimalReviewRuntime(context);
 			const promptParts = buildCodexRuntimePromptParts(context);
 			const thread = await createThread(
@@ -231,11 +267,13 @@ export class CodexAgentRuntime implements AgentRuntime {
 						if (event.type === "turn_finished") {
 							turnCompleted = true;
 							try {
-								await this.recordUsage({
+								await recordCodexRuntimeUsage({
 									context,
 									payload: event.payload,
 									durationMs: Date.now() - turnStartedAt,
 									promptParts,
+									persistRuntimeUsage: this.persistRuntimeUsage,
+									usageRecorder: this.usageRecorder,
 									providerSessionKey,
 									sourceSequence: completionAttempt + 1,
 								});
@@ -505,34 +543,6 @@ export class CodexAgentRuntime implements AgentRuntime {
 		return signal?.aborted || this.cancelledRunIds.has(context.runId);
 	}
 
-	private async recordUsage(input: {
-		context: AgentRunContext;
-		payload: unknown;
-		durationMs: number;
-		promptParts: ReturnType<typeof buildCodexRuntimePromptParts>;
-		providerSessionKey: string | null;
-		sourceSequence: number;
-	}) {
-		const enabled = readPromptPartObservabilityEnabled(input.context);
-		await recordCodexRuntimeUsageIfPresent({
-			context: input.context,
-			payload: input.payload,
-			persistRuntimeUsage: this.persistRuntimeUsage,
-			usageRecorder: this.usageRecorder,
-			durationMs: input.durationMs,
-			promptPartObservabilityEnabled: enabled,
-			promptPartTokenEstimates: enabled
-				? {
-						userPromptTokens: input.promptParts.estimates.fullPromptTokens,
-						systemPromptTokens:
-							input.promptParts.estimates.developerInstructionsTokens,
-					}
-				: undefined,
-			providerSessionKey: input.providerSessionKey,
-			sourceSequence: input.sourceSequence,
-		});
-	}
-
 	private finish(
 		context: AgentRunContext,
 		sink: AgentRuntimeSink,
@@ -572,10 +582,3 @@ export class CodexAgentRuntime implements AgentRuntime {
 		return this.activeRunControllers.has(runId);
 	}
 }
-
-const recordCodexLlmUsage: RuntimeUsageRecorder = async (input) => {
-	const { recordLlmUsage } = await import(
-		"../../../services/llm-usage/repository"
-	);
-	return recordLlmUsage(input);
-};

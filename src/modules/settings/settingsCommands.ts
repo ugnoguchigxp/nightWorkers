@@ -40,8 +40,8 @@ export function executeDataRetentionCleanup(input: {
 	);
 }
 
-export function fetchFxRates() {
-	return apiFetch("/api/settings/fx");
+export function fetchFxRates(init?: RequestInit) {
+	return apiFetch("/api/settings/fx", init);
 }
 
 export function refreshFxRates() {
@@ -76,8 +76,8 @@ export function fetchCodexSdkStatus() {
 	return apiFetch("/api/settings/codex/status");
 }
 
-export function fetchStartupPreflight() {
-	return apiFetch("/api/settings/preflight/startup");
+export function fetchStartupPreflight(init?: RequestInit) {
+	return apiFetch("/api/settings/preflight/startup", init);
 }
 
 export function runLlmSmokeTest() {

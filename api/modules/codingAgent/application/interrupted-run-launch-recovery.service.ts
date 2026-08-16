@@ -6,12 +6,12 @@ import {
 	tasks,
 } from "../../../db/schema";
 import { redactSecretText } from "../../../services/security/secret-redaction";
-import * as nightworkersRepo from "../../nightworkers/nightworkers.repository";
 import {
 	type CodingAgentProcessInterruptionSnapshot,
 	readProcessInterruptionSnapshot,
 } from "../context/process-interruption-snapshot";
 import { codingAgentRunExecutions } from "../persistence/runtime-execution-schema";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import {
 	type CodingAgentExecutionOwnerIdentity,
 	getCodingAgentExecutionOwnerIdentity,
@@ -112,7 +112,7 @@ export async function restoreInterruptedCodingAgentRunAfterLaunchFailure(input: 
 		input.error instanceof Error ? input.error.message : String(input.error),
 	).slice(0, 2_000);
 	await Promise.allSettled([
-		nightworkersRepo.createRunEvent({
+		requireCodingAgentHost().runJournal.appendRunEvent({
 			version: 1,
 			runId: restored.run.id,
 			taskId: restored.run.taskId,
@@ -128,7 +128,7 @@ export async function restoreInterruptedCodingAgentRunAfterLaunchFailure(input: 
 				error: errorMessage,
 			},
 		}),
-		nightworkersRepo.createTaskMessage({
+		requireCodingAgentHost().runJournal.appendTaskMessage({
 			taskId: restored.run.taskId,
 			runId: restored.run.id,
 			role: "system",
@@ -140,7 +140,7 @@ export async function restoreInterruptedCodingAgentRunAfterLaunchFailure(input: 
 				error: errorMessage,
 			},
 		}),
-		nightworkersRepo.publishTaskRunUpdate(restored.run),
+		requireCodingAgentHost().runJournal.publishRun({ id: restored.run.id }),
 	]);
 	return restored.run;
 }

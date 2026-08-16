@@ -1,8 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db/client";
-import type { ImplementationQueueEntryStatus } from "../../db/schema";
 import { implementationQueueEntries } from "../../db/schema";
-import type { CreateImplementationQueueEntryData } from "./queue-repository-command.types";
 import {
 	type ClaimImplementationQueueResult,
 	type ClaimNextImplementationQueueEntryInput,
@@ -17,125 +15,18 @@ import {
 	queueStatusForRunStatus,
 	resolveImplementationQueueExecutionLockKey,
 	SEQUENCE_TERMINAL_BLOCKER_STATUSES,
-	type TaskExecutionType,
 } from "./queue-repository-row-mapper";
 import { workspaceClaimSkipEvidence } from "./queue-workspace-claim-gate";
 
-export async function createImplementationQueueEntry(
-	data: CreateImplementationQueueEntryData,
-	database: QueueDb = db,
-) {
-	const now = new Date();
-	const executionType = data.executionType ?? "normal";
-	const [entry] = await database
-		.insert(implementationQueueEntries)
-		.values({
-			taskId: data.taskId,
-			repositoryId: data.repositoryId,
-			priority: data.priority ?? 0,
-			queuePosition: data.queuePosition ?? null,
-			executionType,
-			executionLockKey:
-				data.executionLockKey ??
-				resolveImplementationQueueExecutionLockKey(data),
-			sequenceGroupId:
-				executionType === "sequence" ? (data.sequenceGroupId ?? null) : null,
-			sequenceOrder:
-				executionType === "sequence" ? (data.sequenceOrder ?? null) : null,
-			sequenceDependsOnEntryId:
-				executionType === "sequence"
-					? (data.sequenceDependsOnEntryId ?? null)
-					: null,
-			schedulingReason: data.schedulingReason ?? null,
-			sourceCommandKey: data.sourceCommandKey ?? null,
-			requestProvenanceJson: data.requestProvenance ?? null,
-			claimReady: data.claimReady ?? true,
-			workspaceId: data.workspaceId ?? null,
-			workspaceRequired: data.workspaceRequired ?? false,
-			status: "queued",
-			createdAt: now,
-			updatedAt: now,
-		})
-		.returning();
-	return entry;
-}
-
-export async function updateImplementationQueueEntry(
-	id: string,
-	data: {
-		status?: ImplementationQueueEntryStatus;
-		priority?: number;
-		queuePosition?: number | null;
-		processorSlot?: number | null;
-		activeRunId?: string | null;
-		claimedAt?: Date | null;
-		lastHeartbeatAt?: Date | null;
-		archivedAt?: Date | null;
-		statusReason?: string | null;
-		leaseOwnerId?: string | null;
-		leaseAcquiredAt?: Date | null;
-		leaseExpiresAt?: Date | null;
-		leaseVersion?: number;
-		attemptCount?: number;
-		recoveredAt?: Date | null;
-		recoveryReason?: string | null;
-		lastFailureKind?: string | null;
-		executionType?: TaskExecutionType;
-		executionLockKey?: string | null;
-		sequenceGroupId?: string | null;
-		sequenceOrder?: number | null;
-		sequenceDependsOnEntryId?: string | null;
-		schedulingReason?: string | null;
-	},
-) {
-	const [entry] = await db
-		.update(implementationQueueEntries)
-		.set({ ...data, updatedAt: new Date() })
-		.where(eq(implementationQueueEntries.id, id))
-		.returning();
-	return entry;
-}
-
-export async function recoverImplementationQueueEntryFromSnapshot(
-	id: string,
-	expected: { status: ImplementationQueueEntryStatus; leaseVersion: number },
-	data: {
-		status?: ImplementationQueueEntryStatus;
-		priority?: number;
-		queuePosition?: number | null;
-		processorSlot?: number | null;
-		activeRunId?: string | null;
-		claimedAt?: Date | null;
-		lastHeartbeatAt?: Date | null;
-		archivedAt?: Date | null;
-		statusReason?: string | null;
-		leaseOwnerId?: string | null;
-		leaseAcquiredAt?: Date | null;
-		leaseExpiresAt?: Date | null;
-		leaseVersion?: number;
-		attemptCount?: number;
-		recoveredAt?: Date | null;
-		recoveryReason?: string | null;
-		lastFailureKind?: string | null;
-	},
-) {
-	const [entry] = await db
-		.update(implementationQueueEntries)
-		.set({
-			...data,
-			leaseVersion: sql`${implementationQueueEntries.leaseVersion} + 1`,
-			updatedAt: new Date(),
-		})
-		.where(
-			and(
-				eq(implementationQueueEntries.id, id),
-				eq(implementationQueueEntries.status, expected.status),
-				eq(implementationQueueEntries.leaseVersion, expected.leaseVersion),
-			),
-		)
-		.returning();
-	return entry ?? null;
-}
+export {
+	admitImplementationQueueEntry,
+	cancelImplementationQueueEntryWithoutRun,
+	createImplementationQueueEntry,
+	QueueEntryTransitionConflict,
+	recoverImplementationQueueEntryFromSnapshot,
+	resumeImplementationQueueEntryWithoutRun,
+	updateImplementationQueueEntry,
+} from "./queue-repository-state-transitions";
 
 export async function getImplementationQueueEntry(id: string) {
 	const [entry] = await db

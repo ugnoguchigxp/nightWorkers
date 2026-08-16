@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { ApiResponseError, readJsonResponse } from "../../lib/api-error";
 import { generateBlueprintArtifact } from "../blueprint";
 import { generateDataModelArtifact } from "../dataModel";
 import type { PlanModeWorkspace, TaskMessage } from "../nightworkers/types";
@@ -12,7 +13,6 @@ import {
 import type { MermaidRenderFailure } from "./PlanModeWorkspacePanels";
 import {
 	isGenericPlanView,
-	parseJsonRecord,
 	planViewToTab,
 } from "./PlanModeWorkspaceViewer.helpers";
 import { tabToPlanView } from "./PlanModeWorkspaceViewer.model";
@@ -118,24 +118,24 @@ export function usePlanModeArtifactGeneration(input: {
 									latestSources.dedicatedViewMessageIds,
 								proceedWithUnansweredBlocking,
 							});
-			if (!res.ok) {
-				const errorText = await res.text();
-				const parsedError = parseJsonRecord(errorText);
+			let result: {
+				message?: TaskMessage;
+				workspace?: PlanModeWorkspace;
+			};
+			try {
+				result = await readJsonResponse(res);
+			} catch (error) {
 				if (
-					String(parsedError?.code || "") ===
-					"BLOCKING_QUESTIONNAIRE_ANSWERS_REQUIRED"
+					error instanceof ApiResponseError &&
+					error.code === "BLOCKING_QUESTIONNAIRE_ANSWERS_REQUIRED"
 				) {
 					selectActiveTab("questionnaire");
 					throw new Error(
 						"要回答の未回答質問があります。Questionnaire で回答してください。",
 					);
 				}
-				throw new Error(errorText);
+				throw error;
 			}
-			const result = (await res.json()) as {
-				message?: TaskMessage;
-				workspace?: PlanModeWorkspace;
-			};
 			const generatedMessage = result.message;
 			if (generatedMessage) {
 				setGeneratedMessages((prev) => [...prev, generatedMessage]);
@@ -187,11 +187,10 @@ export function usePlanModeArtifactGeneration(input: {
 						activeDataModelMessage?.id ??
 						null,
 				});
-				if (!res.ok) throw new Error(await res.text());
-				const result = (await res.json()) as {
+				const result = await readJsonResponse<{
 					message?: TaskMessage;
 					workspace?: PlanModeWorkspace;
-				};
+				}>(res);
 				if (result.message) generated.push(result.message);
 				if (result.workspace) latestWorkspace = result.workspace;
 			}
@@ -240,11 +239,10 @@ export function usePlanModeArtifactGeneration(input: {
 					},
 				},
 			);
-			if (!res.ok) throw new Error(await res.text());
-			const result = (await res.json()) as {
+			const result = await readJsonResponse<{
 				message?: TaskMessage;
 				workspace?: PlanModeWorkspace;
-			};
+			}>(res);
 			if (result.message) {
 				setGeneratedMessages((prev) => [
 					...prev,

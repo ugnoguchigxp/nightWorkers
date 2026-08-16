@@ -1,6 +1,5 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
 import "./index.css";
 
 const DESKTOP_CONFIG_RETRY_COUNT = 30;
@@ -42,16 +41,59 @@ async function loadDesktopConfig() {
 
 const rootElement = document.getElementById("root");
 if (rootElement && !rootElement.innerHTML) {
+	const root = createRoot(rootElement);
+	// Keep route modules, locale dictionaries, and desktop-only UI outside the
+	// initial entry while their code is fetched in parallel with the desktop
+	// configuration handshake.
+	const appModule = import("./App");
+
+	root.render(
+		<StrictMode>
+			<StartupScreen />
+		</StrictMode>,
+	);
+
 	loadDesktopConfig()
 		.catch((err) => {
 			console.warn("App bootstrap warning, continuing with defaults.", err);
 		})
-		.finally(() => {
-			const root = createRoot(rootElement);
-			root.render(
-				<StrictMode>
-					<App />
-				</StrictMode>,
-			);
+		.then(async () => {
+			try {
+				const { default: App } = await appModule;
+				root.render(
+					<StrictMode>
+						<App />
+					</StrictMode>,
+				);
+			} catch (err) {
+				console.error("App module failed to load.", err);
+				root.render(
+					<StrictMode>
+						<StartupFailureScreen />
+					</StrictMode>,
+				);
+			}
 		});
+}
+
+function StartupScreen() {
+	return (
+		<div
+			className="flex min-h-screen items-center justify-center bg-[#141416] text-sm text-slate-300"
+			role="status"
+		>
+			起動しています…
+		</div>
+	);
+}
+
+function StartupFailureScreen() {
+	return (
+		<div
+			className="flex min-h-screen items-center justify-center bg-[#141416] px-6 text-center text-sm text-rose-300"
+			role="alert"
+		>
+			アプリケーションを読み込めませんでした。再読み込みしてください。
+		</div>
+	);
 }

@@ -5,6 +5,7 @@ import {
 	securityScanProviderSettingsInputSchema,
 } from "../../../shared/schemas/security-scan.schema";
 import { ValidationError } from "../../lib/errors";
+import { replaceRuntimeSecretValues } from "../../services/security/secret-redaction";
 import {
 	readApplicationSetting,
 	readApplicationSettingSecrets,
@@ -162,6 +163,7 @@ export async function saveSecurityScanProviderSettings(
 				},
 			},
 		);
+		replaceRuntimeSecretValues("security-scan-provider", [token]);
 		return {
 			enabled: parsed.data.enabled,
 			transport: parsed.data.transport,
@@ -174,7 +176,9 @@ export async function saveSecurityScanProviderSettings(
 
 function readConfiguredToken() {
 	const value = readSecretSettings().securityScanProvider?.token;
-	return typeof value === "string" ? value.trim() : "";
+	const token = typeof value === "string" ? value.trim() : "";
+	replaceRuntimeSecretValues("security-scan-provider", [token]);
+	return token;
 }
 
 function providerBaseUrl(

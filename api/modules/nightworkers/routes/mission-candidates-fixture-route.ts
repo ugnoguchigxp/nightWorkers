@@ -1,9 +1,16 @@
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
+import { apiErrorOpenApiResponse } from "../../../../shared/schemas/api-error.schema";
+import { serializeApiError } from "../../../lib/api-error-response";
+import { NotFoundError } from "../../../lib/errors";
 import { createOpenApiRouter } from "../../../lib/openapi";
 import * as taskGenerationRepo from "../../taskGeneration/task-generation.repository";
 import { buildProjectSignalSnapshot } from "../../taskGeneration/task-generation-signal.service";
 import * as repo from "../nightworkers.repository";
+
+function notFound(message = "Not found") {
+	return serializeApiError(new NotFoundError(message)).body;
+}
 
 const createMissionCandidatesFixtureRoute = createRoute({
 	method: "post",
@@ -43,7 +50,7 @@ const createMissionCandidatesFixtureRoute = createRoute({
 			},
 			description: "Create isolated Mission candidate fixtures.",
 		},
-		404: { description: "Route unavailable" },
+		404: apiErrorOpenApiResponse("Route unavailable"),
 	},
 });
 
@@ -54,13 +61,13 @@ export const missionCandidatesFixtureRouter = createOpenApiRouter().openapi(
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
 		) {
-			return c.json({ error: "Not found" }, 404);
+			return c.json(notFound(), 404);
 		}
 		const input = c.req.valid("json");
 		const repository = await repo.getRepository(input.repositoryId);
 		const goal = await taskGenerationRepo.getMissionGoal(input.goalId);
 		if (!repository || !goal || goal.repositoryId !== repository.id) {
-			return c.json({ error: "Repository or goal not found" }, 404);
+			return c.json(notFound("Repository or goal not found"), 404);
 		}
 		const signalSnapshot = await buildProjectSignalSnapshot({
 			repository,

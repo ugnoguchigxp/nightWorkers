@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import { taskMessages } from "../../db/schema";
 
@@ -29,7 +29,7 @@ export async function readArtifactOperatorIndex(input: {
 		.where(
 			and(eq(taskMessages.taskId, input.taskId), isNull(taskMessages.runId)),
 		)
-		.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id));
+		.orderBy(asc(taskMessages.createdAt), asc(sql<number>`rowid`));
 	const artifacts = rows.filter(
 		(row) => artifactKind(row.metadataJson) !== null,
 	);

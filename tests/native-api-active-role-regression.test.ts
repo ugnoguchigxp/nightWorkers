@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	readSettings: vi.fn(),
@@ -12,6 +12,10 @@ vi.mock("../api/services/structured-llm/settings", async () => ({
 import { buildNativeApiProviderRequests } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-request-adapter";
 import { validateNativeApiRouteSnapshot } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-runner-routing";
 import { buildRuntimeLaneOptions } from "../api/modules/codingAgent/runtime/registry";
+import {
+	clearFixtureProviderToolTurns,
+	registerFixtureProviderToolTurns,
+} from "../api/services/structured-llm/fixture-tool-provider";
 
 const settings = {
 	settingsRevision: "settings-rev-1",
@@ -87,6 +91,14 @@ function context() {
 describe("Native API active role routing", () => {
 	beforeEach(() => {
 		mocks.readSettings.mockReturnValue(settings);
+	});
+
+	afterEach(() => {
+		clearFixtureProviderToolTurns("task-1");
+		delete process.env.NIGHTWORKERS_E2E;
+		delete process.env.NIGHTWORKERS_E2E_ISOLATED;
+		delete process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE;
+		delete process.env.NIGHTWORKERS_E2E_WORKSPACE_ROOT;
 	});
 
 	it("builds Plan requests from the persisted active role", () => {
@@ -246,6 +258,65 @@ describe("Native API active role routing", () => {
 			validateNativeApiRouteSnapshot(
 				[planRequest] as never,
 				missingPlanContext as never,
+			),
+		).toMatchObject({
+			ok: false,
+			reason: "route_candidate_outside_snapshot",
+		});
+	});
+
+	it("uses a task-scoped fixture route only in isolated E2E and keeps its snapshot guard", () => {
+		process.env.NIGHTWORKERS_E2E = "1";
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		process.env.NIGHTWORKERS_E2E_RUNTIME_FIXTURE = "1";
+		process.env.NIGHTWORKERS_E2E_WORKSPACE_ROOT = "/e2e/workspaces";
+		registerFixtureProviderToolTurns(
+			"task-1",
+			[{ content: "fixture", toolCalls: [] }],
+			"implementation",
+		);
+		const fixtureContext = context();
+		fixtureContext.repoRoot = "/e2e/workspaces/task-1";
+		fixtureContext.contextSnapshot.effectiveLlmRouting.activeRole =
+			"implementation";
+
+		const requests = buildNativeApiProviderRequests({
+			context: fixtureContext as never,
+			history: [
+				{ type: "system", content: "system" },
+				{ type: "user", content: "request" },
+			] as never,
+			routePolicy: { disallowedProviderIds: ["codex"] },
+		});
+
+		expect(requests).toHaveLength(1);
+		expect(requests[0]?.options.normalizedRequest).toMatchObject({
+			providerId: "fixture",
+			providerEndpointId: null,
+			modelOrDeployment: null,
+		});
+		expect(
+			validateNativeApiRouteSnapshot(requests, fixtureContext as never),
+		).toEqual({ ok: true });
+	});
+
+	it("does not accept an unregistered fixture request as a snapshot candidate", () => {
+		process.env.NIGHTWORKERS_E2E_ISOLATED = "1";
+		const fixtureRequest = {
+			provider: "fixture",
+			options: {
+				normalizedRequest: {
+					providerId: "fixture",
+					providerEndpointId: null,
+					modelOrDeployment: null,
+				},
+			},
+		};
+
+		expect(
+			validateNativeApiRouteSnapshot(
+				[fixtureRequest] as never,
+				context() as never,
 			),
 		).toMatchObject({
 			ok: false,

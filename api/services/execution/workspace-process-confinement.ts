@@ -4,11 +4,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { listExistingProjectSecretPaths } from "../security/project-secret-paths";
 
 const execFileAsync = promisify(execFile);
 
-export async function prepareWorkspaceConstrainedShell(input: {
-	command: string;
+export async function prepareWorkspaceConstrainedCommand(input: {
+	command: { program: string; args: readonly string[] };
 	workspaceRoot: string;
 	environment: NodeJS.ProcessEnv;
 }) {
@@ -18,7 +19,9 @@ export async function prepareWorkspaceConstrainedShell(input: {
 		input.environment,
 	);
 	const runtimePaths = writableRuntimePaths(input.environment);
+	const secretPaths = await listExistingProjectSecretPaths(workspaceRoot);
 	if (process.platform === "darwin") {
+		await assertMacSandboxAvailable();
 		return {
 			executable: "/usr/bin/sandbox-exec",
 			args: [
@@ -28,12 +31,10 @@ export async function prepareWorkspaceConstrainedShell(input: {
 					gitCommonDir,
 					environment: input.environment,
 					runtimePaths,
+					secretPaths,
 				}),
-				"/bin/bash",
-				"--noprofile",
-				"--norc",
-				"-c",
-				`set -o pipefail\n${input.command}`,
+				input.command.program,
+				...input.command.args,
 			],
 		};
 	}
@@ -54,20 +55,43 @@ export async function prepareWorkspaceConstrainedShell(input: {
 			if (await pathExists(writePath))
 				args.push("--bind", writePath, writePath);
 		}
+		const secretMaskPaths = new Set<string>();
+		for (const secretPath of secretPaths) {
+			secretMaskPaths.add(
+				await fs.realpath(secretPath).catch(() => secretPath),
+			);
+		}
+		for (const secretPath of secretMaskPaths) {
+			if (await pathExists(secretPath)) {
+				args.push("--ro-bind", "/dev/null", secretPath);
+			}
+		}
 		args.push(
 			"--chdir",
 			workspaceRoot,
-			"/bin/bash",
-			"--noprofile",
-			"--norc",
-			"-c",
-			`set -o pipefail\n${input.command}`,
+			input.command.program,
+			...input.command.args,
 		);
 		return { executable: "bwrap", args };
 	}
 	throw new Error(
 		"WORKSPACE_PROCESS_CONFINEMENT_UNAVAILABLE: sandbox-exec or bubblewrap is required",
 	);
+}
+
+async function assertMacSandboxAvailable() {
+	try {
+		await execFileAsync(
+			"/usr/bin/sandbox-exec",
+			["-p", "(version 1)", "/usr/bin/true"],
+			{ timeout: 2_000, maxBuffer: 64 * 1024 },
+		);
+	} catch (cause) {
+		throw new Error(
+			"WORKSPACE_PROCESS_CONFINEMENT_UNAVAILABLE: sandbox-exec cannot apply a profile in this runtime",
+			{ cause },
+		);
+	}
 }
 
 async function resolveGitCommonDir(
@@ -88,6 +112,7 @@ function buildMacSandboxProfile(input: {
 	gitCommonDir: string;
 	environment: NodeJS.ProcessEnv;
 	runtimePaths: string[];
+	secretPaths: string[];
 }) {
 	const readPaths = new Set([
 		...readableSystemPaths(input.environment),
@@ -119,6 +144,10 @@ function buildMacSandboxProfile(input: {
 		),
 		...Array.from(readPaths, (value) => sandboxRule("file-read*", value)),
 		...Array.from(writePaths, (value) => sandboxRule("file-write*", value)),
+		...input.secretPaths.map((value) =>
+			sandboxLiteralDenyRule("file-read*", value),
+		),
+		...input.secretPaths.map((value) => sandboxDenyRule("file-read*", value)),
 		'(allow file-write* (literal "/dev/null"))',
 	].join("\n");
 }
@@ -209,8 +238,16 @@ function sandboxRule(operation: string, targetPath: string) {
 	return `(allow ${operation} (subpath "${escapeSandboxString(targetPath)}"))`;
 }
 
+function sandboxDenyRule(operation: string, targetPath: string) {
+	return `(deny ${operation} (subpath "${escapeSandboxString(targetPath)}"))`;
+}
+
 function sandboxLiteralRule(operation: string, targetPath: string) {
 	return `(allow ${operation} (literal "${escapeSandboxString(targetPath)}"))`;
+}
+
+function sandboxLiteralDenyRule(operation: string, targetPath: string) {
+	return `(deny ${operation} (literal "${escapeSandboxString(targetPath)}"))`;
 }
 
 function escapeSandboxString(value: string) {

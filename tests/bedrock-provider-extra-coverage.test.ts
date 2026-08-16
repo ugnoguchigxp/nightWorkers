@@ -147,7 +147,7 @@ describe("bedrock provider extra coverage", () => {
 		});
 	});
 
-	it("maps all tool message, image, result, and tool call branches", async () => {
+	it("rejects malformed Bedrock tool arguments before returning any tool call", async () => {
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bedrock-extra-"));
 		cleanupDirectories.push(directory);
 		const imagePath = path.join(directory, "image.bin");
@@ -186,7 +186,7 @@ describe("bedrock provider extra coverage", () => {
 			},
 		});
 
-		const result = await callBedrockProviderToolTurn(
+		const error = await callBedrockProviderToolTurn(
 			toolInput({
 				systemPrompt: " system ",
 				messages: [
@@ -233,21 +233,19 @@ describe("bedrock provider extra coverage", () => {
 			}),
 			() => false,
 			{},
-		);
+		).catch((caught) => caught);
 
-		expect(result).toMatchObject({
-			type: "supported",
-			content: "first\nsecond",
-			toolCalls: [
-				{ id: "valid", name: "read", arguments: { path: "a" } },
-				{
-					id: "raw",
-					name: "raw-tool",
-					arguments: { _raw: ["not", "object"] },
-				},
-			],
-			providerDebug: { toolCallCount: 2, hasOutput: true, hasUsage: true },
+		expect(error).toMatchObject({
+			name: "StructuredProviderError",
+			kind: "invalid_response",
+			code: "INVALID_TOOL_ARGUMENTS",
+			retryable: false,
 		});
+		const providerBody = JSON.parse(
+			(error as { providerBody?: string }).providerBody ?? "{}",
+		);
+		expect(providerBody.toolName).toBe("raw-tool");
+		expect(providerBody.rawArguments).toBe('["not","object"]');
 		const command = mocks.commands[0] as {
 			messages: Array<{ role: string; content: unknown[] }>;
 			system: unknown;

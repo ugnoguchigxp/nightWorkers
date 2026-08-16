@@ -1,10 +1,17 @@
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
+import { apiErrorOpenApiResponse } from "../../../../shared/schemas/api-error.schema";
+import { serializeApiError } from "../../../lib/api-error-response";
+import { NotFoundError } from "../../../lib/errors";
 import { createOpenApiRouter } from "../../../lib/openapi";
 import * as queueRepo from "../../queue/queue-repository-commands";
 import { appendActivityEvent } from "../nightworkers.activity-persistence.repository";
 import * as repo from "../nightworkers.repository";
 import * as verificationRepo from "../nightworkers.verification.repository";
+
+function notFound(message = "Not found") {
+	return serializeApiError(new NotFoundError(message)).body;
+}
 
 const createTaskMarkdownFixtureRoute = createRoute({
 	method: "post",
@@ -34,7 +41,7 @@ const createTaskMarkdownFixtureRoute = createRoute({
 			},
 			description: "Create an isolated E2E markdown fixture.",
 		},
-		404: { description: "Task not found or route unavailable" },
+		404: apiErrorOpenApiResponse("Task not found or route unavailable"),
 	},
 });
 
@@ -66,7 +73,7 @@ const readTaskVerificationSummaryRoute = createRoute({
 			},
 			description: "Read isolated E2E verification evidence.",
 		},
-		404: { description: "Route unavailable" },
+		404: apiErrorOpenApiResponse("Route unavailable"),
 	},
 });
 
@@ -94,7 +101,7 @@ const createTaskSchedulingFixtureRoute = createRoute({
 			},
 			description: "Create isolated E2E scheduling fixture.",
 		},
-		404: { description: "Route unavailable" },
+		404: apiErrorOpenApiResponse("Route unavailable"),
 	},
 });
 
@@ -119,7 +126,7 @@ const readQueueEntryFixtureRoute = createRoute({
 			},
 			description: "Read isolated E2E queue fixtures.",
 		},
-		404: { description: "Route unavailable" },
+		404: apiErrorOpenApiResponse("Route unavailable"),
 	},
 });
 
@@ -145,7 +152,7 @@ const createActivityFixtureRoute = createRoute({
 			},
 			description: "Create isolated E2E activity fixtures.",
 		},
-		404: { description: "Route unavailable" },
+		404: apiErrorOpenApiResponse("Route unavailable"),
 	},
 });
 
@@ -155,11 +162,11 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
 		) {
-			return c.json({ error: "Not found" }, 404);
+			return c.json(notFound(), 404);
 		}
 		const input = c.req.valid("json");
 		if (!(await repo.getTask(input.taskId))) {
-			return c.json({ error: "Task not found" }, 404);
+			return c.json(notFound("Task not found"), 404);
 		}
 		const message = await repo.createTaskMessage({
 			taskId: input.taskId,
@@ -181,12 +188,12 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
 		) {
-			return c.json({ error: "Not found" }, 404);
+			return c.json(notFound(), 404);
 		}
 		const { taskId } = c.req.valid("json");
 		const document =
 			await verificationRepo.getLatestVerificationDocumentForTask(taskId);
-		if (!document) return c.json({ error: "Not found" }, 404);
+		if (!document) return c.json(notFound(), 404);
 		const [items, evidenceRuns] = await Promise.all([
 			verificationRepo.listVerificationChecklistItems(document.id),
 			verificationRepo.listVerificationEvidenceRunsForTask(taskId),
@@ -212,11 +219,11 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
 		) {
-			return c.json({ error: "Not found" }, 404);
+			return c.json(notFound(), 404);
 		}
 		const input = c.req.valid("json");
 		if (!(await repo.getTask(input.taskId)))
-			return c.json({ error: "Task not found" }, 404);
+			return c.json(notFound("Task not found"), 404);
 		const message = await repo.createTaskMessage({
 			taskId: input.taskId,
 			role: "system",
@@ -231,7 +238,7 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
 		) {
-			return c.json({ error: "Not found" }, 404);
+			return c.json(notFound(), 404);
 		}
 		const { entryIds } = c.req.valid("json");
 		const entries = await Promise.all(
@@ -244,11 +251,11 @@ export const e2eFixtureRouter = createOpenApiRouter()
 			process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 			c.req.header("x-nightworkers-e2e") !== "1"
 		) {
-			return c.json({ error: "Not found" }, 404);
+			return c.json(notFound(), 404);
 		}
 		const input = c.req.valid("json");
 		if (!(await repo.getTask(input.taskId)))
-			return c.json({ error: "Task not found" }, 404);
+			return c.json(notFound("Task not found"), 404);
 		for (const sequence of input.sequences) {
 			await appendActivityEvent({
 				taskId: input.taskId,

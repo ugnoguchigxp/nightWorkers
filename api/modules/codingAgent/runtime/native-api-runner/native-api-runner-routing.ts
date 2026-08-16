@@ -3,6 +3,7 @@ import { normalizeStructuredLlmModelTarget } from "../../../../services/structur
 import { readStructuredLlmProviderSettings } from "../../../../services/structured-llm/settings";
 import type { ProviderToolTurnResult } from "../../../../services/structured-llm/tool-calls";
 import type { AgentRunContext, AgentRuntimeSink } from "../types";
+import { hasRegisteredIsolatedNativeApiFixture } from "./native-api-e2e-fixture-isolation";
 import type { NativeApiProviderRequest } from "./native-api-request-adapter";
 import {
 	readNativeApiConfiguredActiveRole,
@@ -82,6 +83,7 @@ export function validateNativeApiRouteSnapshot(
 	const allowedRouteKeys = readAllowedRouteKeysFromSnapshot(context);
 	if (!allowedRouteKeys || requests.length === 0) return { ok: true };
 	for (const request of requests) {
+		if (isRegisteredIsolatedFixtureRoute(request, context)) continue;
 		const routeKey = nativeApiRequestRouteKey(request);
 		if (!allowedRouteKeys.has(routeKey)) {
 			return {
@@ -92,6 +94,16 @@ export function validateNativeApiRouteSnapshot(
 		}
 	}
 	return { ok: true };
+}
+
+function isRegisteredIsolatedFixtureRoute(
+	request: NativeApiProviderRequest,
+	context: AgentRunContext,
+) {
+	return (
+		request.options.normalizedRequest.providerId === "fixture" &&
+		hasRegisteredIsolatedNativeApiFixture(context)
+	);
 }
 
 function readAllowedRouteKeysFromSnapshot(

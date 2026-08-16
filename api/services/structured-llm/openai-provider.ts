@@ -5,9 +5,15 @@ import {
 	readOpenAIChatCompletionStream,
 } from "./openai";
 import {
+	buildOpenAICompatibleHeaders,
+	getResolvedProviderEndpoint,
+	toOpenAIReasoningEffort,
+} from "./openai-compatible-provider-support";
+import {
 	normalizeStructuredProviderError,
 	providerHttpError,
 	providerInvalidResponseError,
+	readBoundedProviderResponseText,
 	StructuredProviderError,
 } from "./provider-failure";
 import type {
@@ -16,11 +22,8 @@ import type {
 	RawLlmCallOptions,
 } from "./providers";
 import {
-	buildOpenAICompatibleHeaders,
 	emitOpenAICompatibilityRetryEvents,
-	getResolvedProviderEndpoint,
 	retryOpenAITransientUnavailableOnce,
-	toOpenAIReasoningEffort,
 } from "./providers";
 import {
 	type getStructuredLlmBoolSetting,
@@ -160,7 +163,7 @@ export async function callOpenAIProvider(
 	}
 
 	if (!response.ok) {
-		const errorText = await response.text();
+		const errorText = await readBoundedProviderResponseText(response);
 		throw providerHttpError({
 			provider: "OpenAI",
 			status: response.status,
@@ -205,7 +208,7 @@ export async function callOpenAIProvider(
 				});
 			}
 			if (!response.ok) {
-				const errorText = await response.text();
+				const errorText = await readBoundedProviderResponseText(response);
 				throw providerHttpError({
 					provider: "OpenAI",
 					status: response.status,
@@ -266,7 +269,7 @@ export async function callOpenAIProvider(
 async function readOpenAIProviderJson(
 	response: Response,
 ): Promise<OpenAIChatCompletionResponse> {
-	const body = await response.text();
+	const body = await readBoundedProviderResponseText(response);
 	try {
 		return JSON.parse(body) as OpenAIChatCompletionResponse;
 	} catch (error) {

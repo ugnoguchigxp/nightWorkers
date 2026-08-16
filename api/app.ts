@@ -8,6 +8,7 @@ import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { CODING_AGENT_COMMAND_WS_CAPABILITY } from "../shared/modules/codingAgent";
+import { initializeComposedCodingAgent } from "./composition/coding-agent";
 import {
 	createComposedMissionPilotFixtureRouter,
 	createComposedMissionPilotRouter,
@@ -58,16 +59,22 @@ import { hooksSettingsRouter } from "./routes/hooks-settings";
 import { mcpSettingsRouter } from "./routes/mcp-settings";
 import { settingsRouter } from "./routes/settings";
 import { getResourceRoot } from "./runtime/paths";
+import { nightworkersRequestBodyLimit } from "./security/nightworkers-request-policy";
 import {
+	createNightWorkersWsMessageRateLimiter,
 	isAllowedNightWorkersWebSocketOrigin,
 	NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE,
 	NIGHTWORKERS_WS_MAX_MESSAGE_BYTES,
+	NIGHTWORKERS_WS_RATE_LIMIT_CLOSE_CODE,
+	NIGHTWORKERS_WS_RATE_LIMIT_CODE,
+	NIGHTWORKERS_WS_RATE_LIMIT_MESSAGE,
 	parseNightWorkersWsClientMessage,
 } from "./security/nightworkers-websocket-policy";
 import { nightWorkersRealtimeBroker } from "./services/realtime/nightworkers-ws";
 import { runWithSystemContextBinding } from "./systemContexts/catalog";
 
 configureOntologyTaskGenerationEvidenceLoader(buildTaskGenerationEvidence);
+initializeComposedCodingAgent();
 initializeCodingAgentRunHandlers();
 initializeTaskUserIntakeHandler();
 initializeQuestionnaireRealtime();
@@ -121,6 +128,7 @@ const apiLimiter = rateLimiter({
 	windowMs: 60 * 1000,
 	limit: apiRateLimit,
 });
+const apiBodyLimiter = nightworkersRequestBodyLimit();
 const wsLimiter = rateLimiter({
 	windowMs: 60 * 1000,
 	limit: isE2e ? 10_000 : 120,
@@ -144,6 +152,15 @@ export const nodeWebSocket = createNodeWebSocket({ app });
 // public ws option is read when each connection's receiver is created.
 nodeWebSocket.wss.options.maxPayload = NIGHTWORKERS_WS_MAX_MESSAGE_BYTES;
 const { upgradeWebSocket } = nodeWebSocket;
+
+function sendWebSocketJson(ws: { send(data: string): void }, payload: unknown) {
+	const serialized = JSON.stringify(payload);
+	try {
+		ws.send(serialized);
+	} catch {
+		// The peer may have closed the socket while an async handler was running.
+	}
+}
 
 // Middleware
 app.use("*", (_context, next) => runWithSystemContextBinding(next));
@@ -215,6 +232,14 @@ app.use("/api/*", async (c, next) => {
 	}
 	return apiLimiter(c, next);
 });
+app.use("/api/*", async (c, next) => {
+	if (
+		c.req.path === "/api/ws/nightworkers" &&
+		c.req.header("upgrade")?.toLowerCase() === "websocket"
+	)
+		return next();
+	return apiBodyLimiter(c, next);
+});
 app.use(
 	"/api/*",
 	csrf({
@@ -264,6 +289,8 @@ app.get(
 	"/api/ws/nightworkers",
 	upgradeWebSocket((_c) => {
 		const requestId = crypto.randomUUID();
+		const messageRateLimiter = createNightWorkersWsMessageRateLimiter();
+		let rateLimitFrameSent = false;
 		logHttpEvent({
 			channel: "ws",
 			method: "GET",
@@ -280,15 +307,35 @@ app.get(
 					message: "connection opened",
 					meta: { requestId },
 				});
-				ws.send(
-					JSON.stringify({
-						type: "connected",
-						timestamp: new Date().toISOString(),
-						capabilities: [CODING_AGENT_COMMAND_WS_CAPABILITY],
-					}),
-				);
+				sendWebSocketJson(ws, {
+					type: "connected",
+					timestamp: new Date().toISOString(),
+					capabilities: [CODING_AGENT_COMMAND_WS_CAPABILITY],
+				});
 			},
 			onMessage(event, ws) {
+				if (!messageRateLimiter.tryConsume()) {
+					if (!rateLimitFrameSent) {
+						rateLimitFrameSent = true;
+						sendWebSocketJson(ws, {
+							type: "error",
+							code: NIGHTWORKERS_WS_RATE_LIMIT_CODE,
+							message: NIGHTWORKERS_WS_RATE_LIMIT_MESSAGE,
+							timestamp: new Date().toISOString(),
+						});
+					}
+					logEvent({
+						channel: "ws",
+						level: "warn",
+						message: "message rejected: rate limit exceeded",
+						meta: { requestId },
+					});
+					ws.close(
+						NIGHTWORKERS_WS_RATE_LIMIT_CLOSE_CODE,
+						NIGHTWORKERS_WS_RATE_LIMIT_MESSAGE,
+					);
+					return;
+				}
 				void (async () => {
 					try {
 						if (typeof event.data !== "string") {
@@ -333,7 +380,7 @@ app.get(
 						if (parsed.type === "coding_agent.command.execute") {
 							const startedAt = Date.now();
 							const response = await handleCodingAgentWebSocketCommand(parsed);
-							ws.send(JSON.stringify(response));
+							sendWebSocketJson(ws, response);
 							logEvent({
 								channel: "ws",
 								level: response.result.ok ? "info" : "warn",
@@ -358,28 +405,24 @@ app.get(
 									})
 								: [];
 							nightWorkersRealtimeBroker.subscribe(parsed.taskId, ws.raw);
-							ws.send(
-								JSON.stringify({
-									type: "subscribed",
-									taskId: parsed.taskId,
-									runId: parsed.runId,
-									afterSeq: parsed.afterSeq,
-									timestamp: new Date().toISOString(),
-								}),
-							);
+							sendWebSocketJson(ws, {
+								type: "subscribed",
+								taskId: parsed.taskId,
+								runId: parsed.runId,
+								afterSeq: parsed.afterSeq,
+								timestamp: new Date().toISOString(),
+							});
 							if (parsed.runId) {
 								for (const replayEvent of replayEvents) {
-									ws.send(
-										JSON.stringify({
-											type: "task_event_created",
-											taskId: parsed.taskId,
-											runId: parsed.runId,
-											seq: replayEvent.seq,
-											event: replayEvent,
-											timestamp: new Date().toISOString(),
-											replayed: true,
-										}),
-									);
+									sendWebSocketJson(ws, {
+										type: "task_event_created",
+										taskId: parsed.taskId,
+										runId: parsed.runId,
+										seq: replayEvent.seq,
+										event: replayEvent,
+										timestamp: new Date().toISOString(),
+										replayed: true,
+									});
 								}
 								logEvent({
 									channel: "ws",
@@ -425,14 +468,12 @@ app.get(
 								stack: err instanceof Error ? err.stack : undefined,
 							},
 						});
-						ws.send(
-							JSON.stringify({
-								type: "error",
-								message: errorMessage,
-								code: errorCode,
-								timestamp: new Date().toISOString(),
-							}),
-						);
+						sendWebSocketJson(ws, {
+							type: "error",
+							message: errorMessage,
+							code: errorCode,
+							timestamp: new Date().toISOString(),
+						});
 					}
 				})();
 			},

@@ -1,8 +1,12 @@
 import {
+	buildNormalizedSupervisorLlmRequest,
 	buildNormalizedSupervisorLlmRequestCandidates,
 	providerAdapterKey,
 } from "../../../../services/structured-llm/request";
-import type { StructuredLlmModelTarget } from "../../../../services/structured-llm/settings";
+import {
+	readStructuredLlmProviderSettings,
+	type StructuredLlmModelTarget,
+} from "../../../../services/structured-llm/settings";
 import type {
 	ProviderToolDefinition,
 	ProviderToolMessage,
@@ -12,6 +16,7 @@ import type { StructuredLlmRoutePolicy } from "../../../../services/structured-l
 import type { SystemContextPromptAudit } from "../../../../systemContexts/catalog";
 import { codingAgentProviderExecutionPolicy } from "../../adapters/coding-agent-provider.adapter";
 import type { AgentRunContext } from "../types";
+import { hasRegisteredIsolatedNativeApiFixture } from "./native-api-e2e-fixture-isolation";
 import { readNativeApiActiveRole } from "./native-api-route-context";
 import {
 	extractLatestNativeApiUserPrompt,
@@ -52,6 +57,22 @@ export function buildNativeApiProviderRequests(input: {
 	const systemPrompt = extractNativeApiSystemPrompt(input.history);
 	const userPrompt = extractLatestNativeApiUserPrompt(input.history);
 	const systemContextAudit = extractNativeApiSystemContextAudit(input.history);
+	if (hasRegisteredIsolatedNativeApiFixture(input.context)) {
+		return [
+			toNativeApiProviderRequest({
+				normalizedRequest: buildIsolatedFixtureNativeApiRequest({
+					role,
+					systemPrompt,
+					userPrompt,
+				}),
+				input,
+				role,
+				systemPrompt,
+				userPrompt,
+				systemContextAudit,
+			}),
+		];
+	}
 	const normalizedRequests = buildNormalizedSupervisorLlmRequestCandidates({
 		systemPrompt,
 		userPrompt,
@@ -61,34 +82,78 @@ export function buildNativeApiProviderRequests(input: {
 		routePolicy: input.routePolicy,
 	});
 
-	return normalizedRequests.map((normalizedRequest) => ({
+	return normalizedRequests.map((normalizedRequest) =>
+		toNativeApiProviderRequest({
+			normalizedRequest,
+			input,
+			role,
+			systemPrompt,
+			userPrompt,
+			systemContextAudit,
+		}),
+	);
+}
+
+function buildIsolatedFixtureNativeApiRequest(input: {
+	role: ReturnType<typeof readNativeApiActiveRole>;
+	systemPrompt: string;
+	userPrompt: string;
+}) {
+	const settings = readStructuredLlmProviderSettings();
+	return buildNormalizedSupervisorLlmRequest({
+		systemPrompt: input.systemPrompt,
+		userPrompt: input.userPrompt,
+		label: "native_api_runner",
+		role: input.role,
+		settings: { ...settings, ACTIVE_LLM_PROVIDER: "fixture", roleRoutes: [] },
+		resolvedRoute: null,
+	});
+}
+
+function toNativeApiProviderRequest(value: {
+	normalizedRequest: ReturnType<typeof buildNormalizedSupervisorLlmRequest>;
+	input: Parameters<typeof buildNativeApiProviderRequests>[0];
+	role: ReturnType<typeof readNativeApiActiveRole>;
+	systemPrompt: string;
+	userPrompt: string;
+	systemContextAudit: readonly SystemContextPromptAudit[];
+}): NativeApiProviderRequest {
+	const {
+		normalizedRequest,
+		input: requestInput,
+		role,
+		systemPrompt,
+		userPrompt,
+		systemContextAudit,
+	} = value;
+	return {
 		provider: providerAdapterKey(normalizedRequest.providerId),
-		messages: projectNativeApiHistoryToProviderMessages(input.history),
-		tools: [...(input.tools ?? [])],
+		messages: projectNativeApiHistoryToProviderMessages(requestInput.history),
+		tools: [...(requestInput.tools ?? [])],
 		systemPrompt,
 		userPrompt,
 		systemContextAudit,
 		options: {
 			label: "native_api_runner",
 			role,
-			routeOverride: input.routeOverride,
-			routePolicy: input.routePolicy,
-			timeoutMs: input.context.timeoutSeconds * 1000,
-			taskId: input.context.taskId,
-			runId: input.context.runId,
-			workingDirectory: input.context.repoRoot,
+			routeOverride: requestInput.routeOverride,
+			routePolicy: requestInput.routePolicy,
+			timeoutMs: requestInput.context.timeoutSeconds * 1000,
+			taskId: requestInput.context.taskId,
+			runId: requestInput.context.runId,
+			workingDirectory: requestInput.context.repoRoot,
 			executionPolicy: codingAgentProviderExecutionPolicy,
 			systemContextAudit,
 			normalizedRequest,
 			toolChoice: "auto",
 			attemptTimeoutMs: nativeApiAttemptTimeoutMs({
-				timeoutMs: input.context.timeoutSeconds * 1000,
+				timeoutMs: requestInput.context.timeoutSeconds * 1000,
 				providerEndpointId: normalizedRequest.providerEndpointId,
 				providerId: normalizedRequest.providerId,
 				routeSource: normalizedRequest.routeSource,
 			}),
 		},
-	}));
+	};
 }
 
 function nativeApiAttemptTimeoutMs(input: {

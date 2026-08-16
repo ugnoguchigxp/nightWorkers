@@ -221,16 +221,23 @@ vi.mock("../api/services/runtime-retention/runtime-retention.service", () => ({
 }));
 vi.mock("../api/services/settings/application-settings-store", () => ({
 	migrateLegacyApplicationSettingSecrets: vi.fn(),
+	readApplicationSetting: vi.fn(),
 }));
-vi.mock("../api/services/settings/general-settings", () => ({
-	readGeneralSettings: () => ({
-		dataRetention: { sweepIntervalMinutes: 30 },
+vi.mock(
+	"../api/services/settings/general-settings",
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../api/services/settings/general-settings")
+		>()),
+		readGeneralSettings: () => ({
+			dataRetention: { sweepIntervalMinutes: 30 },
+		}),
+		refreshFxRatesIfNeeded: () =>
+			mocks.fxResult instanceof Error || typeof mocks.fxResult === "string"
+				? Promise.reject(mocks.fxResult)
+				: Promise.resolve(mocks.fxResult),
 	}),
-	refreshFxRatesIfNeeded: () =>
-		mocks.fxResult instanceof Error || typeof mocks.fxResult === "string"
-			? Promise.reject(mocks.fxResult)
-			: Promise.resolve(mocks.fxResult),
-}));
+);
 vi.mock("../api/services/workspace/workspace-authority-reconciliation", () => ({
 	reconcileTaskWorkspaceAuthorities: async () => mocks.workspacePreview,
 }));

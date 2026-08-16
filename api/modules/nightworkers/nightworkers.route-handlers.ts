@@ -11,7 +11,10 @@ import {
 	humanTaskOperatorQueryContext,
 	readTaskOperatorProjection,
 } from "../taskOperator";
-import { withOpenApiRouteError } from "./nightworkers.route-utils";
+import {
+	routeErrorResponse,
+	withOpenApiRouteError,
+} from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
 	commitRunGitCloseoutRoute,
@@ -50,7 +53,7 @@ function routeNotFound<Route extends RouteConfig>(
 	c: NightWorkersRouteContext<Route>,
 	message: string,
 ): never {
-	return c.json({ error: message }, 404) as never;
+	return routeErrorResponse(c, new NotFoundError(message));
 }
 
 export const startTaskRunHandler = withOpenApiRouteError(

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { repositoryQueryKeys } from "../src/modules/nightworkers/queries/repository-queries";
 
 type Effect = () => undefined | (() => void);
 
@@ -30,11 +31,15 @@ const api = {
 	fetchBackgroundProcessesForTask: vi.fn(),
 };
 
-function response(value: unknown, ok = true) {
-	return {
-		ok,
-		json: vi.fn(async () => value),
-	};
+function response(value: unknown, ok = true, errorMessage = "Request failed") {
+	return new Response(
+		JSON.stringify(
+			ok
+				? value
+				: { error: { code: "TEST_REQUEST_FAILED", message: errorMessage } },
+		),
+		{ status: ok ? 200 : 500 },
+	);
 }
 
 function createQueryClient() {
@@ -144,13 +149,14 @@ async function createHarness(
 		};
 	});
 	vi.doMock("@tanstack/react-query", () => ({
+		queryOptions: <T>(options: T) => options,
 		useQueryClient: () => queryClient,
 		useQuery: (options: { queryKey: unknown[] }) => {
 			const key = String(options.queryKey[0]);
 			queryOptions[key] = options as Record<string, unknown>;
 			return {
 				data: queryData[key],
-				isLoading: key === "projects",
+				isLoading: key === "repositories",
 				isFetching: key === "sessions",
 				refetch: vi.fn(async () => ({ data: queryData[key] })),
 			};
@@ -354,7 +360,7 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 			{ "task-1": "streaming" },
 		];
 		const harness = await createHarness(initialState, {
-			projects: [activeProject],
+			repositories: [activeProject],
 			sessions: [activeTask],
 			implementationQueue: { queued: [] },
 			sessionRuns: [latestRun],
@@ -419,6 +425,9 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 
 		workspace.refreshWorkspace();
 		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(7);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+			queryKey: repositoryQueryKeys.all,
+		});
 		await workspace.refreshProjectList();
 		expect(projectFiles.toggleProjectDirectory).toBe(
 			workspace.toggleProjectDirectory,
@@ -427,7 +436,7 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 
 	it("fetches command revisions remotely and rejects unavailable actions", async () => {
 		const harness = await createHarness(["task-1"], {
-			projects: [project()],
+			repositories: [project()],
 			sessions: [task()],
 			sessionRuns: [run()],
 			taskOperatorView: operatorView("other"),
@@ -472,7 +481,7 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 		expect(codingAgentInstances[0].dispose).toHaveBeenCalledOnce();
 
 		const activeHarness = await createHarness(["task-1"], {
-			projects: [project()],
+			repositories: [project()],
 			sessions: [task()],
 			sessionRuns: [run()],
 			runDetails: { events: [{ id: "rest" }] },
@@ -488,13 +497,19 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 
 	it("executes every query function through success and HTTP failure branches", async () => {
 		const harness = await createHarness(["task-1"], {
-			projects: [project()],
+			repositories: [project()],
 			sessions: [task()],
 			sessionRuns: [run()],
 		});
 		harness.useWorkspace();
+		expect(queryOptions.repositories.queryKey).toEqual(repositoryQueryKeys.all);
 		const cases: Array<[string, ReturnType<typeof vi.fn>, unknown, string]> = [
-			["projects", api.getProjects, [project()], "Failed to fetch projects"],
+			[
+				"repositories",
+				api.getProjects,
+				[project()],
+				"Failed to fetch repositories",
+			],
 			["sessions", api.getSessions, [task()], "Failed to fetch sessions"],
 			[
 				"implementationQueue",
@@ -549,7 +564,7 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 		for (const [key, command, value, message] of cases) {
 			command.mockResolvedValueOnce(response(value));
 			await expect(queryOptions[key].queryFn()).resolves.toEqual(value);
-			command.mockResolvedValueOnce(response({}, false));
+			command.mockResolvedValueOnce(response({}, false, message));
 			await expect(queryOptions[key].queryFn()).rejects.toThrow(message);
 		}
 	});
@@ -558,7 +573,7 @@ describe("useNightWorkersWorkspace extra coverage", () => {
 		const harness = await createHarness(
 			[null, {}, false, "disconnected", false, null, null, [], {}, {}],
 			{
-				projects: [project("repo-first")],
+				repositories: [project("repo-first")],
 				sessions: [],
 				runDetails: {
 					events: [{ id: "rest" }],

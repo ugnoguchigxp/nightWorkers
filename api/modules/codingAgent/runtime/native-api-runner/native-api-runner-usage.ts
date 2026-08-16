@@ -1,4 +1,7 @@
-import { estimateTokens } from "../../../../services/conversation-context/token-budget";
+import {
+	estimateUsageTokens,
+	USAGE_ESTIMATE_ALGORITHM_VERSION,
+} from "../../../../services/conversation-context/token-budget";
 import type { recordLlmUsage } from "../../../../services/llm-usage";
 import type { ProviderToolTurnResult } from "../../../../services/structured-llm/tool-calls";
 import type { AgentRunContext } from "../types";
@@ -42,8 +45,9 @@ export async function recordNativeApiTurnUsage(input: {
 							?.stateCardTokens,
 					userPromptTokens:
 						input.context.contextSnapshot.conversationContext?.usage
-							?.runtimeUserPromptTokens ?? estimateTokens(input.userPrompt),
-					systemPromptTokens: estimateTokens(input.systemPrompt),
+							?.runtimeUserPromptTokens ??
+						estimateUsageTokens(input.userPrompt),
+					systemPromptTokens: estimateUsageTokens(input.systemPrompt),
 				}
 			: undefined,
 		promptPartObservabilityEnabled: readPromptPartObservabilityEnabled(
@@ -71,6 +75,10 @@ export async function recordNativeApiTurnUsage(input: {
 			promptPartObservabilityEnabled: readPromptPartObservabilityEnabled(
 				input.context,
 			),
+			promptPartTokenEstimate: {
+				purpose: "usage_estimate",
+				algorithmVersion: USAGE_ESTIMATE_ALGORITHM_VERSION,
+			},
 		},
 		counterScope: "per_turn",
 	});

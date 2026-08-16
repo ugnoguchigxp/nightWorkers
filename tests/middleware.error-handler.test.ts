@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, vi } from "vitest";
 import { AppError, ValidationError } from "../api/lib/errors";
 import { errorHandler } from "../api/middleware/error-handler";
@@ -69,25 +70,41 @@ describe("errorHandler", () => {
 			json: vi.fn((payload, status) => ({ payload, status })),
 		} as unknown as Parameters<typeof errorHandler>[1];
 
-		const { config } = await import("../api/config");
-		const originalNodeEnv = config.NODE_ENV;
-		config.NODE_ENV = "production";
+		const result = await errorHandler(new Error("unexpected"), c);
 
-		try {
-			const result = await errorHandler(new Error("unexpected"), c);
-
-			expect(logger.error).toHaveBeenCalledTimes(1);
-			expect(result).toEqual({
-				payload: {
-					error: {
-						code: "INTERNAL_SERVER_ERROR",
-						message: "An unexpected error occurred",
-					},
+		expect(logger.error).toHaveBeenCalledTimes(1);
+		expect(result).toEqual({
+			payload: {
+				error: {
+					code: "INTERNAL_SERVER_ERROR",
+					message: "An unexpected error occurred",
 				},
-				status: 500,
-			});
-		} finally {
-			config.NODE_ENV = originalNodeEnv;
-		}
+			},
+			status: 500,
+		});
+	});
+
+	it("maps HTTPException status to a stable code", async () => {
+		const logger = {
+			warn: vi.fn(),
+			error: vi.fn(),
+		};
+		const c = {
+			get: vi.fn().mockReturnValue(logger),
+			json: vi.fn((payload, status) => ({ payload, status })),
+		} as unknown as Parameters<typeof errorHandler>[1];
+
+		const result = await errorHandler(
+			new HTTPException(429, { message: "Slow down" }),
+			c,
+		);
+
+		expect(logger.warn).toHaveBeenCalledTimes(1);
+		expect(result).toEqual({
+			payload: {
+				error: { code: "RATE_LIMITED", message: "Slow down" },
+			},
+			status: 429,
+		});
 	});
 });

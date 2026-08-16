@@ -1,4 +1,6 @@
 export {
+	admitImplementationQueueEntry,
+	cancelImplementationQueueEntryWithoutRun,
 	claimNextImplementationQueueEntry,
 	completeImplementationQueueEntryForRunId,
 	createImplementationQueueEntry,
@@ -6,9 +8,11 @@ export {
 	getImplementationQueueEntryForRun,
 	getImplementationQueueEntrySchedulingHealth,
 	markImplementationQueueEntryProcessing,
+	QueueEntryTransitionConflict,
 	recoverImplementationQueueEntryFromSnapshot,
 	refreshImplementationQueueLease,
 	refreshImplementationQueueLeaseForRun,
+	resumeImplementationQueueEntryWithoutRun,
 	updateImplementationQueueEntry,
 } from "./queue-repository-commands";
 export {

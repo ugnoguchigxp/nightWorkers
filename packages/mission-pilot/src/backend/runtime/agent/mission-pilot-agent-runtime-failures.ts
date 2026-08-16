@@ -25,6 +25,9 @@ export function missionPilotProviderFailure(
 		attempt: typed.attempt ?? 1,
 		actionId: "provider.next_turn",
 		idempotencyKey: null,
+		details: typed.providerBody
+			? { providerBody: typed.providerBody }
+			: undefined,
 	};
 }
 

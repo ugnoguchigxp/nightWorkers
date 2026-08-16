@@ -22,8 +22,6 @@ function stateValues(overrides: Record<number, unknown> = {}) {
 	const values: unknown[] = [
 		defaultLlm,
 		defaultGeneral,
-		null,
-		false,
 		false,
 		"idle",
 		"",
@@ -34,6 +32,8 @@ function stateValues(overrides: Record<number, unknown> = {}) {
 		appearance,
 		"",
 		"idle",
+		false,
+		false,
 	];
 	for (const [index, value] of Object.entries(overrides))
 		values[Number(index)] = value;
@@ -71,6 +71,7 @@ function setup(
 				effects.push(callback);
 				if (options.runEffects) callback();
 			},
+			useRef: <T,>(initial: T) => ({ current: initial }),
 			useState: <T,>(initial: T | (() => T)) => {
 				const value = queued.length
 					? (queued.shift() as T)
@@ -93,6 +94,34 @@ function setup(
 				params?.status ? `${key}:${params.status}` : key,
 		}),
 	}));
+	const queryClient = { setQueryData: vi.fn() };
+	const queryOptions: Array<Record<string, unknown>> = [];
+	vi.doMock("@tanstack/react-query", async () => {
+		const actual = await vi.importActual<
+			typeof import("@tanstack/react-query")
+		>("@tanstack/react-query");
+		return {
+			...actual,
+			useQuery: (query: Record<string, unknown>) => {
+				queryOptions.push(query);
+				const queryKey = query.queryKey as readonly string[];
+				const data =
+					queryKey[0] === "llmSettings"
+						? { ...defaultLlm, model: "loaded-model" }
+						: queryKey[1] === "general"
+							? defaultGeneral
+							: { fetchedAt: "2026-08-08", rates: { JPY: 1 } };
+				return {
+					data,
+					isPending: false,
+					isError: false,
+					error: null,
+					refetch: vi.fn(),
+				};
+			},
+			useQueryClient: () => queryClient,
+		};
+	});
 
 	const applyAppLanguage = vi.fn();
 	vi.doMock("../src/i18n/I18nProvider", () => ({ applyAppLanguage }));
@@ -220,6 +249,8 @@ function setup(
 		handleWorkbenchAnchorClick,
 		serializeWorkbenchRoute,
 		intelligenceHook,
+		queryClient,
+		queryOptions,
 	};
 }
 
@@ -255,40 +286,27 @@ async function flushPromises() {
 describe("settings screen coverage", () => {
 	beforeEach(() => vi.restoreAllMocks());
 
-	it("loads all persisted settings and handles an unavailable FX cache", async () => {
-		let tools = setup(stateValues({ 3: true }), { runEffects: true });
-		let module = await import("../src/modules/settings/SettingsScreen");
-		const result = module.SettingsScreen({
+	it("keeps General and FX snapshots as independent query resources", async () => {
+		const tools = setup(stateValues(), { runEffects: true });
+		const module = await import("../src/modules/settings/SettingsScreen");
+		module.SettingsScreen({
 			activeProject: null,
 			onClose: vi.fn(),
 		});
-		expect((result as ReactElement).props.children).toContain("設定をロード中");
-		await flushPromises();
 		expect(stateSetters[0]).toHaveBeenCalledWith(
 			expect.objectContaining({ model: "loaded-model" }),
 		);
 		expect(stateSetters[1]).toHaveBeenCalledWith(
 			expect.objectContaining({
-				language: "en",
-				fx: expect.objectContaining({ autoRefresh: false }),
+				language: "ja",
+				fx: expect.objectContaining({ autoRefresh: true }),
 			}),
 		);
-		expect(stateSetters[2]).toHaveBeenCalledWith(
-			expect.objectContaining({ fetchedAt: "2026-08-08" }),
-		);
-		expect(stateSetters[3]).toHaveBeenCalledWith(false);
-
-		tools = setup(stateValues({ 3: true }), {
-			runEffects: true,
-			commandOverrides: {
-				fetchFxRates: vi.fn(async () => jsonResponse({}, 500)),
-			},
-		});
-		module = await import("../src/modules/settings/SettingsScreen");
-		module.SettingsScreen({ activeProject: null, onClose: vi.fn() });
-		await flushPromises();
-		expect(stateSetters[2]).toHaveBeenCalledWith(null);
-		expect(tools.commands.fetchFxRates).toHaveBeenCalledTimes(1);
+		expect(tools.queryOptions.map((query) => query.queryKey)).toEqual([
+			["llmSettings"],
+			["settings", "general"],
+			["settings", "fx-rates"],
+		]);
 	});
 
 	it("renders the navigation, defaults unknown sections, and dispatches links", async () => {
@@ -335,8 +353,8 @@ describe("settings screen coverage", () => {
 		panel.props.onChange("model", "model-2");
 		await panel.props.handleSave();
 		expect(stateSetters[0]).toHaveBeenCalledWith(expect.any(Function));
-		expect(stateSetters[5]).toHaveBeenLastCalledWith("success");
-		expect(stateSetters[6]).toHaveBeenLastCalledWith("settings.saveSucceeded");
+		expect(stateSetters[3]).toHaveBeenLastCalledWith("success");
+		expect(stateSetters[4]).toHaveBeenLastCalledWith("settings.saveSucceeded");
 		expect(tools.commands.saveLlmSettings).toHaveBeenCalledWith(defaultLlm);
 
 		setup(stateValues(), {
@@ -354,8 +372,8 @@ describe("settings screen coverage", () => {
 		});
 		panel = named(root, "SettingsLlmPanel")[0];
 		await panel.props.handleSave();
-		expect(stateSetters[5]).toHaveBeenLastCalledWith("error");
-		expect(stateSetters[6]).toHaveBeenLastCalledWith(
+		expect(stateSetters[3]).toHaveBeenLastCalledWith("error");
+		expect(stateSetters[4]).toHaveBeenLastCalledWith(
 			"settings.saveFailedWithStatus:418",
 		);
 
@@ -375,7 +393,7 @@ describe("settings screen coverage", () => {
 			onClose: vi.fn(),
 		});
 		await named(root, "SettingsLlmPanel")[0].props.handleSave();
-		expect(stateSetters[6]).toHaveBeenLastCalledWith("offline");
+		expect(stateSetters[4]).toHaveBeenLastCalledWith("offline");
 	});
 
 	it("saves general settings and handles response and thrown failures", async () => {
@@ -393,7 +411,7 @@ describe("settings screen coverage", () => {
 		actions[0].props.onSave();
 		await flushPromises();
 		expect(tools.applyAppLanguage).toHaveBeenCalledWith("en");
-		expect(stateSetters[8]).toHaveBeenLastCalledWith("success");
+		expect(stateSetters[6]).toHaveBeenLastCalledWith("success");
 
 		setup(stateValues(), {
 			commandOverrides: {
@@ -411,10 +429,10 @@ describe("settings screen coverage", () => {
 		actions = named(root, "SettingsSaveActions");
 		actions[1].props.onSave();
 		await flushPromises();
-		expect(stateSetters[7]).toHaveBeenLastCalledWith(
+		expect(stateSetters[5]).toHaveBeenLastCalledWith(
 			"settings.general.saveFailed",
 		);
-		expect(stateSetters[8]).toHaveBeenLastCalledWith("error");
+		expect(stateSetters[6]).toHaveBeenLastCalledWith("error");
 
 		setup(stateValues(), {
 			commandOverrides: {
@@ -433,7 +451,7 @@ describe("settings screen coverage", () => {
 		});
 		named(root, "SettingsSaveActions")[0].props.onSave();
 		await flushPromises();
-		expect(stateSetters[7]).toHaveBeenLastCalledWith(
+		expect(stateSetters[5]).toHaveBeenLastCalledWith(
 			"settings.general.saveFailed",
 		);
 
@@ -454,7 +472,7 @@ describe("settings screen coverage", () => {
 		});
 		named(root, "SettingsSaveActions")[0].props.onSave();
 		await flushPromises();
-		expect(stateSetters[7]).toHaveBeenLastCalledWith("disk full");
+		expect(stateSetters[5]).toHaveBeenLastCalledWith("disk full");
 	});
 
 	it("refreshes FX rates and reports HTTP and non-Error failures", async () => {
@@ -473,7 +491,7 @@ describe("settings screen coverage", () => {
 		await flushPromises();
 		expect(tools.commands.refreshFxRates).toHaveBeenCalledTimes(1);
 		expect(stateSetters[1]).toHaveBeenCalledWith(expect.any(Function));
-		expect(stateSetters[8]).toHaveBeenLastCalledWith("success");
+		expect(stateSetters[6]).toHaveBeenLastCalledWith("success");
 
 		setup(stateValues(), {
 			commandOverrides: {
@@ -490,7 +508,7 @@ describe("settings screen coverage", () => {
 		});
 		named(root, "GeneralSettingsPanel")[0].props.onRefreshFx();
 		await flushPromises();
-		expect(stateSetters[7]).toHaveBeenLastCalledWith(
+		expect(stateSetters[5]).toHaveBeenLastCalledWith(
 			"settings.general.exchangeRefreshFailed:503",
 		);
 
@@ -511,7 +529,7 @@ describe("settings screen coverage", () => {
 		});
 		named(root, "GeneralSettingsPanel")[0].props.onRefreshFx();
 		await flushPromises();
-		expect(stateSetters[7]).toHaveBeenLastCalledWith("network down");
+		expect(stateSetters[5]).toHaveBeenLastCalledWith("network down");
 	});
 
 	it("applies, saves, resets, and cancels appearance drafts", async () => {
@@ -623,7 +641,7 @@ describe("settings screen coverage", () => {
 			onClose: vi.fn(),
 		});
 		effects[0]();
-		expect(stateSetters[11]).toHaveBeenCalledWith(appearance);
+		expect(stateSetters[9]).toHaveBeenCalledWith(appearance);
 
 		setup();
 		const next = await import("../src/modules/settings/SettingsScreen");

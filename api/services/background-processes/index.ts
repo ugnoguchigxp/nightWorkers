@@ -11,9 +11,11 @@ import {
 	taskRuns,
 	tasks,
 } from "../../db/schema";
+import { logger } from "../../lib/logger";
 import { appendActivityEvent } from "../../modules/nightworkers/nightworkers.activity.repository";
 import { buildChildProcessEnvironment } from "../execution/child-process-environment";
-import { prepareWorkspaceConstrainedShell } from "../execution/workspace-process-confinement";
+import { prepareWorkspaceConstrainedCommand } from "../execution/workspace-process-confinement";
+import { commandArgumentsReferenceProjectSecret } from "../security/project-secret-paths";
 import { sanitizePersistenceValue } from "../security/secret-persistence-firewall";
 import { redactSecretText } from "../security/secret-redaction";
 import { analyzeCommand } from "../worker-tools/command-policy";
@@ -21,6 +23,7 @@ import {
 	enforceCommandPolicy,
 	enforcePathPolicy,
 } from "../worker-tools/tool-policy-enforcer";
+import { createBackgroundProcessStopper } from "./stop";
 
 const MAX_LATEST_OUTPUT_CHARS = 12_000;
 const MAX_MEMORY_OUTPUT_CHARS = 40_000;
@@ -31,9 +34,22 @@ type ManagedProcess = {
 	pendingOutput: string;
 	secretValues: string[];
 	transientRoot: string | null;
+	flushOutput: () => Promise<void>;
 };
 
 const managedProcesses = new Map<string, ManagedProcess>();
+
+const backgroundProcessStopper = createBackgroundProcessStopper({
+	managedProcesses,
+	cleanupTransientRoot: cleanupManagedTransientRoot,
+	markFinished,
+	getBackgroundProcess,
+});
+
+export const stopBackgroundProcess =
+	backgroundProcessStopper.stopBackgroundProcess;
+export const stopBackgroundProcessesForRun =
+	backgroundProcessStopper.stopBackgroundProcessesForRun;
 
 export type BackgroundProcessStatus =
 	| "running"
@@ -255,6 +271,20 @@ export async function startBackgroundCommand(
 			`Command is not classified as background-safe: ${input.command}`,
 		);
 	}
+	if (!safety.parsed) {
+		throw new Error(
+			"Background command could not be normalized for execution.",
+		);
+	}
+	if (
+		await commandArgumentsReferenceProjectSecret({
+			args: safety.parsed.args,
+			repositoryRoot: repoRoot,
+			cwd: targetCwd,
+		})
+	) {
+		throw new Error("PROJECT_SECRET_PATH_DENIED");
+	}
 
 	const id = crypto.randomUUID();
 	const persistedCommand = sanitizePersistenceValue(input.command);
@@ -275,53 +305,62 @@ export async function startBackgroundCommand(
 		})
 		.returning();
 
-	const childEnvironment = buildChildProcessEnvironment({
-		purpose: "background_command",
-		overrides: input.environment,
-	});
-	const transientRoot = input.confinementRequired
-		? await fs.mkdtemp(path.join(os.tmpdir(), "nightworkers-background-"))
-		: null;
-	if (transientRoot) {
-		childEnvironment.TMPDIR = transientRoot;
-		childEnvironment.TMP = transientRoot;
-		childEnvironment.TEMP = transientRoot;
-	}
-	const confined = input.confinementRequired
-		? await prepareWorkspaceConstrainedShell({
-				command: input.command,
-				workspaceRoot: repoRoot,
-				environment: childEnvironment,
-			})
-		: null;
-	const child = confined
-		? spawn(confined.executable, confined.args, {
-				cwd: targetCwd,
-				detached: true,
-				stdio: "pipe",
-				env: childEnvironment,
-			})
-		: process.platform === "win32"
-			? spawn(input.command, {
+	let transientRoot: string | null = null;
+	let child: ChildProcessWithoutNullStreams | undefined;
+	try {
+		const childEnvironment = buildChildProcessEnvironment({
+			purpose: "background_command",
+			overrides: input.environment,
+		});
+		transientRoot = input.confinementRequired
+			? await fs.mkdtemp(path.join(os.tmpdir(), "nightworkers-background-"))
+			: null;
+		if (transientRoot) {
+			childEnvironment.TMPDIR = transientRoot;
+			childEnvironment.TMP = transientRoot;
+			childEnvironment.TEMP = transientRoot;
+		}
+		const confined = input.confinementRequired
+			? await prepareWorkspaceConstrainedCommand({
+					command: safety.parsed,
+					workspaceRoot: repoRoot,
+					environment: childEnvironment,
+				})
+			: null;
+		child = confined
+			? spawn(confined.executable, confined.args, {
 					cwd: targetCwd,
-					shell: true,
 					detached: true,
 					stdio: "pipe",
 					env: childEnvironment,
 				})
-			: spawn("/bin/bash", ["--noprofile", "--norc", "-c", input.command], {
+			: spawn(safety.parsed.program, safety.parsed.args, {
 					cwd: targetCwd,
 					detached: true,
 					stdio: "pipe",
 					env: childEnvironment,
 				});
-	child.unref();
+		child.unref();
 
-	await db
-		.update(backgroundProcesses)
-		.set({ pid: child.pid ?? null, updatedAt: new Date() })
-		.where(eq(backgroundProcesses.id, id));
-	created.pid = child.pid ?? null;
+		await db
+			.update(backgroundProcesses)
+			.set({ pid: child.pid ?? null, updatedAt: new Date() })
+			.where(eq(backgroundProcesses.id, id));
+		created.pid = child.pid ?? null;
+	} catch (error) {
+		if (child) await terminateBackgroundProcessGroup(child);
+		if (transientRoot) {
+			await fs.rm(transientRoot, { recursive: true, force: true });
+		}
+		await markFinished({
+			id,
+			status: "failed",
+			stopReason: "background_process_start_failed",
+			output: "",
+		}).catch(() => undefined);
+		throw error;
+	}
+	if (!child) throw new Error("Background process was not started.");
 
 	const managed: ManagedProcess = {
 		child,
@@ -329,6 +368,7 @@ export async function startBackgroundCommand(
 		pendingOutput: "",
 		secretValues: collectSecretValues(input.environment),
 		transientRoot,
+		flushOutput: async () => undefined,
 	};
 	managedProcesses.set(id, managed);
 
@@ -349,8 +389,10 @@ export async function startBackgroundCommand(
 	});
 
 	child.on("error", (err) => {
+		if (backgroundProcessStopper.isStopping(id)) return;
 		managedProcesses.delete(id);
 		void (async () => {
+			await managed.flushOutput();
 			await cleanupManagedTransientRoot(managed);
 			const [current] = await db
 				.select({ status: backgroundProcesses.status })
@@ -363,7 +405,12 @@ export async function startBackgroundCommand(
 				stopReason: err.message || "background_process_spawn_error",
 				output: managed.output,
 			});
-		})();
+		})().catch((error) => {
+			logger.error(
+				{ err: error, backgroundProcessId: id },
+				"Background command error handling failed",
+			);
+		});
 	});
 
 	const onChunk = async (chunk: Buffer, flush = false) => {
@@ -390,12 +437,25 @@ export async function startBackgroundCommand(
 			.set({ latestOutput: tail(managed.output), updatedAt: new Date() })
 			.where(eq(backgroundProcesses.id, id));
 	};
-	child.stdout.on("data", (chunk) => void onChunk(chunk));
-	child.stderr.on("data", (chunk) => void onChunk(chunk));
+	let pendingOutputWrite = Promise.resolve();
+	const queueOutput = (chunk: Buffer, flush = false) => {
+		const pending = pendingOutputWrite.then(() => onChunk(chunk, flush));
+		pendingOutputWrite = pending.catch((error) => {
+			logger.warn(
+				{ err: error, backgroundProcessId: id },
+				"Background command output persistence failed",
+			);
+		});
+		return pendingOutputWrite;
+	};
+	managed.flushOutput = () => queueOutput(Buffer.alloc(0), true);
+	child.stdout.on("data", (chunk) => void queueOutput(chunk));
+	child.stderr.on("data", (chunk) => void queueOutput(chunk));
 	child.on("close", (code, signal) => {
+		if (backgroundProcessStopper.isStopping(id)) return;
 		managedProcesses.delete(id);
 		void (async () => {
-			await onChunk(Buffer.alloc(0), true);
+			await managed.flushOutput();
 			await cleanupManagedTransientRoot(managed);
 			const [current] = await db
 				.select({ status: backgroundProcesses.status })
@@ -411,10 +471,52 @@ export async function startBackgroundCommand(
 				signal,
 				output: managed.output,
 			});
-		})();
+		})().catch((error) => {
+			logger.error(
+				{ err: error, backgroundProcessId: id },
+				"Background command close handling failed",
+			);
+		});
 	});
 
 	return created;
+}
+
+async function terminateBackgroundProcessGroup(
+	child: ChildProcessWithoutNullStreams,
+) {
+	if (child.exitCode !== null || child.signalCode !== null) return;
+	try {
+		if (process.platform !== "win32" && child.pid) {
+			process.kill(-child.pid, "SIGTERM");
+		} else {
+			child.kill("SIGTERM");
+		}
+	} catch {
+		try {
+			child.kill("SIGTERM");
+		} catch {
+			return;
+		}
+	}
+
+	const closed = await new Promise<boolean>((resolve) => {
+		const timeout = setTimeout(() => resolve(false), 1_000);
+		child.once("close", () => {
+			clearTimeout(timeout);
+			resolve(true);
+		});
+	});
+	if (closed || child.exitCode !== null || child.signalCode !== null) return;
+	try {
+		if (process.platform !== "win32" && child.pid) {
+			process.kill(-child.pid, "SIGKILL");
+		} else {
+			child.kill("SIGKILL");
+		}
+	} catch {
+		// The process has already exited or cannot be signaled further.
+	}
 }
 
 function collectSecretValues(environment?: Record<string, string>) {
@@ -465,45 +567,4 @@ export async function getBackgroundProcess(id: string) {
 		.from(backgroundProcesses)
 		.where(eq(backgroundProcesses.id, id));
 	return processRecord ?? null;
-}
-
-export async function stopBackgroundProcess(
-	id: string,
-	reason = "user_requested",
-) {
-	const [processRecord] = await db
-		.select()
-		.from(backgroundProcesses)
-		.where(eq(backgroundProcesses.id, id));
-	if (!processRecord) return null;
-	if (processRecord.status !== "running") {
-		return processRecord;
-	}
-	const managed = managedProcesses.get(id);
-	if (!managed) {
-		return markFinished({
-			id,
-			status: "lost",
-			stopReason: "api_process_restarted_or_tracking_lost",
-			output: processRecord.latestOutput || "",
-		});
-	}
-
-	try {
-		if (processRecord.pid) {
-			process.kill(-processRecord.pid, "SIGTERM");
-		} else {
-			managed.child.kill("SIGTERM");
-		}
-	} catch (_err) {
-		managed.child.kill("SIGTERM");
-	}
-	managedProcesses.delete(id);
-	return markFinished({
-		id,
-		status: "stopped",
-		signal: "SIGTERM",
-		stopReason: reason,
-		output: managed.output,
-	});
 }

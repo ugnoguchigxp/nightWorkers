@@ -8,6 +8,8 @@ import {
 } from "./mission-pilot-content-page";
 
 const MAX_PROJECTED_BYTES = 16_000;
+export const MISSION_PILOT_COMPACTION_GATE_ALGORITHM_VERSION =
+	"utf8_bytes_div_4_plus_2000_v1";
 export function projectMissionPilotProviderMessages(
 	messages: ProviderToolMessage[],
 	maxBytes = MAX_PROJECTED_BYTES,
@@ -35,6 +37,14 @@ export function projectMissionPilotProviderMessages(
 	});
 }
 export function estimateMissionPilotProviderRequestTokens(input: {
+	systemContext: string;
+	messages: ProviderToolMessage[];
+	tools: ProviderToolDefinition[];
+}) {
+	return estimateMissionPilotCompactionGateTokens(input);
+}
+
+export function estimateMissionPilotCompactionGateTokens(input: {
 	systemContext: string;
 	messages: ProviderToolMessage[];
 	tools: ProviderToolDefinition[];

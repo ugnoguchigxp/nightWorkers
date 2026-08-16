@@ -4,6 +4,7 @@ import app from "../api/app";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { client } from "../api/db/client";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
+import { persistPreparedRuntimePrompt } from "../api/modules/nightworkers/run-orchestration/start-task-run-persistence";
 import * as queueRepo from "../api/modules/queue/queue.repository";
 import * as queueService from "../api/modules/queue/queue-management.service";
 
@@ -37,6 +38,78 @@ async function createQueuedEntry(input: { priority?: number } = {}) {
 }
 
 describe("Implementation Queue resilience repository behavior", () => {
+	it("admits at most one non-archived Queue Entry for a Task", async () => {
+		const repository = await nightworkersRepo.createRepository({
+			name: `TEST: Queue unique admission ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await nightworkersRepo.createTask({
+			repositoryId: repository.id,
+			title: `TEST: Queue unique admission ${crypto.randomUUID()}`,
+			description: "Queue unique admission fixture",
+			objective: "Only one active entry may exist for a Task",
+			acceptanceCriteria: "Database unique index rejects concurrent inserts",
+			status: "queued",
+		});
+		const createEntry = () =>
+			queueRepo.admitImplementationQueueEntry({
+				task: {
+					id: task.id,
+					expectedStatus: task.status,
+					expectedUpdatedAt: task.updatedAt,
+				},
+				entry: {
+					taskId: task.id,
+					repositoryId: repository.id,
+				},
+			});
+
+		const attempts = await Promise.allSettled([createEntry(), createEntry()]);
+		expect(
+			attempts.filter((attempt) => attempt.status === "fulfilled"),
+		).toHaveLength(1);
+		expect(
+			attempts.filter((attempt) => attempt.status === "rejected"),
+		).toHaveLength(1);
+
+		const active = await queueRepo.listActiveImplementationQueueEntriesForTask(
+			task.id,
+		);
+		expect(active).toHaveLength(1);
+		await expect(nightworkersRepo.getTask(task.id)).resolves.toMatchObject({
+			status: "queued",
+		});
+		await expect(nightworkersRepo.listTaskMessages(task.id)).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					content: "Implementation Queue entry created.",
+				}),
+			]),
+		);
+		expect(
+			(await nightworkersRepo.listTaskMessages(task.id)).filter(
+				(message) => message.content === "Implementation Queue entry created.",
+			),
+		).toHaveLength(1);
+		await queueRepo.updateImplementationQueueEntry(active[0].id, {
+			status: "execution_archived",
+			archivedAt: new Date(),
+		});
+		const taskAfterArchive = await nightworkersRepo.getTask(task.id);
+		if (!taskAfterArchive) throw new Error("Queue admission Task disappeared");
+		await expect(
+			queueRepo.admitImplementationQueueEntry({
+				task: {
+					id: taskAfterArchive.id,
+					expectedStatus: taskAfterArchive.status,
+					expectedUpdatedAt: taskAfterArchive.updatedAt,
+				},
+				entry: { taskId: task.id, repositoryId: repository.id },
+			}),
+		).resolves.toMatchObject({ entry: { taskId: task.id } });
+	});
+
 	it("updates a prepared run only while its expected status still matches", async () => {
 		const repository = await nightworkersRepo.createRepository({
 			name: `TEST: Run CAS ${crypto.randomUUID()}`,
@@ -71,6 +144,146 @@ describe("Implementation Queue resilience repository behavior", () => {
 		).resolves.toBeUndefined();
 		await expect(nightworkersRepo.getTaskRun(run.id)).resolves.toMatchObject({
 			status: "needs_human",
+		});
+	});
+
+	it("returns an explicit result for guarded Run transitions without publishing", async () => {
+		const repository = await nightworkersRepo.createRepository({
+			name: `TEST: Guarded Run transition ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await nightworkersRepo.createTask({
+			repositoryId: repository.id,
+			title: `TEST: Guarded Run transition ${crypto.randomUUID()}`,
+			description: "Guarded transition fixture",
+			objective: "Preserve the latest Run state",
+			acceptanceCriteria: "CAS conflicts return the latest row",
+			status: "running",
+		});
+		const preparing = await nightworkersRepo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "context_compiling",
+		});
+
+		const applied = await nightworkersRepo.transitionTaskRunIfCurrent({
+			runId: preparing.id,
+			expectedStatuses: ["context_compiling"],
+			expectedUpdatedAt: preparing.updatedAt,
+			targetStatus: "running",
+			patch: { summary: "Prompt preparation completed." },
+		});
+		expect(applied).toMatchObject({
+			kind: "applied",
+			run: { id: preparing.id, status: "running" },
+		});
+
+		const staleStatus = await nightworkersRepo.transitionTaskRunIfCurrent({
+			runId: preparing.id,
+			expectedStatuses: ["context_compiling"],
+			expectedUpdatedAt: preparing.updatedAt,
+			targetStatus: "cancelled",
+		});
+		expect(staleStatus).toMatchObject({
+			kind: "conflict",
+			current: { id: preparing.id, status: "running" },
+		});
+
+		const beforeConcurrentUpdate = await nightworkersRepo.getTaskRun(
+			preparing.id,
+		);
+		if (!beforeConcurrentUpdate) throw new Error("Run fixture is missing");
+		await client.execute({
+			sql: "UPDATE task_runs SET summary = ?, updated_at = ? WHERE id = ?",
+			args: [
+				"A newer writer owns this snapshot.",
+				beforeConcurrentUpdate.updatedAt.getTime() + 1_000,
+				preparing.id,
+			],
+		});
+		const staleRevision = await nightworkersRepo.transitionTaskRunIfCurrent({
+			runId: preparing.id,
+			expectedStatuses: ["running"],
+			expectedUpdatedAt: beforeConcurrentUpdate.updatedAt,
+			targetStatus: "cancelled",
+		});
+		expect(staleRevision).toMatchObject({
+			kind: "conflict",
+			current: {
+				id: preparing.id,
+				status: "running",
+				summary: "A newer writer owns this snapshot.",
+			},
+		});
+
+		const sameStatus = await nightworkersRepo.transitionTaskRunIfCurrent({
+			runId: preparing.id,
+			expectedStatuses: ["running"],
+			targetStatus: "running",
+		});
+		expect(sameStatus).toMatchObject({
+			kind: "applied",
+			run: { id: preparing.id, status: "running" },
+		});
+		await expect(
+			nightworkersRepo.transitionTaskRunIfCurrent({
+				runId: crypto.randomUUID(),
+				expectedStatuses: ["running"],
+				targetStatus: "cancelled",
+			}),
+		).resolves.toEqual({ kind: "not_found" });
+	});
+
+	it("prepares an initial prompt only from the context_compiling snapshot", async () => {
+		const repository = await nightworkersRepo.createRepository({
+			name: `TEST: Prompt preparation ${crypto.randomUUID()}`,
+			localPath: "/Users/y.noguchi/Code/nightWorkers",
+			branch: "main",
+		});
+		const task = await nightworkersRepo.createTask({
+			repositoryId: repository.id,
+			title: `TEST: Prompt preparation ${crypto.randomUUID()}`,
+			description: "Prompt preparation fixture",
+			objective: "Persist a prompt atomically with Run activation",
+			acceptanceCriteria: "Cancelled or started Runs cannot be overwritten",
+			status: "context_compiling",
+		});
+		const run = await nightworkersRepo.createTaskRun({
+			taskId: task.id,
+			repositoryId: repository.id,
+			status: "context_compiling",
+			contextSnapshot: { phase: "before_prompt" },
+		});
+
+		await expect(
+			persistPreparedRuntimePrompt({
+				taskId: task.id,
+				run,
+				resuming: false,
+				compiledPromptText: "first prepared prompt",
+				runtimeContextSnapshot: { phase: "prepared" },
+			}),
+		).resolves.toMatchObject({ id: run.id, status: "running" });
+		await expect(nightworkersRepo.getTask(task.id)).resolves.toMatchObject({
+			compiledPrompt: "first prepared prompt",
+		});
+
+		await expect(
+			persistPreparedRuntimePrompt({
+				taskId: task.id,
+				run,
+				resuming: false,
+				compiledPromptText: "stale prepared prompt",
+				runtimeContextSnapshot: { phase: "stale" },
+			}),
+		).rejects.toMatchObject({ code: "RUN_PROMPT_PREPARATION_CONFLICT" });
+		await expect(nightworkersRepo.getTask(task.id)).resolves.toMatchObject({
+			compiledPrompt: "first prepared prompt",
+		});
+		await expect(nightworkersRepo.getTaskRun(run.id)).resolves.toMatchObject({
+			status: "running",
+			contextSnapshot: { phase: "prepared" },
 		});
 	});
 

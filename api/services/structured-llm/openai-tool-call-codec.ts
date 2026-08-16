@@ -1,3 +1,4 @@
+import { decodeProviderToolCalls } from "./tool-argument-codec";
 import type { ProviderToolCall, ProviderToolDefinition } from "./tool-calls";
 
 export type OpenAIChatCompletionResponse = {
@@ -27,28 +28,22 @@ export function toOpenAIToolDefinition(tool: ProviderToolDefinition) {
 	};
 }
 
-export function toProviderToolCall(
-	call: OpenAIChatCompletionToolCall,
-): ProviderToolCall[] {
-	const name = call.function?.name;
-	if (!name) return [];
-	return [
-		{
-			id: call.id || `call_${Date.now()}`,
-			name,
-			arguments: parseToolArguments(call.function?.arguments ?? ""),
-		},
-	];
-}
-
-function parseToolArguments(raw: string): Record<string, unknown> {
-	if (!raw.trim()) return {};
-	try {
-		const parsed = JSON.parse(raw);
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: { value: parsed };
-	} catch {
-		return { _raw: raw };
-	}
+export function toProviderToolCalls(input: {
+	calls: readonly OpenAIChatCompletionToolCall[];
+	tools: readonly ProviderToolDefinition[];
+	provider: string;
+	content?: string;
+	responseBody?: string;
+}): ProviderToolCall[] {
+	return decodeProviderToolCalls({
+		provider: input.provider,
+		calls: input.calls.map((call, index) => ({
+			id: call.id || `call_${index}`,
+			name: call.function?.name || "<missing>",
+			arguments: call.function?.arguments ?? "",
+		})),
+		tools: input.tools,
+		content: input.content,
+		responseBody: input.responseBody,
+	});
 }

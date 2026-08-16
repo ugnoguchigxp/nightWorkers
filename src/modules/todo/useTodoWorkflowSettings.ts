@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { readJsonResponse } from "../../lib/api-error";
 import type { TodoWorkflowSettings } from "../nightworkers/types";
 import {
 	fetchTodoWorkflowSettings,
@@ -10,9 +11,9 @@ export function useTodoWorkflowSettings() {
 	const { data: todoWorkflowSettings = null } = useQuery({
 		queryKey: ["todoWorkflowSettings"],
 		queryFn: async () => {
-			const res = await fetchTodoWorkflowSettings();
-			if (!res.ok) throw new Error("Failed to fetch Todo Workflow settings");
-			return (await res.json()) as TodoWorkflowSettings;
+			return readJsonResponse<TodoWorkflowSettings>(
+				await fetchTodoWorkflowSettings(),
+			);
 		},
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
@@ -20,9 +21,9 @@ export function useTodoWorkflowSettings() {
 
 	const updateTodoWorkflowSettingsMutation = useMutation({
 		mutationFn: async (input: Partial<TodoWorkflowSettings>) => {
-			const res = await updateTodoWorkflowSettings(input);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as TodoWorkflowSettings;
+			return readJsonResponse<TodoWorkflowSettings>(
+				await updateTodoWorkflowSettings(input),
+			);
 		},
 		onSuccess: (settings) => {
 			queryClient.setQueryData(["todoWorkflowSettings"], settings);

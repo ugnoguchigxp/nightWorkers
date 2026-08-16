@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => {
 		listTaskRunTodosForRun: vi.fn(),
 		createRunEvent: vi.fn(),
 		updateTaskRun: vi.fn(),
+		transitionTaskRunIfCurrent: vi.fn(),
+		transitionRunOutcome: vi.fn(),
+		publishTaskRunUpdate: vi.fn(),
 		updateTaskStatus: vi.fn(),
 		createTaskMessage: vi.fn(),
 		getTaskRun: vi.fn(),
@@ -29,6 +32,8 @@ vi.mock("@api/modules/nightworkers/nightworkers.repository", () => ({
 	listTaskRunTodosForRun: mocks.listTaskRunTodosForRun,
 	createRunEvent: mocks.createRunEvent,
 	updateTaskRun: mocks.updateTaskRun,
+	transitionTaskRunIfCurrent: mocks.transitionTaskRunIfCurrent,
+	publishTaskRunUpdate: mocks.publishTaskRunUpdate,
 	updateTaskStatus: mocks.updateTaskStatus,
 	createTaskMessage: mocks.createTaskMessage,
 	getTaskRun: mocks.getTaskRun,
@@ -43,6 +48,9 @@ vi.mock("@api/modules/nightworkers/nightworkers.repository", () => ({
 vi.mock("@api/modules/codingAgent", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@api/modules/codingAgent")>()),
 	nativeLocalRunner: mocks.nativeLocalRunner,
+}));
+vi.mock("@api/modules/run/run-outcome-transition.repository", () => ({
+	transitionRunOutcome: mocks.transitionRunOutcome,
 }));
 
 import {
@@ -397,6 +405,12 @@ describe("run-query.service", () => {
 			mocks.nativeLocalRunner.getStatus.mockResolvedValue({
 				status: "stopped",
 			});
+			mocks.transitionRunOutcome.mockResolvedValue({
+				kind: "applied",
+				run: { id: "run-1", taskId: "task-1", status: "failed" },
+				task: { id: "task-1", status: "failed" },
+				queueEntry: null,
+			});
 			mocks.listTaskRunTodosForRun.mockResolvedValue([
 				{
 					id: "todo-1",
@@ -428,16 +442,17 @@ describe("run-query.service", () => {
 			const result = await recoverStaleActiveRuns("task-1");
 			expect(result).toEqual({ hasRunning: false, recoveredRunIds: ["run-1"] });
 
-			// Task run should be marked failed
-			expect(mocks.updateTaskRun).toHaveBeenCalledWith(
-				"run-1",
+			// Run, Task, and Queue are projected by the same stale-snapshot command.
+			expect(mocks.transitionRunOutcome).toHaveBeenCalledWith(
 				expect.objectContaining({
-					status: "failed",
+					run: expect.objectContaining({
+						id: "run-1",
+						targetStatus: "failed",
+					}),
 				}),
 			);
 
-			// Task status should be marked failed
-			expect(mocks.updateTaskStatus).toHaveBeenCalledWith("task-1", "failed");
+			expect(mocks.updateTaskStatus).not.toHaveBeenCalled();
 
 			// Task system message is registered
 			expect(mocks.createTaskMessage).toHaveBeenCalledWith({
@@ -447,6 +462,37 @@ describe("run-query.service", () => {
 				content: expect.any(String),
 				messageType: "text",
 			});
+		});
+
+		it("does not project or emit recovery side effects after a stale CAS conflict", async () => {
+			mocks.getTask.mockResolvedValue({ id: "task-1" });
+			mocks.listActiveTaskRunsForTask.mockResolvedValue([
+				{
+					id: "run-1",
+					status: "running",
+					updatedAt: new Date("2026-08-16T00:00:00.000Z"),
+				},
+			]);
+			mocks.nativeLocalRunner.getStatus.mockResolvedValue({
+				status: "stopped",
+			});
+			mocks.transitionRunOutcome.mockResolvedValue({
+				kind: "conflict",
+				run: { id: "run-1", status: "completed" },
+				task: { id: "task-1", status: "completed" },
+				queueEntry: null,
+			});
+
+			await expect(
+				recoverStaleActiveRuns("task-1", { force: true }),
+			).resolves.toEqual({
+				hasRunning: false,
+				recoveredRunIds: [],
+			});
+			expect(mocks.publishTaskRunUpdate).not.toHaveBeenCalled();
+			expect(mocks.updateTaskStatus).not.toHaveBeenCalled();
+			expect(mocks.createRunEvent).not.toHaveBeenCalled();
+			expect(mocks.createTaskMessage).not.toHaveBeenCalled();
 		});
 	});
 });

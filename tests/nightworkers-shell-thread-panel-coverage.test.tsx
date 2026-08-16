@@ -220,13 +220,15 @@ function elements(node: ReactNode): ReactElement[] {
 }
 
 function splitChild(root: ReactElement) {
-	return elements(root.props.splitPanel).find(
+	const element = elements(root.props.splitPanel).find(
 		(element) =>
 			element.props &&
 			("onProjectArtifactModeChange" in element.props ||
 				"todos" in element.props ||
 				"items" in element.props),
-	)!;
+	);
+	if (!element) throw new Error("Split panel child was not rendered.");
+	return element;
 }
 
 describe("NightWorkers shell thread panel coverage", () => {

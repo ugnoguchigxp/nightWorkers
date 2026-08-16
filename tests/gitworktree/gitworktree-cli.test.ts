@@ -49,6 +49,15 @@ describe("git worktree CLI boundary", () => {
 		});
 	});
 
+	it("disables interactive Git credential prompts", async () => {
+		const result = await runGitCommand(
+			["-e", "process.stdout.write(process.env.GIT_TERMINAL_PROMPT || '')"],
+			{ executable: process.execPath },
+		);
+
+		expect(result.stdout).toBe("0");
+	});
+
 	it("round-trips a real worktree path containing spaces", async () => {
 		const root = await mkdtemp(path.join(tmpdir(), "nightworkers-worktree-"));
 		cleanupPaths.push(root);

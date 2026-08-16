@@ -59,7 +59,10 @@ export function ProjectEvaluationScreen({
 			<div className="nightworkers-scrollbar min-h-0 flex-1 overflow-auto">
 				<div className="min-w-[1120px] space-y-4 p-4">
 					{controller.error ? (
-						<div className="rounded-md border border-[var(--nw-danger)] bg-[var(--nw-panel)] px-3 py-2 text-[var(--nw-danger)] text-sm">
+						<div
+							className="rounded-md border border-[var(--nw-danger)] bg-[var(--nw-panel)] px-3 py-2 text-[var(--nw-danger)] text-sm"
+							role="alert"
+						>
 							{controller.error}
 						</div>
 					) : null}

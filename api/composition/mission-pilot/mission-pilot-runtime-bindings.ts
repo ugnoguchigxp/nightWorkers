@@ -64,7 +64,50 @@ import { createMissionPilotFixtureBindings } from "./mission-pilot-fixture-bindi
 
 export function createMissionPilotRuntimeBindings(): MissionPilotRuntimeHostBindings &
 	MissionPilotPersistenceHostBinding {
-	const persistence = createMissionPilotPersistenceCapability();
+	const persistence = createMissionPilotPersistenceCapability({
+		async prepareAgentPlay(input) {
+			const capabilities = readCurrentTaskOperatorUserCapabilities({
+				subjectUserId: input.principal.actorId,
+				authorizationRef: input.principal.authorizationRef,
+			}).filter(isMissionPilotDelegatedCapability);
+			const projection = await readTaskOperatorProjection(input.taskId, {
+				principal: input.principal,
+			});
+			return {
+				grantedAt: input.grantedAt,
+				task: {
+					revision: projection.task.revision,
+					title: projection.task.title,
+					objective: projection.task.objective?.text ?? null,
+					acceptanceCriteria: projection.task.acceptanceCriteria?.text ?? null,
+				},
+				capabilities,
+				capabilityDigest: digestTaskOperatorCapabilityGrant({
+					subjectUserId: input.principal.actorId,
+					authorizationRef: input.principal.authorizationRef,
+					sessionId: input.sessionId,
+					taskId: input.taskId,
+					grantedAt: input.grantedAt,
+					capabilities,
+				}),
+			};
+		},
+		async resolveProviderToolCallActions(input) {
+			return Object.fromEntries(
+				input.toolCalls.map((call) => {
+					const selectedActionId =
+						call.name === "execute_task_action" &&
+						typeof call.arguments.actionId === "string"
+							? call.arguments.actionId
+							: null;
+					const action = selectedActionId
+						? getTaskOperatorActionDefinition(selectedActionId)
+						: null;
+					return [call.id, action?.actionId ?? call.name];
+				}),
+			);
+		},
+	});
 	return {
 		executeMissionPilotPersistence: persistence.execute,
 		contentDigest,
@@ -114,4 +157,27 @@ export function createMissionPilotRuntimeBindings(): MissionPilotRuntimeHostBind
 		systemContextPromptAudit,
 		...createMissionPilotFixtureBindings(),
 	};
+}
+
+function isMissionPilotDelegatedCapability(
+	capability: string,
+): capability is
+	| "plan"
+	| "queue"
+	| "implementation"
+	| "testMutation"
+	| "review"
+	| "localCommit"
+	| "taskComplete"
+	| "taskArchive" {
+	return [
+		"plan",
+		"queue",
+		"implementation",
+		"testMutation",
+		"review",
+		"localCommit",
+		"taskComplete",
+		"taskArchive",
+	].includes(capability);
 }

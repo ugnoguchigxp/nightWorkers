@@ -192,16 +192,166 @@ E0 で未達が再現した場合にだけ実施する。
 3. 巨大 file が実際に test seam を妨げている場合のみ、責務境界に沿った分割を当該領域の計画へ追加する。
 4. 行数を減らすための機械的な wrapper/file 移動は実施しない。
 
-## 7. 領域間依存
+## 7. Terra実行チケット台帳
+
+Area Eはcontractとconsumerを段階移行する。互換decoderは期限付きであり、最終route batch後にlegacy branchを
+削除する。coverageは最新baselineでfailureが再現しない限りproduction/testを変更しない。
+
+### E-T0: dirty baselineをaccepted状態に固定する
+
+- Findings: `M11`
+- Write set: なし。read-only計測と実行記録だけ。
+- Current conflict/stop: planning開始時点で`bun.lock`、`package.json`、
+  `scripts/coverage/coverage-policy.ts`、`scripts/run-vitest.mjs`、`vitest.backend.config.ts`、
+  `vitest.frontend.config.ts`、`vitest.coverage.ts`、新規`scripts/coverage/run-sharded-coverage.mjs`、
+  `tests/sharded-coverage.test.ts`ほかcoverage関連user差分がある。これらをrestore、stage、上書きしない。
+- Preconditions: 差分所有者が完了したaccepted baseline、HEAD、`git status --short`、Bun/Node versionを記録し、
+  coverage processが他にないこととoutput directoryがrun固有/排他的であることを確認する。
+- Command: accepted baselineの`package.json`を再読後、`bun run test:coverage`を単独で1回実行する。現在のscriptは
+  backend/frontend生成、combine、global、criticalを含むため、同じartifactを消す別coverage commandを続けて実行しない。
+- Record: exit code、各artifact absolute path、生成時刻、HEAD、critical area/status/branch pctを保存する。
+- Decision: 全gate passなら`M11=no code change`。missing/unmeasured/below thresholdのときだけE-T4を作業可能にする。
+- Stop: dirty baseline未解消、別coverage process、stale artifact、shard failureはcoverage不足へ読み替えない。
+
+### E-T1: 一般REST error schemaとserializerを一つにする
+
+- Findings: `m3`
+- Write set: 新規`shared/schemas/api-error.schema.ts`、新規`api/lib/api-error-response.ts`、
+  `api/middleware/error-handler.ts`、新規schema/serializer test、`tests/server-extra-coverage.test.ts`
+- Schema: `ApiErrorEnvelope = {error:{code:string;message:string;details?:unknown}}`。OpenAPI/runtime/frontendが同じ
+  Zod schema/typeをimportする。`stack`やflat top-level detailをschemaへ追加しない。
+- Serializer result: `{status, body, logLevel, logContext}`。`AppError`はstatus/code/message/detailsを保持、
+  `HTTPException`はstable code/statusへmap、unknownは500/`INTERNAL_SERVER_ERROR`/固定公開messageとし、raw error/stackは
+  request-scoped loggerだけへ渡す。`X-Request-Id` headerは既存logger middlewareを正本としbodyへ重複追加しない。
+- Provider/LLM: 公開を許可したtyped `AppError`本文は保持し、unknown provider errorを固定公開messageへ変える処理と
+  LLM本文の永続保持を混同しない。secret/path/stackをdetailsへ自動copyしない。
+- Done: AppError、HTTPException、unknown production/development、detailsなし/ありをschema parseし、status/code対応が一致する。
+
+### E-T2: global handlerとNightWorkers route wrapperをserializerへ移す
+
+- Findings: `m3`
+- Depends on: `E-T1`
+- Write set: `api/middleware/error-handler.ts`、
+  `api/modules/nightworkers/nightworkers.route-utils.ts`、
+  `api/modules/nightworkers/nightworkers.route-handlers.ts`、
+  `tests/nightworkers-routes-extra-coverage.test.ts`、`tests/server-extra-coverage.test.ts`
+- Wrapper: `queueRouteError`/`routeErrorResponse`/`withOpenApiRouteError`はE-T1 serializerだけを呼び、
+  `{error:string,code,...details}`を作らない。unknown errorのmessageを500 responseへ直接返さない。
+- Not found: `routeNotFound`は`NotFoundError`またはserializerのtyped inputを使い、404もcanonical nested envelopeにする。
+- OpenAPI: wrapper対象routeの400/404/409/422/500 response schemaをshared error schema参照へ変更する。success schemaは触らない。
+- Done: validation、not found、revision conflict、unknown errorのruntime payloadとOpenAPI schemaが一致し、既存statusを維持する。
+
+### E-T3a: Frontend共通decoderを追加して既存shapeを期限付き受理する
+
+- Findings: `m3`
+- Depends on: `E-T1`
+- Write set: 新規`src/lib/api-error.ts`、新規decoder unit test
+- Exports: `ApiResponseError`（status/code/details/requestId header保持）、`readJsonResponse<T>(response, schema?)`。
+  2xxでもJSON/schema parse失敗はtyped failure、非2xxはcanonical envelopeをparseしてthrowする。
+- Temporary compatibility: canonical nestedに加え、既知のlegacy `{error:string,code?:string}`だけを
+  `LEGACY_API_ERROR` fallbackとして受理する。任意objectやHTTP 2xxをsuccessへ捏造しない。
+- Deletion condition: E-T3b〜E-T3e完了後、repository-wide server producer検索とconsumer testが0件ならlegacy branch/testを削除する。
+- Done: nested、legacy flat、non-JSON、empty body、2xx invalid schema、429/500でcode/message/statusが一意になる。
+
+### E-T3b: Settings/Repository routeとconsumerを移行する
+
+- Findings: `m3`
+- Depends on: `E-T2`, `E-T3a`
+- Server write set: `api/routes/settings.ts`、`api/routes/settings-route-definitions.ts`、
+  `api/routes/mcp-settings.ts`、`api/routes/hooks-settings.ts`、
+  `api/modules/nightworkers/routes/repository-routes.ts`、関連definition/handler
+- Frontend write set: `src/modules/settings/settingsCommands.ts`、D-T1 query module、D-T0 repository query module、
+  `src/routes/repositories.tsx`
+- Method: moduleごとにerror response schema、runtime error、consumer decoder、route/component testを同じchange setで変更する。
+  Settingsの保存成功bodyはD-T1がcacheへ使える正規化済み値か、明示204/再取得のどちらかに固定する。
+- Tests: `tests/routes.settings-general.test.ts`、settings command/panel suite、repository route suite。
+- Done: 対象server fileのflat producerと対象consumerの独自error parserが0件。
+
+### E-T3c: Task/Run/Queue RESTを移行しcommand protocolを除外する
+
+- Findings: `m3`
+- Depends on: `E-T3b`, Area B contract
+- Server write set: `api/modules/nightworkers/routes/task-routes.ts`、`run-routes.ts`、`queue-routes.ts`、
+  `nightworkers.routes.ts`、`nightworkers.route-handlers.ts`、
+  `api/modules/queue/queue.routes.ts`、`queue-route-definitions.ts`
+- Frontend write set: `src/modules/nightworkers/nightWorkersCommands.ts`、
+  `src/modules/queue/queueCommands.ts`、`src/modules/nightworkers/components/project-detail/data.ts`、D-T2 TaskConsole
+- Exclusion: Coding Agent WebSocket/HTTP commandのtyped `ok/failure` envelope、MCP tool result、terminal event payloadは
+  一般REST errorへ変更しない。route pathではなく公開schemaで区別する。
+- Tests: NightWorkers route suites、queue route/command suites、Coding Agent command regression。
+- Done: 404/409/422/500がcanonical REST envelope、Coding Agent command failureは既存typed contractのまま。
+
+### E-T3d: Evaluation/Quality/Git Worktree RESTを移行する
+
+- Findings: `m3`
+- Depends on: `E-T3c`
+- Server write set: `api/modules/project-evaluation/project-evaluation.routes.ts`、
+  `api/modules/quality/quality.routes.ts`、`api/modules/gitworktree/gitworktree.routes.ts`
+- Frontend write set: `src/modules/project-evaluation/api/projectEvaluationCommands.ts`、
+  D-T3 controller、`src/modules/quality/api/qualityCommands.ts`、
+  `src/modules/quality/hooks/useProjectQualityController.ts`、
+  `src/modules/gitworktree/api/gitworktreeCommands.ts`
+- Method: `parseJsonResponse`と`payload.error`のroute固有分岐をE-T3a decoderへ置換する。long-running evaluationの
+  activity success schema/polling cursorは変更しない。
+- Tests: project evaluation real/controller suites、quality controller、gitworktree route/command suites。
+- Done: 3 moduleのconsumer独自decoderが0件で、status/code/messageを共通classから取得する。
+
+### E-T3e: Security Scan/Task Generation RESTを移行してlegacy decoderを削除する
+
+- Findings: `m3`
+- Depends on: `E-T3d`
+- Server write set: `api/modules/securityScan/security-scan.routes.ts`、
+  `api/modules/taskGeneration/task-generation.routes.ts`
+- Frontend write set: `src/modules/securityScan/securityScanCommands.ts`、
+  `useSecurityScanController.ts`、`SettingsVulnerabilityScanProviderPanel.tsx`、
+  `useSecurityTaskCandidateController.ts`、`src/modules/taskGeneration/api/taskGenerationCommands.ts`、
+  E-T3a decoder/test
+- Method: 3個以上あるlocal `readResponse`/error shape branchを共通decoderへ置換する。provider errorのtyped detailsは
+  shared envelopeの`details`へ保持し、message keywordで分類しない。
+- Cleanup gate: `rg`でserverのflat `{error:string}` producerとFrontendのlegacy parserを再検索し、一般REST対象が0なら
+  E-T3aのlegacy branchを削除する。残件があればfileを列挙した追加batchを作り、互換branchを黙って残さない。
+- Done: Security success/error/cancel/report/task generation test、全route contract test、legacy decoder削除が通る。
+
+### E-T4: 最新critical coverage未達だけをbehavior testで補う
+
+- Findings: `M11`
+- Depends on: `E-T0`が`below_threshold`を記録した場合だけ
+- Write set: E-T0 reportが示したcritical production fileの近接testだけ。coverage config/policy/thresholdは変更しない。
+- Method: coverage JSONからfile、branch line、未実行edgeを特定し、公開command/APIからerror、race、cleanup、provider failureを
+  再現する。私有関数の単純callや無意味なtruthy assertionで数値だけを通さない。
+- Verify: 対象suite、対象critical evaluator、`bun run test:coverage`の順に直列実行する。missing/unmeasuredはtest追加前に
+  instrumentation/source map対象を直す別ticketとする。
+- Stop: E-T0がpassならこのticketを実行しない。production refactorが必要なら該当Area A〜Dへ戻す。
+- Done: 同一HEAD/run artifactで全critical areaがthreshold以上、global threshold低下/除外追加なし。
+
+### E-T5: Dの4優先画面にbehavior証明を追加する
+
+- Findings: `m4`
+- Depends on: 対応する`D-T0`〜`D-T3`
+- Write set: 新規または既存のRepositories、Settings、TaskConsole、Project Evaluation behavior suite。
+  `tests/frontend-component-branch-coverage.test.tsx`は削除・全面rewriteしない。
+- Required assertions: loading、success、API error+retry、主要mutation後のDOM/cache、terminal/empty、現実的な遅延競合を
+  role/name/text/request payloadで検証する。対象componentと主要childを全mockしない。
+- Cleanup: 既存の`resolves.toBeTruthy()`だけのcaseは、新testが同じ公開回帰を覆うことを示せるcaseだけ整理する。
+- Done: 4画面それぞれにsuccess/error/action/lifecycleのDOM interaction testがあり、module mock存在確認が唯一の防波堤でない。
+
+### E-T6: `m2`非改修判断を静的に確認する
+
+- Findings: `m2`（変更対象外）
+- Write set: 原則なし。既存architecture testが600行上限を検査しない場合だけ当該既存check/test。
+- Contract: 600行上限を維持し、baseline例外を増やさない。coverage failureをfile lengthへ自動帰属しない。
+- Done: `bun run check:architecture`で上限が有効、今回の差分に数値目的のwrapper/file移動がない。
+
+## 8. 領域間依存
 
 - [Frontend Server State and UX](./frontend-server-state-and-ux-implementation-plan.md): E1/E2 の decoder を利用し、E4 の behavior test 対象を提供する。
 - [Run and Queue State Integrity](./run-queue-state-integrity-implementation-plan.md): lifecycle/race branch が critical target の場合、状態不変条件を E3 の expected behavior に使う。
 - [Agent Runtime Boundary and LLM Reliability](./agent-runtime-boundary-and-llm-reliability-implementation-plan.md): provider/command failure 本文保持と typed failure の境界を共有する。
 - [Execution Security and Resource Safety](./execution-security-and-resource-safety-implementation-plan.md): security rejection の code/status と secret 非露出を API contract test で固定する。
 
-## 8. 検証計画
+## 9. 検証計画
 
-### 8.1 API contract
+### 9.1 API contract
 
 ```bash
 bun run typecheck
@@ -226,7 +376,7 @@ bun run check:architecture
 - unexpected internal error の情報非露出
 - Coding Agent command typed failure の非回帰
 
-### 8.2 Coverage
+### 9.2 Coverage
 
 ```bash
 bun run test:coverage
@@ -237,7 +387,7 @@ bun run test:coverage:critical
 - gate output に commit、生成時刻、coverage artifact identity、対象 file の metric を含める。
 - full coverage と critical gate を同時並行で実行しない。
 
-### 8.3 UI behavior
+### 9.3 UI behavior
 
 ```bash
 rg --files tests src | rg "(settings|task-console|evaluation|repositories).*(test|spec)"
@@ -249,7 +399,7 @@ node scripts/run-vitest.mjs run \
 
 上記の既存 file 名は作業開始 HEAD で存在確認し、対象 suite を個別実行した後に full test を実行する。
 
-### 8.4 全体回帰
+### 9.4 全体回帰
 
 ```bash
 bun run lint
@@ -258,7 +408,7 @@ bun run test
 bun run verify
 ```
 
-## 9. Rollout と migration
+## 10. Rollout と migration
 
 - error envelope は route module 単位で移行し、server と consumer を同一 release で互換にする。
 - legacy decoder は期限と削除条件を code comment ではなく本計画の実行記録または Todo に明記する。
@@ -266,7 +416,7 @@ bun run verify
 - UI test 改善は Frontend 実装 change と同じ PR/change set に含め、後追いの大規模 test rewrite にしない。
 - API error telemetry で unknown/legacy shape がゼロになったことを確認して legacy branch を削除する。telemetry がない場合は repository-wide route/consumer search と contract test を削除条件にする。
 
-## 10. リスクと対策
+## 11. リスクと対策
 
 - **error contract の過剰統一**: REST transport error と role 固有 command failure を別 schema として維持する。
 - **移行中の互換分岐の恒久化**: legacy decoder に削除 phase と repository-wide search 条件を設定する。
@@ -275,7 +425,7 @@ bun run verify
 - **既存完了事項の二重実装**: E0 で pass した target は触らず、evidence だけ更新する。
 - **巨大 file への誤帰属**: 実際の未達 branch と test seam を確認するまで分割を開始しない。
 
-## 11. 完了条件
+## 12. 完了条件
 
 - `M11`, `m3`, `m4` に最新 baseline、実装 diff または変更不要 evidence、test 結果が紐づいている。
 - `m2` は根拠不足の因果を復活させず、600 行制限を維持した非改修判定になっている。

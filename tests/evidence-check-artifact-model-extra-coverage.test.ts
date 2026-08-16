@@ -95,10 +95,16 @@ function response(
 	overrides: Record<string, unknown> = {},
 	jsonValue: unknown = { ok: true },
 ) {
+	const ok = overrides.ok ?? true;
 	return {
 		status: 200,
-		ok: true,
-		json: vi.fn(async () => jsonValue),
+		ok,
+		headers: { get: vi.fn(() => null) },
+		json: vi.fn(async () =>
+			ok
+				? jsonValue
+				: { error: { code: "TEST_FAILURE", message: "request failed" } },
+		),
 		...overrides,
 	};
 }
@@ -297,7 +303,7 @@ describe("EvidenceCheckArtifactModel extra coverage", () => {
 			response({ ok: false, status: 500 }),
 		);
 		await expect(options.queryFn as () => Promise<unknown>).rejects.toThrow(
-			"Failed to fetch the latest Evidence Check",
+			"request failed",
 		);
 
 		const descriptor = { verificationDocumentId: "document-ok" };
@@ -332,7 +338,7 @@ describe("EvidenceCheckArtifactModel extra coverage", () => {
 			response({ ok: false, status: 404 }),
 		);
 		await expect(options.queryFn as () => Promise<unknown>).rejects.toThrow(
-			"Failed to fetch evidence readiness",
+			"request failed",
 		);
 		expect(controls.apiFetch).toHaveBeenCalledWith(
 			"/api/coding-agent/tasks/task%20%2F%20id/evidence-check/document%20%2F%20id",

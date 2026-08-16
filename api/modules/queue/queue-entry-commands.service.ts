@@ -1,9 +1,12 @@
+import { getDeepRecordString } from "../../../shared/json-record";
 import { AppError, NotFoundError } from "../../lib/errors";
+import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import {
 	assertTaskDraftComplete,
 	hasImplementationPlanEvidence,
 } from "../nightworkers/nightworkers.planning-helpers.service";
 import * as nightworkersRepo from "../nightworkers/nightworkers.repository";
+import { stopTaskRun } from "../nightworkers/run-orchestration/stop-task-run";
 import * as repo from "./queue.repository";
 import {
 	assertMissionProposalQueueApproval,
@@ -92,37 +95,83 @@ export async function createImplementationQueueEntry(
 		task,
 		messages,
 	});
+	// Workspace provisioning can attach a worktree and advance updatedAt.  Re-read
+	// the Task so the admission CAS protects against concurrent changes without
+	// rejecting this service's own preparation transition.
+	const taskForAdmission = await nightworkersRepo.getTask(taskId);
+	if (!taskForAdmission) throw new NotFoundError("Task not found");
+	if (
+		["completed", "cancelled", "failed", "timed_out"].includes(
+			taskForAdmission.status,
+		)
+	) {
+		throw new AppError(
+			409,
+			"TASK_TERMINAL",
+			"Terminal sessions cannot enter the Implementation Queue.",
+		);
+	}
+	assertTaskDraftComplete(taskForAdmission, messages);
+	if (
+		!hasImplementationPlanEvidence(messages) &&
+		!["ready", "queued"].includes(taskForAdmission.status)
+	) {
+		throw new AppError(
+			422,
+			"IMPLEMENTATION_PLAN_REQUIRED",
+			"Create or mark an implementation plan before adding this session to the Queue.",
+		);
+	}
 	const scheduling = resolveSchedulingDecisionFromMessages(messages);
-	const queuedTask =
-		task.status === "queued"
-			? task
-			: await nightworkersRepo.updateTask(taskId, { status: "queued" });
-	if (!queuedTask) throw new NotFoundError("Task not found");
-	const entry = await repo.createImplementationQueueEntry({
-		taskId,
-		repositoryId: queuedTask.repositoryId,
-		priority: queuedTask.priority,
-		executionType: scheduling.executionType,
-		executionLockKey: `repository:${queuedTask.repositoryId}`,
-		sequenceGroupId: scheduling.sequenceGroupId,
-		sequenceOrder: scheduling.sequenceOrder,
-		schedulingReason: scheduling.schedulingReason,
-		workspaceId: workspace?.id ?? null,
-		workspaceRequired: Boolean(workspace),
-	});
-	await nightworkersRepo.createTaskMessage({
-		taskId,
-		role: "system",
-		content: "Implementation Queue entry created.",
-		messageType: "text",
-		payloadJson: {
-			source: "implementation_queue",
-			status: "queued",
-			queueEntryId: entry.id,
-		},
+	let admission: Awaited<ReturnType<typeof repo.admitImplementationQueueEntry>>;
+	try {
+		admission = await repo.admitImplementationQueueEntry({
+			task: {
+				id: taskForAdmission.id,
+				expectedStatus: taskForAdmission.status,
+				expectedUpdatedAt: taskForAdmission.updatedAt,
+			},
+			entry: {
+				taskId,
+				repositoryId: task.repositoryId,
+				priority: task.priority,
+				executionType: scheduling.executionType,
+				executionLockKey: `repository:${task.repositoryId}`,
+				sequenceGroupId: scheduling.sequenceGroupId,
+				sequenceOrder: scheduling.sequenceOrder,
+				schedulingReason: scheduling.schedulingReason,
+				workspaceId: workspace?.id ?? null,
+				workspaceRequired: Boolean(workspace),
+			},
+		});
+	} catch (cause) {
+		if (isQueueEntryUniqueConstraint(cause)) {
+			throw new AppError(
+				409,
+				"QUEUE_ENTRY_EXISTS",
+				"This session already has an active Queue Entry.",
+			);
+		}
+		if (cause instanceof repo.QueueEntryTransitionConflict) {
+			throw new AppError(
+				409,
+				"QUEUE_ENTRY_CONFLICT",
+				"Task state changed while creating the Queue Entry; re-read the Task.",
+			);
+		}
+		throw cause;
+	}
+	nightWorkersRealtimeBroker.publish(admission.task.id, {
+		type: "task_status_updated",
+		payload: { status: admission.task.status, task: admission.task },
 	});
 	runImplementationQueueWhenEnabled(options);
-	return entry;
+	return admission.entry;
+}
+
+function isQueueEntryUniqueConstraint(error: unknown) {
+	const code = getDeepRecordString(error, "code");
+	return code === "SQLITE_CONSTRAINT" || code === "SQLITE_CONSTRAINT_UNIQUE";
 }
 
 export async function patchImplementationQueueEntry(
@@ -137,20 +186,36 @@ export async function patchImplementationQueueEntry(
 	const entry = await repo.getImplementationQueueEntry(id);
 	if (!entry) throw new NotFoundError("Queue Entry not found");
 	if (input.action === "cancel") {
-		const cancelled = await repo.updateImplementationQueueEntry(id, {
-			status: "cancelled",
-			statusReason: "Cancelled by user.",
-			processorSlot: null,
-			leaseOwnerId: null,
-			leaseAcquiredAt: null,
-			leaseExpiresAt: null,
-			lastFailureKind: "manual_cancel",
-		});
-		const task = await nightworkersRepo.getTask(entry.taskId);
-		if (task?.status === "queued") {
-			await nightworkersRepo.updateTask(entry.taskId, { status: "ready" });
+		if (isTerminalQueueStatus(entry.status)) return entry;
+		if (entry.activeRunId || entry.status === "processing") {
+			if (!entry.activeRunId) {
+				throw queueEntryConflict(entry);
+			}
+			const run = await nightworkersRepo.getTaskRun(entry.activeRunId);
+			if (!run) throw queueEntryConflict(entry);
+			await stopTaskRun(run.id);
+			const updated = await repo.getImplementationQueueEntry(id);
+			if (!updated) throw new NotFoundError("Queue Entry not found");
+			return updated;
 		}
-		return cancelled;
+		const task = await nightworkersRepo.getTask(entry.taskId);
+		if (!task) throw new NotFoundError("Task not found");
+		const cancelled = await repo.cancelImplementationQueueEntryWithoutRun({
+			entry: {
+				id: entry.id,
+				expectedStatus: entry.status,
+				expectedLeaseVersion: entry.leaseVersion,
+				expectedActiveRunId: entry.activeRunId,
+			},
+			task: {
+				id: task.id,
+				expectedStatus: task.status,
+				expectedUpdatedAt: task.updatedAt,
+			},
+		});
+		if (cancelled.kind === "conflict")
+			throw queueEntryConflict(cancelled.entry);
+		return cancelled.entry;
 	}
 	if (input.action === "resume") {
 		if (entry.status !== "needs_human") {
@@ -160,12 +225,35 @@ export async function patchImplementationQueueEntry(
 				"Only needs_human entries can resume.",
 			);
 		}
-		const resumed = await repo.updateImplementationQueueEntry(id, {
-			status: "processing",
-			statusReason: null,
+		let activeRun = null;
+		if (entry.activeRunId) {
+			activeRun = await nightworkersRepo.getTaskRun(entry.activeRunId);
+			if (activeRun?.status === "needs_human") {
+				throw new AppError(
+					409,
+					"QUEUE_RUN_REQUIRES_TASK_RESUME",
+					"Resume the active Run through the Task command.",
+					{ activeRunId: entry.activeRunId },
+				);
+			}
+			if (
+				activeRun &&
+				!["completed", "failed", "cancelled", "timed_out"].includes(
+					activeRun.status,
+				)
+			) {
+				throw queueEntryConflict(entry);
+			}
+		}
+		const resumed = await repo.resumeImplementationQueueEntryWithoutRun({
+			id: entry.id,
+			expectedStatus: entry.status,
+			expectedLeaseVersion: entry.leaseVersion,
+			expectedActiveRunId: entry.activeRunId,
 		});
+		if (resumed.kind === "conflict") throw queueEntryConflict(resumed.entry);
 		runImplementationQueueWhenEnabled(options);
-		return resumed;
+		return resumed.entry;
 	}
 	if (entry.status !== "queued") {
 		throw new AppError(
@@ -178,6 +266,17 @@ export async function patchImplementationQueueEntry(
 		priority: input.priority ?? entry.priority,
 		queuePosition: input.queuePosition ?? entry.queuePosition,
 	});
+}
+
+function queueEntryConflict(
+	entry: Awaited<ReturnType<typeof repo.getImplementationQueueEntry>> | null,
+) {
+	return new AppError(
+		409,
+		"QUEUE_ENTRY_CONFLICT",
+		"Queue Entry state changed; re-read the Queue.",
+		{ currentQueueEntryId: entry?.id ?? null },
+	);
 }
 
 export async function archiveImplementationQueueEntry(

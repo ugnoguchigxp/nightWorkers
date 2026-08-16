@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { readJsonResponse } from "../../lib/api-error";
 import type { DesignQuestionnaireSession } from "../nightworkers/types";
 import { fetchDesignQuestionnaireSessions } from "./questionnaireCommands";
 
@@ -10,10 +11,9 @@ export function designQuestionnaireSessionsQueryOptions(taskId: string | null) {
 		queryKey: designQuestionnaireSessionsQueryKey(taskId),
 		queryFn: async () => {
 			if (!taskId) return [];
-			const response = await fetchDesignQuestionnaireSessions(taskId);
-			if (!response.ok)
-				throw new Error("Failed to fetch Design Questionnaire sessions");
-			return (await response.json()) as DesignQuestionnaireSession[];
+			return readJsonResponse<DesignQuestionnaireSession[]>(
+				await fetchDesignQuestionnaireSessions(taskId),
+			);
 		},
 		enabled: Boolean(taskId),
 		refetchOnWindowFocus: false,

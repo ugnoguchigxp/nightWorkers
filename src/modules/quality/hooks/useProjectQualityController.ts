@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectQualityOverview } from "../../../../shared/schemas/quality.schema";
 import { i18next } from "../../../i18n/setup";
+import { ApiResponseError, readJsonResponse } from "../../../lib/api-error";
 import type { Task } from "../../nightworkers/types";
 import {
 	createCoverageImprovementTask,
@@ -12,36 +13,6 @@ import {
 	e2eRowsFromSummary,
 } from "../components/QualityReportPanel";
 import { coverageRowsFromSummary } from "../model/qualityRows";
-
-class QualityResponseError extends Error {
-	constructor(
-		message: string,
-		readonly status: number,
-	) {
-		super(message);
-	}
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-	const payload = (await response.json().catch(() => null)) as unknown;
-	if (!response.ok) {
-		const errorValue =
-			payload && typeof payload === "object" && "error" in payload
-				? payload.error
-				: null;
-		const message =
-			typeof errorValue === "string"
-				? errorValue
-				: errorValue &&
-						typeof errorValue === "object" &&
-						"message" in errorValue &&
-						typeof errorValue.message === "string"
-					? errorValue.message
-					: `Request failed: ${response.status}`;
-		throw new QualityResponseError(message, response.status);
-	}
-	return payload as T;
-}
 
 export function useProjectQualityController(input: {
 	repositoryId: string;
@@ -214,10 +185,7 @@ export function useProjectQualityController(input: {
 				actionGenerationRef.current !== actionGeneration
 			)
 				return;
-			if (
-				taskError instanceof QualityResponseError &&
-				taskError.status === 409
-			) {
+			if (taskError instanceof ApiResponseError && taskError.status === 409) {
 				setSelectedFileKeys([]);
 				setNotice(i18next.t("projectDetail.quality.coverageTaskStale"));
 				await load().catch(() => undefined);

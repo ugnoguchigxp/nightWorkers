@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { readJsonResponse } from "../../lib/api-error";
 import type {
 	ImplementationQueueDashboard,
 	ImplementationQueueHealth,
@@ -28,9 +29,9 @@ export function useImplementationQueue() {
 	} = useQuery({
 		queryKey: ["implementationQueue"],
 		queryFn: async () => {
-			const res = await fetchImplementationQueue();
-			if (!res.ok) throw new Error("Failed to fetch implementation queue");
-			return (await res.json()) as ImplementationQueueDashboard;
+			return readJsonResponse<ImplementationQueueDashboard>(
+				await fetchImplementationQueue(),
+			);
 		},
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
@@ -41,10 +42,9 @@ export function useImplementationQueue() {
 	} = useQuery({
 		queryKey: ["implementationQueueHealth"],
 		queryFn: async () => {
-			const res = await fetchImplementationQueueHealth();
-			if (!res.ok)
-				throw new Error("Failed to fetch implementation queue health");
-			return (await res.json()) as ImplementationQueueHealth;
+			return readJsonResponse<ImplementationQueueHealth>(
+				await fetchImplementationQueueHealth(),
+			);
 		},
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
@@ -55,11 +55,11 @@ export function useImplementationQueue() {
 			sessionId: string;
 			approveMissionProposal?: boolean;
 		}) => {
-			const res = await createImplementationQueueEntry(input.sessionId, {
-				approveMissionProposal: input.approveMissionProposal,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
+			return readJsonResponse(
+				await createImplementationQueueEntry(input.sessionId, {
+					approveMissionProposal: input.approveMissionProposal,
+				}),
+			);
 		},
 		onSuccess: () => {
 			invalidateQueueState(queryClient);
@@ -69,20 +69,15 @@ export function useImplementationQueue() {
 
 	const archiveImplementationQueueEntryMutation = useMutation({
 		mutationFn: async (entryId: string) => {
-			const res = await archiveImplementationQueueEntry(entryId);
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
+			return readJsonResponse(await archiveImplementationQueueEntry(entryId));
 		},
 		onSuccess: () => invalidateQueueState(queryClient),
 	});
 
 	const removeImplementationQueueEntryMutation = useMutation({
 		mutationFn: async (entryId: string) => {
-			const cancelRes = await cancelImplementationQueueEntry(entryId);
-			if (!cancelRes.ok) throw new Error(await cancelRes.text());
-			const archiveRes = await archiveImplementationQueueEntry(entryId);
-			if (!archiveRes.ok) throw new Error(await archiveRes.text());
-			return archiveRes.json();
+			await readJsonResponse(await cancelImplementationQueueEntry(entryId));
+			return readJsonResponse(await archiveImplementationQueueEntry(entryId));
 		},
 		onSuccess: () => {
 			invalidateQueueState(queryClient);
@@ -92,11 +87,11 @@ export function useImplementationQueue() {
 
 	const requeueImplementationQueueEntryMutation = useMutation({
 		mutationFn: async (input: { entryId: string; note?: string }) => {
-			const res = await requeueImplementationQueueEntry(input.entryId, {
-				note: input.note,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
+			return readJsonResponse(
+				await requeueImplementationQueueEntry(input.entryId, {
+					note: input.note,
+				}),
+			);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -110,12 +105,9 @@ export function useImplementationQueue() {
 			entryId: string;
 			data: { queuePosition?: number | null; priority?: number };
 		}) => {
-			const res = await updateImplementationQueueEntry(
-				input.entryId,
-				input.data,
+			return readJsonResponse(
+				await updateImplementationQueueEntry(input.entryId, input.data),
 			);
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -125,9 +117,9 @@ export function useImplementationQueue() {
 
 	const updateImplementationQueueProcessorCountMutation = useMutation({
 		mutationFn: async (processorCount: number) => {
-			const res = await updateImplementationQueueSettings({ processorCount });
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
+			return readJsonResponse(
+				await updateImplementationQueueSettings({ processorCount }),
+			);
 		},
 		onSuccess: () => invalidateQueueState(queryClient),
 	});
@@ -138,12 +130,12 @@ export function useImplementationQueue() {
 			action: "retry" | "mark_needs_human" | "cancel" | "archive" | "complete";
 			note?: string;
 		}) => {
-			const res = await recoverImplementationQueueEntry(input.entryId, {
-				action: input.action,
-				note: input.note,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
+			return readJsonResponse(
+				await recoverImplementationQueueEntry(input.entryId, {
+					action: input.action,
+					note: input.note,
+				}),
+			);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });

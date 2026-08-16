@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { readJsonResponse } from "../../lib/api-error";
 import type {
 	McpServerConfig,
 	McpServerImportResult,
@@ -19,9 +20,9 @@ export function useMcpSettings() {
 	const { data: mcpServers = [] } = useQuery({
 		queryKey: ["mcpServers"],
 		queryFn: async () => {
-			const res = await fetchMcpServers();
-			if (!res.ok) throw new Error("Failed to fetch MCP servers");
-			const data = (await res.json()) as { servers: McpServerConfig[] };
+			const data = await readJsonResponse<{ servers: McpServerConfig[] }>(
+				await fetchMcpServers(),
+			);
 			return data.servers;
 		},
 		refetchOnWindowFocus: false,
@@ -31,35 +32,34 @@ export function useMcpSettings() {
 	return {
 		mcpServers,
 		createMcpServer: async (input: McpServerInput) => {
-			const res = await createMcpServer(input);
-			if (!res.ok) throw new Error(await res.text());
-			const server = (await res.json()) as McpServerConfig;
+			const server = await readJsonResponse<McpServerConfig>(
+				await createMcpServer(input),
+			);
 			queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
 			return server;
 		},
 		importMcpServers: async (text: string, testAfterImport = true) => {
-			const res = await importMcpServers({ text, testAfterImport });
-			if (!res.ok) throw new Error(await res.text());
-			const result = (await res.json()) as McpServerImportResult;
+			const result = await readJsonResponse<McpServerImportResult>(
+				await importMcpServers({ text, testAfterImport }),
+			);
 			queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
 			return result;
 		},
 		updateMcpServer: async (id: string, input: Partial<McpServerInput>) => {
-			const res = await updateMcpServer(id, input);
-			if (!res.ok) throw new Error(await res.text());
-			const server = (await res.json()) as McpServerConfig;
+			const server = await readJsonResponse<McpServerConfig>(
+				await updateMcpServer(id, input),
+			);
 			queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
 			return server;
 		},
 		deleteMcpServer: async (id: string) => {
-			const res = await deleteMcpServer(id);
-			if (!res.ok) throw new Error(await res.text());
+			await readJsonResponse(await deleteMcpServer(id));
 			queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
 		},
 		testMcpServer: async (id: string) => {
-			const res = await testMcpServer(id);
-			if (!res.ok) throw new Error(await res.text());
-			const result = (await res.json()) as McpServerTestResult;
+			const result = await readJsonResponse<McpServerTestResult>(
+				await testMcpServer(id),
+			);
 			queryClient.invalidateQueries({ queryKey: ["mcpServers"] });
 			return result;
 		},

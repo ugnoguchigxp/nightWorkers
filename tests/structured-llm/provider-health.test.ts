@@ -112,6 +112,33 @@ describe("structured LLM provider health", () => {
 		expect(result.message).toMatch(/valid JSON/i);
 	});
 
+	it("rejects an oversized execution-readiness body without treating it as healthy", async () => {
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValue(
+				new Response("x".repeat(4 * 1024 * 1024 + 1), { status: 200 }),
+			);
+		const result = await checkStructuredLlmProviderExecutionReadiness(
+			{
+				id: "local-oversized",
+				name: "Local Oversized",
+				kind: "local",
+				enabled: true,
+				baseUrl: "http://localhost:11434/v1",
+				models: ["qwen3-coder"],
+			},
+			{ fetchImpl },
+		);
+
+		expect(result).toMatchObject({
+			ok: false,
+			reachable: true,
+			status: 200,
+			probeKind: "execution_readiness",
+		});
+		expect(result.message).toMatch(/could not be read/i);
+	});
+
 	it("does not report execution readiness when the response has no message choice", async () => {
 		const fetchImpl = vi
 			.fn()

@@ -1,12 +1,17 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createCodingAgentHostAdapter } from "../api/composition/coding-agent";
 import { buildCodingAgentSystemContext } from "../api/modules/codingAgent/context";
 import {
 	requestContextMismatchToMcp,
 	resolveRequestScopedIdentity,
 } from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-support";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
 import { CodexAgentRuntime } from "../api/modules/codingAgent/runtime/CodexAgentRuntime";
 import { createCodexRuntimeThread } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client";
 import { buildCodexRuntimePromptParts } from "../api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt";
@@ -19,6 +24,14 @@ import {
 	deleteRepository,
 } from "../api/modules/nightworkers/nightworkers.repository";
 import { runCommandTool } from "../api/services/worker-tools";
+
+beforeEach(() => {
+	configureCodingAgentHost(createCodingAgentHostAdapter());
+});
+
+afterEach(() => {
+	clearCodingAgentHostForTest();
+});
 
 describe("Coding Agent runtime reliability integration", () => {
 	it("recovers the incident chain without losing authority, evidence, or the final candidate", async () => {
@@ -163,8 +176,10 @@ describe("Coding Agent runtime reliability integration", () => {
 				expect.objectContaining({ status: "fallback_started" }),
 			]);
 
+			const checkLog = path.join(repoRoot, "todo-api-check.log");
+			await fs.writeFile(checkLog, "404 GET /api/todos/\n", "utf8");
 			const failedCheck = await runCommandTool({
-				command: "echo '404 GET /api/todos/' | grep '200' | head -1",
+				command: "grep '200' todo-api-check.log",
 				repoRoot,
 			});
 			expect(failedCheck).toMatchObject({
@@ -174,11 +189,12 @@ describe("Coding Agent runtime reliability integration", () => {
 					exitCode: 1,
 					cwd: repoRoot,
 					repositoryRoot: repoRoot,
-					command: expect.stringContaining("/api/todos/"),
+					command: "grep '200' todo-api-check.log",
 				},
 			});
+			await fs.writeFile(checkLog, "200 GET /api/todos/\n", "utf8");
 			const successfulCheck = await runCommandTool({
-				command: "echo '200 GET /api/todos/' | grep '200' | head -1",
+				command: "grep '200' todo-api-check.log",
 				repoRoot,
 			});
 			expect(successfulCheck).toMatchObject({

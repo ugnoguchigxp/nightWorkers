@@ -1,79 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Setter = ReturnType<typeof vi.fn>;
+type QueryData = {
+	providerSettings: Record<string, unknown> | null;
+	capabilities: Record<string, unknown> | null;
+	history: { items: Array<Record<string, unknown>> };
+	detail: Record<string, unknown> | null;
+	findings: Array<Record<string, unknown>>;
+	reports: Array<Record<string, unknown>>;
+};
+
 let stateSetters: Setter[] = [];
 let refs: Array<{ current: unknown }> = [];
 let effectCleanups: Array<() => void> = [];
-let pendingEffects: Array<() => void | (() => void)> = [];
-
-function mockReactHooks(
-	values: unknown[],
-	options: {
-		runEffects?: boolean;
-		deferEffects?: boolean;
-		refValues?: unknown[];
-	} = {},
-) {
-	const stateValues = [...values];
-	const refValues = [...(options.refValues ?? [])];
-	stateSetters = [];
-	refs = [];
-	effectCleanups = [];
-	pendingEffects = [];
-	vi.resetModules();
-	vi.doMock("react", async () => {
-		const actual = await vi.importActual<typeof import("react")>("react");
-		return {
-			...actual,
-			useCallback: <T extends (...args: never[]) => unknown>(callback: T) =>
-				callback,
-			useMemo: <T>(factory: () => T) => factory(),
-			useEffect: (callback: () => void | (() => void)) => {
-				if (options.deferEffects) {
-					pendingEffects.push(callback);
-					return;
-				}
-				if (!options.runEffects) return;
-				const cleanup = callback();
-				if (typeof cleanup === "function") effectCleanups.push(cleanup);
-			},
-			useRef: <T>(initial: T) => {
-				const ref = {
-					current: (refValues.length ? refValues.shift() : initial) as T,
-				};
-				refs.push(ref as { current: unknown });
-				return ref;
-			},
-			useState: <T>(initial: T | (() => T)) => {
-				const value = stateValues.length
-					? (stateValues.shift() as T)
-					: typeof initial === "function"
-						? (initial as () => T)()
-						: initial;
-				const setter = vi.fn((next: T | ((current: T) => T)) =>
-					typeof next === "function"
-						? (next as (current: T) => T)(value)
-						: next,
-				);
-				stateSetters.push(setter);
-				return [value, setter] as const;
-			},
-		};
-	});
-}
-
-function jsonResponse(body: unknown, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "content-type": "application/json" },
-	});
-}
+let pendingEffects: Array<() => undefined | (() => void)> = [];
+let queryOptions: Array<Record<string, unknown>> = [];
+let queryClient: {
+	setQueryData: ReturnType<typeof vi.fn>;
+	invalidateQueries: ReturnType<typeof vi.fn>;
+	fetchQuery: ReturnType<typeof vi.fn>;
+};
 
 const baseSelection = {
 	mode: "preset" as const,
 	presetId: "standard" as const,
 };
 const baseTarget = { kind: "working_tree" as const };
+const providerSettings = {
+	enabled: true,
+	transport: "local_cli",
+	baseUrl: "http://localhost",
+	tokenConfigured: false,
+	localCliConfigured: true,
+};
 const capabilities = {
 	provider: { id: "vulnworkbench", version: "1.2.3" },
 	project: { ref: "project-1", displayName: "Project" },
@@ -116,14 +75,13 @@ const preview = {
 	warnings: [],
 	expiresAt: "2026-08-08T00:00:00.000Z",
 };
-const completedScan = {
+const runningScan = {
 	scanRunRef: "scan-1",
-	status: "completed",
+	status: "running",
 	progress: null,
 	summary: null,
 	error: null,
 };
-const runningScan = { ...completedScan, status: "running" };
 const report = {
 	reportRef: "report-1",
 	scanRunRef: "scan-1",
@@ -133,39 +91,114 @@ const report = {
 };
 
 function controllerState(overrides: Record<number, unknown> = {}) {
-	const values: unknown[] = [
-		null,
-		null,
-		[],
-		baseSelection,
-		baseTarget,
-		null,
-		null,
-		[],
-		[],
-		"initial",
-		"",
-	];
-	for (const [index, value] of Object.entries(overrides))
+	const values: unknown[] = [baseSelection, baseTarget, null, null, null, ""];
+	for (const [index, value] of Object.entries(overrides)) {
 		values[Number(index)] = value;
+	}
 	return values;
+}
+
+function mockReactHooks(
+	values: unknown[],
+	options: {
+		runEffects?: boolean;
+		deferEffects?: boolean;
+		refValues?: unknown[];
+		queryData?: Partial<QueryData>;
+		queryErrors?: Partial<Record<keyof QueryData, Error>>;
+	} = {},
+) {
+	const stateValues = [...values];
+	const refValues = [...(options.refValues ?? [])];
+	const data: QueryData = {
+		providerSettings,
+		capabilities: null,
+		history: { items: [] },
+		detail: null,
+		findings: [],
+		reports: [],
+		...options.queryData,
+	};
+	stateSetters = [];
+	refs = [];
+	effectCleanups = [];
+	pendingEffects = [];
+	queryOptions = [];
+	queryClient = {
+		setQueryData: vi.fn(),
+		invalidateQueries: vi.fn(async () => undefined),
+		fetchQuery: vi.fn(async () => data.detail),
+	};
+	vi.resetModules();
+	vi.doMock("react", async () => {
+		const actual = await vi.importActual<typeof import("react")>("react");
+		return {
+			...actual,
+			useCallback: <T extends (...args: never[]) => unknown>(callback: T) =>
+				callback,
+			useMemo: <T>(factory: () => T) => factory(),
+			useEffect: (callback: () => undefined | (() => void)) => {
+				if (options.deferEffects) {
+					pendingEffects.push(callback);
+					return;
+				}
+				if (!options.runEffects) return;
+				const cleanup = callback();
+				if (typeof cleanup === "function") effectCleanups.push(cleanup);
+			},
+			useRef: <T>(initial: T) => {
+				const ref = {
+					current: (refValues.length ? refValues.shift() : initial) as T,
+				};
+				refs.push(ref as { current: unknown });
+				return ref;
+			},
+			useState: <T>(initial: T | (() => T)) => {
+				const value = stateValues.length
+					? (stateValues.shift() as T)
+					: typeof initial === "function"
+						? (initial as () => T)()
+						: initial;
+				const setter = vi.fn((next: T | ((current: T) => T)) =>
+					typeof next === "function"
+						? (next as (current: T) => T)(value)
+						: next,
+				);
+				stateSetters.push(setter);
+				return [value, setter] as const;
+			},
+		};
+	});
+	vi.doMock("@tanstack/react-query", () => ({
+		queryOptions: <T>(options: T) => options,
+		useQueryClient: () => queryClient,
+		useQuery: (query: Record<string, unknown>) => {
+			queryOptions.push(query);
+			const queryKind = (query.queryKey as readonly string[])[1];
+			const key =
+				queryKind === "provider-settings"
+					? "providerSettings"
+					: (queryKind as keyof QueryData);
+			const error = options.queryErrors?.[key] ?? null;
+			return {
+				data: data[key],
+				isPending: false,
+				error,
+				refetch: vi.fn(async () => ({ data: data[key], error })),
+			};
+		},
+	}));
+}
+
+function jsonResponse(body: unknown, status = 200) {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { "content-type": "application/json" },
+	});
 }
 
 function mockScanCommands(overrides: Record<string, unknown> = {}) {
 	const commands = {
-		fetchSecurityScanProviderSettings: vi.fn(async () =>
-			jsonResponse({
-				enabled: true,
-				transport: "local_cli",
-				baseUrl: "http://localhost",
-				tokenConfigured: false,
-				localCliConfigured: true,
-			}),
-		),
-		fetchSecurityScanHistory: vi.fn(async () => jsonResponse({ items: [] })),
-		fetchSecurityScanCapabilities: vi.fn(async () =>
-			jsonResponse(capabilities),
-		),
 		previewSecurityScan: vi.fn(async () => jsonResponse(preview)),
 		startSecurityScan: vi.fn(async () =>
 			jsonResponse({
@@ -173,13 +206,8 @@ function mockScanCommands(overrides: Record<string, unknown> = {}) {
 				createdAt: "2026-08-08T00:00:00.000Z",
 			}),
 		),
-		fetchSecurityScan: vi.fn(async () => jsonResponse(completedScan)),
-		fetchSecurityScanFindings: vi.fn(async () =>
-			jsonResponse({ items: [], nextCursor: null }),
-		),
-		fetchSecurityScanReports: vi.fn(async () => jsonResponse({ items: [] })),
 		cancelSecurityScan: vi.fn(async () =>
-			jsonResponse({ ...completedScan, status: "cancelled" }),
+			jsonResponse({ ...runningScan, status: "cancelled" }),
 		),
 		startSecurityScanReport: vi.fn(async () => jsonResponse({ report })),
 		...overrides,
@@ -188,367 +216,136 @@ function mockScanCommands(overrides: Record<string, unknown> = {}) {
 	return commands;
 }
 
-async function flushPromises() {
-	for (let index = 0; index < 12; index += 1) await Promise.resolve();
-	await new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 describe("security scan controller coverage", () => {
-	beforeEach(() => {
-		vi.restoreAllMocks();
+	beforeEach(() => vi.restoreAllMocks());
+
+	it("keeps every server snapshot in a keyed Query resource", async () => {
+		mockReactHooks(controllerState(), {
+			runEffects: true,
+			queryData: {
+				capabilities,
+				history: {
+					items: [
+						{
+							scanRunRef: "scan-1",
+							selection: baseSelection,
+							target: baseTarget,
+							createdAt: "2026-08-08T00:00:00.000Z",
+						},
+					],
+				},
+			},
+		});
+		mockScanCommands();
+		const { useSecurityScanController } = await import(
+			"../src/modules/securityScan/useSecurityScanController"
+		);
+		const controller = useSecurityScanController("repo-1");
+		expect(controller.capabilities).toEqual(capabilities);
+		expect(queryOptions.map((query) => query.queryKey)).toEqual([
+			["security-scan", "provider-settings"],
+			["security-scan", "capabilities", "repo-1"],
+			["security-scan", "history", "repo-1"],
+			["security-scan", "detail", "repo-1", "none"],
+			["security-scan", "findings", "repo-1", "none"],
+			["security-scan", "reports", "repo-1", "none"],
+		]);
+		expect(stateSetters[0]).toHaveBeenCalledWith({
+			mode: "preset",
+			presetId: "quick",
+		});
+		expect(stateSetters[1]).toHaveBeenCalledWith({ kind: "working_tree" });
+		expect(stateSetters[3]).toHaveBeenCalledWith("scan-1");
 	});
 
-	it("loads capabilities, applies the preferred profile, and updates inputs", async () => {
+	it("retains client draft state while preview mutations use the common decoder", async () => {
 		mockReactHooks(controllerState());
 		const commands = mockScanCommands();
 		const { useSecurityScanController } = await import(
 			"../src/modules/securityScan/useSecurityScanController"
 		);
 		const controller = useSecurityScanController("repo-1");
-
-		await controller.loadCapabilities();
-		expect(commands.fetchSecurityScanCapabilities).toHaveBeenCalledWith(
-			"repo-1",
-		);
-		expect(stateSetters[1]).toHaveBeenCalledWith(capabilities);
-		expect(stateSetters[3]).toHaveBeenCalledWith({
-			mode: "preset",
-			presetId: "quick",
-		});
-		expect(stateSetters[4]).toHaveBeenCalledWith({ kind: "working_tree" });
-
 		controller.updateSelection({ mode: "custom", profileRef: "custom-1" });
 		controller.updateTarget("full");
-		expect(stateSetters[3]).toHaveBeenLastCalledWith({
-			mode: "custom",
-			profileRef: "custom-1",
-		});
-		expect(stateSetters[4]).toHaveBeenLastCalledWith({ kind: "full" });
-		expect(stateSetters[9].mock.results.at(-1)?.value).toBe("initial");
-	});
-
-	it("handles capability and preview success, provider errors, and response fallbacks", async () => {
-		mockReactHooks(controllerState());
-		const commands = mockScanCommands({
-			fetchSecurityScanCapabilities: vi
-				.fn()
-				.mockResolvedValueOnce(
-					jsonResponse({ error: { message: "not configured" } }, 503),
-				)
-				.mockResolvedValueOnce(new Response("not-json", { status: 500 })),
-			previewSecurityScan: vi
-				.fn()
-				.mockResolvedValueOnce(jsonResponse(preview))
-				.mockRejectedValueOnce("preview offline"),
-		});
-		const { useSecurityScanController } = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		const controller = useSecurityScanController("repo-1");
-
-		await controller.loadCapabilities();
-		expect(stateSetters[10]).toHaveBeenCalledWith("not configured");
-		await controller.loadCapabilities();
-		expect(stateSetters[10]).toHaveBeenCalledWith("Request failed (500)");
-
 		await controller.createPreview();
-		expect(stateSetters[5]).toHaveBeenCalledWith(preview);
-		await controller.createPreview();
-		expect(stateSetters[10]).toHaveBeenCalledWith("preview offline");
 		expect(commands.previewSecurityScan).toHaveBeenCalledWith("repo-1", {
 			selection: baseSelection,
 			target: baseTarget,
 		});
+		expect(stateSetters[2]).toHaveBeenCalledWith(preview);
 	});
 
-	it("starts a scan, pages findings, deduplicates them, and loads reports", async () => {
-		mockReactHooks(controllerState({ 5: preview }));
-		const commands = mockScanCommands({
-			fetchSecurityScanFindings: vi.fn(
-				async (_repo: string, _scan: string, cursor?: string) =>
-					cursor
-						? jsonResponse({
-								items: [
-									{ ref: "finding-1", title: "updated" },
-									{ ref: "finding-2" },
-								],
-								nextCursor: null,
-							})
-						: jsonResponse({
-								items: [{ ref: "finding-1", title: "first" }],
-								nextCursor: "page-2",
-							}),
-			),
-			fetchSecurityScanReports: vi.fn(async () =>
-				jsonResponse({ items: [report] }),
-			),
+	it("updates canonical cache snapshots after start, cancel, and report actions", async () => {
+		mockReactHooks(controllerState({ 2: preview, 3: "scan-1" }), {
+			queryData: { detail: runningScan },
 		});
+		const commands = mockScanCommands();
 		const { useSecurityScanController } = await import(
 			"../src/modules/securityScan/useSecurityScanController"
 		);
 		const controller = useSecurityScanController("repo-1");
-
 		await controller.runScan();
 		expect(commands.startSecurityScan).toHaveBeenCalledWith(
 			"repo-1",
-			expect.objectContaining({
-				previewRef: "preview-1",
-				expectedTargetDigest: "d".repeat(64),
-			}),
+			expect.objectContaining({ previewRef: "preview-1" }),
 		);
-		expect(commands.fetchSecurityScanFindings).toHaveBeenCalledTimes(2);
-		expect(stateSetters[7]).toHaveBeenCalledWith([
-			expect.objectContaining({ ref: "finding-1", title: "updated" }),
-			expect.objectContaining({ ref: "finding-2" }),
-		]);
-		expect(stateSetters[8]).toHaveBeenCalledWith([report]);
-		expect(stateSetters[2].mock.results[0]?.value).toEqual([
-			expect.objectContaining({ scanRunRef: "scan-1" }),
-		]);
-	});
+		expect(queryClient.setQueryData).toHaveBeenCalledWith(
+			["security-scan", "history", "repo-1"],
+			expect.any(Function),
+		);
 
-	it("guards missing or duplicate starts and reports artifact failures", async () => {
-		mockReactHooks(controllerState());
-		let commands = mockScanCommands();
-		let module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		let controller = module.useSecurityScanController("repo-1");
-		await controller.runScan();
-		expect(commands.startSecurityScan).not.toHaveBeenCalled();
-
-		mockReactHooks(controllerState({ 5: preview }), {
-			refValues: ["repo-1", null, false, 0, "busy"],
-		});
-		commands = mockScanCommands();
-		module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		controller = module.useSecurityScanController("repo-1");
-		await controller.runScan();
-		expect(commands.startSecurityScan).not.toHaveBeenCalled();
-
-		mockReactHooks(controllerState({ 5: preview }));
-		commands = mockScanCommands({
-			fetchSecurityScanFindings: vi.fn(async () =>
-				jsonResponse({ error: { message: "findings failed" } }, 500),
-			),
-			fetchSecurityScanReports: vi.fn(async () =>
-				jsonResponse({ error: { message: "reports failed" } }, 500),
-			),
-		});
-		module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		controller = module.useSecurityScanController("repo-1");
-		await controller.runScan();
-		expect(stateSetters[10]).toHaveBeenCalledWith(
-			"findings failed / reports failed",
-		);
-	});
-
-	it("detects cyclic finding cursors", async () => {
-		mockReactHooks(controllerState({ 5: preview }));
-		const commands = mockScanCommands({
-			fetchSecurityScanFindings: vi.fn(async () =>
-				jsonResponse({ items: [{ ref: "same" }], nextCursor: "loop" }),
-			),
-		});
-		const { useSecurityScanController } = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		const controller = useSecurityScanController("repo-1");
-		await controller.runScan();
-		expect(commands.fetchSecurityScanFindings).toHaveBeenCalledTimes(2);
-		expect(stateSetters[10]).toHaveBeenCalledWith(
-			"Findingページングが循環しています。",
-		);
-	});
-
-	it("selects, cancels, and creates reports for the active scan", async () => {
-		mockReactHooks(
-			controllerState({
-				6: runningScan,
-				8: [{ ...report, status: "running" }],
-			}),
-		);
-		const commands = mockScanCommands({
-			fetchSecurityScan: vi.fn(async () => jsonResponse(runningScan)),
-		});
-		const { useSecurityScanController } = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		const controller = useSecurityScanController("repo-1");
-
-		await controller.selectScan("scan-1");
-		expect(stateSetters[6]).toHaveBeenCalledWith(runningScan);
 		await controller.cancelScan();
 		expect(commands.cancelSecurityScan).toHaveBeenCalledWith(
 			"repo-1",
 			"scan-1",
 		);
-		expect(stateSetters[6]).toHaveBeenCalledWith(
+		expect(queryClient.setQueryData).toHaveBeenCalledWith(
+			["security-scan", "detail", "repo-1", "scan-1"],
 			expect.objectContaining({ status: "cancelled" }),
 		);
-		const created = await controller.createReport();
-		expect(created).toEqual(report);
-		expect(stateSetters[8].mock.results.at(-1)?.value).toEqual([report]);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+			queryKey: ["security-scan", "history", "repo-1"],
+		});
+
+		expect(await controller.createReport()).toEqual(report);
+		expect(queryClient.setQueryData).toHaveBeenCalledWith(
+			["security-scan", "reports", "repo-1", "scan-1"],
+			expect.any(Function),
+		);
 	});
 
-	it("handles selection, cancellation, and report failures plus inactive guards", async () => {
-		mockReactHooks(controllerState({ 6: null }));
-		let commands = mockScanCommands();
-		let module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		let controller = module.useSecurityScanController("repo-1");
-		expect(await controller.cancelScan()).toBeUndefined();
-		expect(await controller.createReport()).toBeNull();
-		expect(commands.cancelSecurityScan).not.toHaveBeenCalled();
-
-		mockReactHooks(controllerState({ 6: runningScan }));
-		commands = mockScanCommands({
-			fetchSecurityScan: vi.fn(async () => {
-				throw "select offline";
-			}),
-			cancelSecurityScan: vi.fn(async () => {
-				throw "cancel offline";
-			}),
-			startSecurityScanReport: vi.fn(async () => {
-				throw new Error("report offline");
-			}),
+	it("surfaces independent query failures and stops terminal polling", async () => {
+		mockReactHooks(controllerState({ 3: "scan-1" }), {
+			queryData: {
+				detail: { ...runningScan, status: "completed" },
+				reports: [{ ...report, status: "completed" }],
+			},
+			queryErrors: { findings: new Error("findings unavailable") },
 		});
-		module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		controller = module.useSecurityScanController("repo-1");
-		await controller.selectScan("scan-1");
-		expect(stateSetters[10]).toHaveBeenCalledWith("select offline");
-		await controller.cancelScan();
-		expect(stateSetters[10]).toHaveBeenCalledWith("cancel offline");
-		expect(await controller.createReport()).toBeNull();
-		expect(stateSetters[10]).toHaveBeenCalledWith("report offline");
-	});
-
-	it("runs initial loading for local and HTTP settings and cleans up stale work", async () => {
-		mockReactHooks(controllerState(), { runEffects: true });
-		let commands = mockScanCommands({
-			fetchSecurityScanHistory: vi.fn(async () =>
-				jsonResponse({
-					items: [
-						{
-							scanRunRef: "scan-1",
-							selection: baseSelection,
-							target: baseTarget,
-							createdAt: "now",
-						},
-					],
-				}),
-			),
-		});
-		let module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		module.useSecurityScanController("repo-1");
-		await flushPromises();
-		expect(commands.fetchSecurityScanProviderSettings).toHaveBeenCalled();
-		expect(commands.fetchSecurityScan).toHaveBeenCalledWith("repo-1", "scan-1");
-		expect(commands.fetchSecurityScanCapabilities).toHaveBeenCalled();
-
-		mockReactHooks(controllerState(), { runEffects: true });
-		commands = mockScanCommands({
-			fetchSecurityScanProviderSettings: vi.fn(async () =>
-				jsonResponse({
-					enabled: true,
-					transport: "http",
-					tokenConfigured: true,
-					localCliConfigured: false,
-				}),
-			),
-		});
-		module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		module.useSecurityScanController("repo-1");
-		await flushPromises();
-		expect(commands.fetchSecurityScanCapabilities).toHaveBeenCalled();
-
-		mockReactHooks(controllerState(), { runEffects: true });
-		commands = mockScanCommands({
-			fetchSecurityScanProviderSettings: vi.fn(async () => {
-				throw new Error("settings offline");
-			}),
-		});
-		module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
-		module.useSecurityScanController("repo-1");
-		effectCleanups.forEach((cleanup) => {
-			cleanup();
-		});
-		await flushPromises();
-		expect(stateSetters[10]).not.toHaveBeenCalledWith("settings offline");
-	});
-
-	it("polls active work without overlapping and clears the timer", async () => {
-		const setIntervalMock = vi.fn((callback: () => void) => {
-			callback();
-			callback();
-			return 17;
-		});
-		const clearIntervalMock = vi.fn();
-		vi.stubGlobal("window", {
-			setInterval: setIntervalMock,
-			clearInterval: clearIntervalMock,
-		});
-		mockReactHooks(controllerState({ 6: runningScan }), { runEffects: true });
-		const commands = mockScanCommands({
-			fetchSecurityScan: vi.fn(async () => {
-				throw new Error("poll failed");
-			}),
-		});
+		mockScanCommands();
 		const { useSecurityScanController } = await import(
 			"../src/modules/securityScan/useSecurityScanController"
 		);
-		useSecurityScanController("repo-1");
-		await flushPromises();
-		expect(setIntervalMock).toHaveBeenCalledWith(expect.any(Function), 2_000);
-		effectCleanups.forEach((cleanup) => {
-			cleanup();
-		});
-		expect(clearIntervalMock).toHaveBeenCalledWith(17);
-		expect(commands.fetchSecurityScan).toHaveBeenCalled();
-		vi.unstubAllGlobals();
-	});
-
-	it("derives selected presets for preset and custom selections", async () => {
-		mockReactHooks(
-			controllerState({
-				1: capabilities,
-				3: { mode: "preset", presetId: "quick" },
-			}),
+		const controller = useSecurityScanController("repo-1");
+		expect(controller.error).toBe("findings unavailable");
+		const detailQuery = queryOptions.find(
+			(query) => (query.queryKey as string[])[1] === "detail",
 		);
-		mockScanCommands();
-		let module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
+		const reportsQuery = queryOptions.find(
+			(query) => (query.queryKey as string[])[1] === "reports",
 		);
-		expect(module.useSecurityScanController("repo-1").selectedPreset?.id).toBe(
-			"quick",
-		);
-
-		mockReactHooks(
-			controllerState({
-				1: capabilities,
-				3: { mode: "custom", profileRef: "custom" },
-			}),
-		);
-		mockScanCommands();
-		module = await import(
-			"../src/modules/securityScan/useSecurityScanController"
-		);
+		if (!detailQuery || !reportsQuery)
+			throw new Error("Expected scan polling queries");
 		expect(
-			module.useSecurityScanController("repo-1").selectedPreset,
-		).toBeNull();
+			(detailQuery.refetchInterval as (query: unknown) => unknown)({
+				state: { data: { status: "completed" } },
+			}),
+		).toBe(false);
+		expect(
+			(reportsQuery.refetchInterval as (query: unknown) => unknown)({
+				state: { data: [{ status: "completed" }] },
+			}),
+		).toBe(false);
 	});
 });
 
@@ -650,10 +447,7 @@ describe("security task candidate controller coverage", () => {
 		await controller.requestCandidates();
 		expect(commands.generateSecurityScanTaskCandidates).toHaveBeenCalledWith(
 			"repo-1",
-			{
-				scanRunRef: "scan-1",
-				findingRefs: ["finding-1"],
-			},
+			{ scanRunRef: "scan-1", findingRefs: ["finding-1"] },
 		);
 		expect(stateSetters[1]).toHaveBeenCalledWith(
 			expect.objectContaining({ status: "completed" }),
@@ -676,7 +470,12 @@ describe("security task candidate controller coverage", () => {
 		mockReactHooks([["finding-1"], null, null, ""]);
 		mockCandidateDependencies({
 			generate: async () =>
-				jsonResponse({ error: { message: "generation denied" } }, 403),
+				jsonResponse(
+					{
+						error: { code: "GENERATION_DENIED", message: "generation denied" },
+					},
+					403,
+				),
 		});
 		module = await import(
 			"../src/modules/securityScan/useSecurityTaskCandidateController"
@@ -729,10 +528,7 @@ describe("security task candidate controller coverage", () => {
 		await controller.createDraftTasks(["candidate-1"]);
 		expect(commands.createTasksFromMissionCandidates).toHaveBeenCalledWith(
 			"repo-1",
-			{
-				candidateIds: ["candidate-1"],
-				mode: "draft",
-			},
+			{ candidateIds: ["candidate-1"], mode: "draft" },
 		);
 		expect(onTasksCreated).toHaveBeenCalledWith([{ id: "task-1" }]);
 		expect(stateSetters[1]).toHaveBeenCalledWith(null);
@@ -785,7 +581,9 @@ describe("security task candidate controller coverage", () => {
 			scanRunRef: "scan-1",
 		});
 		await controller.createDraftTasks(["candidate-1"]);
-		expect(stateSetters[3]).toHaveBeenCalledWith("Request failed (500)");
+		expect(stateSetters[3]).toHaveBeenCalledWith(
+			"Response body is not valid JSON",
+		);
 
 		mockReactHooks([[], null, null, ""], {
 			refValues: ["repo-1\0scan-1", 0, true],

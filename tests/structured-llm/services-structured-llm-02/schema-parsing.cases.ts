@@ -336,6 +336,63 @@ describe("Supervisor LLM schema-first parsing schema handling", () => {
 		).toBe(rawDecision);
 	});
 
+	it("treats a malformed streamed OpenAI record as a terminal invalid response", async () => {
+		process.env.ACTIVE_LLM_PROVIDER = "openai";
+		process.env.OPENAI_ENABLED = "true";
+		process.env.OPENAI_API_KEY = "test-key";
+		process.env.OPENAI_MODEL = "gpt-test";
+		process.env.OPENAI_STREAMING_ENABLED = "true";
+
+		const encoder = new TextEncoder();
+		globalThis.fetch = vi.fn(async () => {
+			return new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(
+							encoder.encode(
+								`data: ${JSON.stringify({ choices: [{ delta: { content: "先行delta" } }] })}\n\n`,
+							),
+						);
+						controller.enqueue(encoder.encode("data: {not-json}\n\n"));
+						controller.enqueue(
+							encoder.encode(
+								`data: ${JSON.stringify({ choices: [{ delta: { content: "到達不可" } }] })}\n\n`,
+							),
+						);
+						controller.close();
+					},
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "text/event-stream" },
+				},
+			);
+		}) as unknown as typeof fetch;
+
+		const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+		const error = await callSupervisorLLM("system", "user", {
+			round: 2,
+			schemaFirst: true,
+			emitEvent: (event) => events.push({ type: event.type, data: event.data }),
+		}).catch((caught) => caught);
+
+		expect(error).toMatchObject({
+			name: "StructuredProviderError",
+			kind: "invalid_response",
+			code: "INVALID_PROVIDER_RESPONSE",
+			retryable: false,
+			providerBody: "{not-json}",
+		});
+		expect(
+			events
+				.filter((event) => event.type === "model.response_delta")
+				.map((event) => event.data?.text),
+		).not.toContain("到達不可");
+		expect(
+			events.some((event) => event.type === "model.response_finished"),
+		).toBe(false);
+	});
+
 	it("rejects OpenAI streaming provider tool calls", async () => {
 		process.env.ACTIVE_LLM_PROVIDER = "openai";
 		process.env.OPENAI_ENABLED = "true";

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createCodingAgentHostAdapter } from "../api/composition/coding-agent";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
@@ -20,6 +21,10 @@ import {
 	suspendActiveCodingAgentRunsForHostShutdown,
 } from "../api/modules/codingAgent";
 import { codingAgentRunExecutions } from "../api/modules/codingAgent/persistence/runtime-execution-schema";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
 import type { CodingAgentExecutionOwnerIdentity } from "../api/modules/codingAgent/runtime/execution-owner-identity";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 import { activatePreparedTaskRun } from "../api/modules/nightworkers/run-orchestration/start-task-run-launch";
@@ -32,7 +37,12 @@ beforeAll(async () => {
 	await ensureNightWorkersSchema();
 });
 
+beforeEach(() => {
+	configureCodingAgentHost(createCodingAgentHostAdapter());
+});
+
 afterEach(async () => {
+	clearCodingAgentHostForTest();
 	for (const repositoryId of repositoryIds.splice(0)) {
 		await nightworkersRepo.deleteRepository(repositoryId);
 	}

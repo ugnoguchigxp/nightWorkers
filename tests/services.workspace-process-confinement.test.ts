@@ -1,14 +1,35 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildChildProcessEnvironment } from "../api/services/execution/child-process-environment";
-import { prepareWorkspaceConstrainedShell } from "../api/services/execution/workspace-process-confinement";
+import { prepareWorkspaceConstrainedCommand } from "../api/services/execution/workspace-process-confinement";
+import { parseSingleCommand } from "../api/services/worker-tools/command-policy";
 
 const execFileAsync = promisify(execFile);
 const temporaryRoots: string[] = [];
+const canApplyMacSandboxProfile =
+	process.platform === "darwin" &&
+	(() => {
+		try {
+			execFileSync(
+				"/usr/bin/sandbox-exec",
+				["-p", "(version 1)", "/usr/bin/true"],
+				{ timeout: 2_000, stdio: "ignore" },
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	})();
+
+function parsedCommand(command: string) {
+	const result = parseSingleCommand(command);
+	if (!result.ok) throw new Error(result.reason);
+	return result.command;
+}
 
 afterEach(async () => {
 	await Promise.all(
@@ -19,7 +40,28 @@ afterEach(async () => {
 });
 
 describe("workspace process confinement", () => {
-	it.runIf(process.platform === "darwin")(
+	it.runIf(process.platform === "darwin" && !canApplyMacSandboxProfile)(
+		"fails closed when the enclosing runtime cannot apply a macOS sandbox profile",
+		async () => {
+			const root = await fs.mkdtemp(
+				path.join(os.tmpdir(), "nw-sandbox-unavailable-"),
+			);
+			temporaryRoots.push(root);
+			await execFileAsync("git", ["init", root]);
+
+			await expect(
+				prepareWorkspaceConstrainedCommand({
+					command: parsedCommand("git status"),
+					workspaceRoot: root,
+					environment: buildChildProcessEnvironment({
+						purpose: "workspace_command",
+					}),
+				}),
+			).rejects.toThrow("WORKSPACE_PROCESS_CONFINEMENT_UNAVAILABLE");
+		},
+	);
+
+	it.runIf(canApplyMacSandboxProfile)(
 		"allows Bun to resolve a workspace current directory below the home directory",
 		async () => {
 			const worktreeRoot = await fs.mkdtemp(
@@ -42,8 +84,8 @@ describe("workspace process confinement", () => {
 			});
 			await fs.mkdir(environment.HOME ?? "", { recursive: true });
 			await fs.mkdir(environment.TMPDIR ?? "", { recursive: true });
-			const constrained = await prepareWorkspaceConstrainedShell({
-				command: "bun run verify",
+			const constrained = await prepareWorkspaceConstrainedCommand({
+				command: parsedCommand("bun run verify"),
 				workspaceRoot: worktreeRoot,
 				environment,
 			});
@@ -58,7 +100,7 @@ describe("workspace process confinement", () => {
 		},
 	);
 
-	it.runIf(process.platform === "darwin")(
+	it.runIf(canApplyMacSandboxProfile)(
 		"allows Bun subprocesses to create files below a realpath-aliased temporary directory",
 		async () => {
 			const root = await fs.mkdtemp(
@@ -76,9 +118,10 @@ describe("workspace process confinement", () => {
 				purpose: "workspace_command",
 				overrides: { TMPDIR: runtimeRoot },
 			});
-			const constrained = await prepareWorkspaceConstrainedShell({
-				command:
+			const constrained = await prepareWorkspaceConstrainedCommand({
+				command: parsedCommand(
 					"bun -e \"import { mkdtemp } from 'node:fs/promises'; import path from 'node:path'; import os from 'node:os'; await mkdtemp(path.join(os.tmpdir(), 'child-'));\"",
+				),
 				workspaceRoot: worktreeRoot,
 				environment,
 			});
@@ -93,7 +136,32 @@ describe("workspace process confinement", () => {
 		},
 	);
 
-	it.runIf(process.platform === "darwin")(
+	it.runIf(canApplyMacSandboxProfile)(
+		"adds existing project secret files to the macOS read-deny profile",
+		async () => {
+			const root = await fs.mkdtemp(
+				path.join(os.tmpdir(), "nw-sandbox-secret-profile-"),
+			);
+			temporaryRoots.push(root);
+			await execFileAsync("git", ["init", root]);
+			const secretPath = path.join(root, ".env");
+			await fs.writeFile(secretPath, "fixture-content\n");
+			const environment = buildChildProcessEnvironment({
+				purpose: "workspace_command",
+			});
+			const constrained = await prepareWorkspaceConstrainedCommand({
+				command: parsedCommand("cat regular.txt"),
+				workspaceRoot: root,
+				environment,
+			});
+
+			expect(constrained.args[1]).toContain(
+				`(deny file-read* (literal "${await fs.realpath(secretPath)}"))`,
+			);
+		},
+	);
+
+	it.runIf(canApplyMacSandboxProfile)(
 		"allows Task worktree writes but blocks reads from an unrelated temporary directory",
 		async () => {
 			const root = await fs.mkdtemp(path.join(os.tmpdir(), "nw-sandbox-"));
@@ -149,8 +217,13 @@ describe("workspace process confinement", () => {
 			});
 			await fs.mkdir(environment.HOME ?? "", { recursive: true });
 			await fs.mkdir(environment.TMPDIR ?? "", { recursive: true });
-			const constrained = await prepareWorkspaceConstrainedShell({
-				command: `printf allowed > workspace.txt; cat ${JSON.stringify(externalSecret)}`,
+			const script = [
+				"import { readFile, writeFile } from 'node:fs/promises';",
+				"await writeFile('workspace.txt', 'allowed');",
+				`await readFile(${JSON.stringify(externalSecret)});`,
+			].join(" ");
+			const constrained = await prepareWorkspaceConstrainedCommand({
+				command: parsedCommand(`bun -e ${JSON.stringify(script)}`),
 				workspaceRoot: worktreeRoot,
 				environment,
 			});

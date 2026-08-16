@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { readJsonResponse } from "../../lib/api-error";
 import type { GeneralSettings } from "../nightworkers/types";
 import { fetchGeneralSettings } from "../settings";
 
@@ -7,10 +8,7 @@ export function usePlanModeGeneralSettings() {
 	useEffect(() => {
 		const controller = new AbortController();
 		fetchGeneralSettings({ signal: controller.signal })
-			.then(async (response) => {
-				if (!response.ok) return null;
-				return (await response.json()) as GeneralSettings;
-			})
+			.then((response) => readJsonResponse<GeneralSettings>(response))
 			.then((nextSettings) => {
 				if (!controller.signal.aborted) setSettings(nextSettings);
 			})

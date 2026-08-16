@@ -6,6 +6,7 @@ import type {
 } from "../../../shared/modules/codingAgent";
 import { legacyEvidenceAssuranceSnapshot } from "../../../shared/modules/codingAgent";
 import { apiFetch } from "../../lib/api-base";
+import { readJsonResponse } from "../../lib/api-error";
 import type { TaskMessage, WorkbenchArtifactRef } from "../nightworkers/types";
 
 export type EvidenceCheckPanelModel = {
@@ -137,9 +138,7 @@ export function useLatestEvidenceCheckDescriptor(
 				`/api/coding-agent/tasks/${encodeURIComponent(taskId)}/evidence-check/latest`,
 			);
 			if (response.status === 204) return null;
-			if (!response.ok)
-				throw new Error("Failed to fetch the latest Evidence Check");
-			return (await response.json()) as EvidenceCheckDescriptor;
+			return readJsonResponse<EvidenceCheckDescriptor>(response);
 		},
 		enabled: Boolean(taskId),
 		refetchInterval: refreshWhileActive ? 1_500 : false,
@@ -159,8 +158,7 @@ export function useEvidenceCheckSnapshot(
 			const response = await apiFetch(
 				`/api/coding-agent/tasks/${encodeURIComponent(model.taskId)}/evidence-check/${encodeURIComponent(model.verificationDocumentId)}`,
 			);
-			if (!response.ok) throw new Error("Failed to fetch evidence readiness");
-			return (await response.json()) as EvidenceCheckSnapshot;
+			return readJsonResponse<EvidenceCheckSnapshot>(response);
 		},
 		enabled: Boolean(model) && options?.enabled !== false,
 		refetchInterval: options?.refetchInterval ?? false,

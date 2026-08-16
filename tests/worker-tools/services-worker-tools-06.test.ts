@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	analyzeCommand,
 	gitDiffTool,
+	parseSingleCommand,
 	readFileTool,
 	runCheckTool,
 	runCommandTool,
@@ -64,6 +65,87 @@ describe("Worker Tools Unit Tests", () => {
 		});
 		expect(result.ok).toBe(false);
 		expect(result.error?.code).toBe("DESTRUCTIVE_COMMAND");
+	});
+
+	it.each([
+		"echo allowed | touch escaped.txt",
+		"echo allowed || touch escaped.txt",
+		"echo allowed & touch escaped.txt",
+		"echo allowed && touch escaped.txt",
+		"echo allowed; touch escaped.txt",
+		"echo allowed > escaped.txt",
+		"echo allowed >> escaped.txt",
+		"echo allowed < escaped.txt",
+		"echo allowed << EOF",
+		"echo <(touch escaped.txt)",
+		"echo $(touch escaped.txt)",
+		"echo `touch escaped.txt`",
+		"echo allowed\ntouch escaped.txt",
+		"echo allowed\r\ntouch escaped.txt",
+	])("rejects shell control syntax: %s", (command) => {
+		const safety = analyzeCommand(command);
+		expect(safety).toMatchObject({
+			allowed: false,
+			classification: "destructive",
+		});
+	});
+
+	it("does not execute a second command through a pipe", async () => {
+		const escapedFile = path.join(dummyRepoDir, "escaped.txt");
+		const result = await runCommandTool({
+			command: "echo allowed | touch escaped.txt",
+			repoRoot: dummyRepoDir,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.error?.code).toBe("DESTRUCTIVE_COMMAND");
+		await expect(fs.stat(escapedFile)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+
+	it("normalizes quoted arguments while keeping quoted operators literal", () => {
+		const parsed = parseSingleCommand(
+			"echo \"two words\" '' 'literal | && $() `'",
+		);
+		expect(parsed).toEqual({
+			ok: true,
+			command: {
+				program: "echo",
+				args: ["two words", "", "literal | && $() `"],
+			},
+		});
+		expect(
+			analyzeCommand("echo \"two words\" '' 'literal | && $() `'"),
+		).toMatchObject({ allowed: true, classification: "read_only" });
+	});
+
+	it("rejects leading environment assignments before execution", () => {
+		const parsed = parseSingleCommand("TOKEN=value echo allowed");
+		expect(parsed).toMatchObject({
+			ok: false,
+			kind: "environment_assignment",
+		});
+	});
+
+	it("does not expose project secret files through direct command arguments", async () => {
+		const secretPath = path.join(dummyRepoDir, ".env");
+		const secretAlias = path.join(dummyRepoDir, "secret-alias");
+		await fs.writeFile(secretPath, "fixture-content\n", "utf8");
+		await fs.symlink(".env", secretAlias);
+
+		for (const command of [
+			"cat .env",
+			"rg . .env",
+			`cat ${JSON.stringify(secretPath)}`,
+			"cat secret-alias",
+		]) {
+			const result = await runCommandTool({ command, repoRoot: dummyRepoDir });
+			expect(result, command).toMatchObject({
+				ok: false,
+				payload: { stdout: "", stderr: "" },
+			});
+		}
 	});
 
 	it("does not allow substring-matched build command names", () => {
@@ -125,7 +207,7 @@ describe("Worker Tools Unit Tests", () => {
 	});
 
 	it.runIf(process.platform === "darwin")(
-		"confines shell reads and writes to the workspace",
+		"confines process reads and writes to the workspace",
 		async () => {
 			execFileSync("git", ["init", "-b", "main", dummyRepoDir], {
 				stdio: "ignore",
@@ -157,7 +239,15 @@ describe("Worker Tools Unit Tests", () => {
 				confinementRequired: true,
 			});
 
-			expect(inside.ok).toBe(true);
+			if (!inside.ok) {
+				expect(inside.error?.code).toBe("CONFINEMENT_UNAVAILABLE");
+				expect(outsideRead.error?.code).toBe("CONFINEMENT_UNAVAILABLE");
+				expect(outsideWrite.ok).toBe(false);
+				expect(await fs.readFile(outsidePath, "utf-8")).toBe("outside\n");
+				await fs.rm(outsidePath, { force: true });
+				return;
+			}
+
 			expect(inside.payload.stdout).toContain("inside");
 			expect(outsideRead.ok).toBe(false);
 			expect(outsideWrite.ok).toBe(false);

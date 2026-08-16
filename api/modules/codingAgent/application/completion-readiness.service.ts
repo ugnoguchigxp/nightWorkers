@@ -1,6 +1,6 @@
 import { contentDigest } from "../../agentsShare";
-import * as repo from "../../nightworkers/nightworkers.repository";
-import * as verificationRepository from "../../nightworkers/nightworkers.verification.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../ports/coding-agent-host.port";
 import {
 	type CompletionCheckResult,
 	runCompletionCheck,
@@ -38,15 +38,15 @@ export type CodingAgentCompletionReadiness = {
 };
 
 type CompletionReadinessDependencies = {
-	getTask: typeof repo.getTask;
-	getLatestActiveVerificationDocumentForTask: typeof verificationRepository.getLatestActiveVerificationDocumentForTask;
+	getTask: CodingAgentHostPorts["taskReader"]["getTask"];
+	getLatestActiveVerificationDocumentForTask: CodingAgentHostPorts["verificationReader"]["getLatestActiveDocument"];
 	runCompletionCheck: typeof runCompletionCheck;
 };
 
 const defaultDependencies: CompletionReadinessDependencies = {
-	getTask: (...args) => repo.getTask(...args),
-	getLatestActiveVerificationDocumentForTask: (...args) =>
-		verificationRepository.getLatestActiveVerificationDocumentForTask(...args),
+	getTask: (taskId) => requireCodingAgentHost().taskReader.getTask(taskId),
+	getLatestActiveVerificationDocumentForTask: (taskId) =>
+		requireCodingAgentHost().verificationReader.getLatestActiveDocument(taskId),
 	runCompletionCheck: (...args) => runCompletionCheck(...args),
 };
 

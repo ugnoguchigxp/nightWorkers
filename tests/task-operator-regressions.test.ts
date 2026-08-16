@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createCodingAgentHostAdapter } from "../api/composition/coding-agent";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import { db } from "../api/db/client";
 import {
@@ -21,6 +22,10 @@ import {
 	initializeCodingAgentRunHandlers,
 } from "../api/modules/codingAgent/application/coding-agent-run.handler";
 import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
+import {
 	executeIdempotentTaskOperatorCommand,
 	readTaskOperatorCommandReceipt,
 } from "../api/modules/commandDelivery";
@@ -35,6 +40,7 @@ const repositoryIds: string[] = [];
 
 beforeAll(() => ensureNightWorkersSchema());
 afterEach(async () => {
+	clearCodingAgentHostForTest();
 	for (const id of repositoryIds.splice(0))
 		await db.delete(repositories).where(eq(repositories.id, id));
 });
@@ -66,6 +72,7 @@ async function taskFixture(objective = "objective") {
 
 describe("Task Operator review regressions", () => {
 	it("registers the requester-neutral Run association before runtime launch", async () => {
+		configureCodingAgentHost(createCodingAgentHostAdapter());
 		initializeCodingAgentRunHandlers();
 		const { task, repositoryId } = await taskFixture();
 		const [run] = await db

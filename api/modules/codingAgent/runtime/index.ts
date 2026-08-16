@@ -48,6 +48,12 @@ export {
 	readRuntimeLaneConfigFromEnv,
 	resolveRuntimeLane,
 } from "./runtime-lane";
+export {
+	type CodexRuntimeSecurityCapability,
+	preflightCodexRuntimeSecurityContract,
+	type RuntimeSecurityPreflight,
+	resolveCodexRuntimeSecurityCapability,
+} from "./runtime-security-contract";
 export type {
 	RuntimeContractWarning,
 	RuntimeLaneResult,

@@ -13,6 +13,9 @@ import {
 import { enforcePathPolicy } from "./tool-policy-enforcer";
 import type { WorkerToolResult } from "./types";
 
+const MAX_READ_FILE_BYTES = 4 * 1024 * 1024;
+const BINARY_PROBE_BYTES = 8 * 1024;
+
 export interface ReadFileInput {
 	filePath: string;
 	repoRoot: string;
@@ -109,8 +112,99 @@ export async function readFileTool(
 		};
 	}
 
+	let fileHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
 	try {
-		const rawContent = await fs.readFile(targetPath, "utf-8");
+		const linkStat = await fs.lstat(targetPath);
+		if (!linkStat.isFile() && !linkStat.isSymbolicLink()) {
+			return readResourceError({
+				code: "UNSUPPORTED_FILE_TYPE",
+				message: "read_file only supports regular text files.",
+				filePath,
+				startedAt,
+			});
+		}
+
+		const canonicalPath = await fs.realpath(targetPath);
+		if (isProjectSecretPath(canonicalPath, absoluteRepoRoot)) {
+			return readResourceError({
+				code: "ACCESS_DENIED",
+				message: "Project secret fileはread_fileで取得できません。",
+				filePath,
+				startedAt,
+			});
+		}
+		const canonicalPathDecision = enforcePathPolicy(canonicalPath, {
+			repoRoot,
+			allowedPaths,
+			externalAllowedPaths,
+			deniedPaths,
+		});
+		if (!canonicalPathDecision.allowed) {
+			return readResourceError({
+				code: "ACCESS_DENIED",
+				message:
+					canonicalPathDecision.message ||
+					`Access to path is denied by security policies: ${filePath}`,
+				filePath,
+				startedAt,
+			});
+		}
+
+		const targetStat = await fs.stat(canonicalPath);
+		if (!targetStat.isFile()) {
+			return readResourceError({
+				code: "UNSUPPORTED_FILE_TYPE",
+				message: "read_file only supports regular text files.",
+				filePath,
+				startedAt,
+			});
+		}
+		if (targetStat.size > MAX_READ_FILE_BYTES) {
+			return readResourceError({
+				code: "FILE_TOO_LARGE",
+				message: `File exceeds the ${MAX_READ_FILE_BYTES} byte read limit.`,
+				filePath,
+				startedAt,
+			});
+		}
+
+		fileHandle = await fs.open(canonicalPath, "r");
+		const openedStat = await fileHandle.stat();
+		if (!openedStat.isFile()) {
+			return readResourceError({
+				code: "UNSUPPORTED_FILE_TYPE",
+				message: "read_file only supports regular text files.",
+				filePath,
+				startedAt,
+			});
+		}
+		if (openedStat.size > MAX_READ_FILE_BYTES) {
+			return readResourceError({
+				code: "FILE_TOO_LARGE",
+				message: `File exceeds the ${MAX_READ_FILE_BYTES} byte read limit.`,
+				filePath,
+				startedAt,
+			});
+		}
+		const binaryProbe = Buffer.alloc(
+			Math.min(BINARY_PROBE_BYTES, openedStat.size),
+		);
+		const { bytesRead } = await fileHandle.read(
+			binaryProbe,
+			0,
+			binaryProbe.length,
+			0,
+		);
+		if (binaryProbe.subarray(0, bytesRead).includes(0)) {
+			return readResourceError({
+				code: "UNSUPPORTED_FILE_TYPE",
+				message: "read_file only supports text files.",
+				filePath,
+				startedAt,
+			});
+		}
+
+		const rawContent = await fileHandle.readFile({ encoding: "utf-8" });
 		const lines = rawContent.split(/\r?\n/);
 		const totalLines = lines.length;
 		const now = new Date().toISOString();
@@ -240,5 +334,33 @@ export async function readFileTool(
 				fallbackMessagePrefix: "Failed to read file",
 			}),
 		};
+	} finally {
+		await fileHandle?.close().catch(() => undefined);
 	}
+}
+
+function readResourceError(input: {
+	code: "ACCESS_DENIED" | "FILE_TOO_LARGE" | "UNSUPPORTED_FILE_TYPE";
+	message: string;
+	filePath: string;
+	startedAt: string;
+}): WorkerToolResult<ReadFileOutput> {
+	return {
+		ok: false,
+		toolName: "read_file",
+		startedAt: input.startedAt,
+		finishedAt: new Date().toISOString(),
+		payload: {
+			content: "",
+			totalLines: 0,
+			linesReturned: 0,
+			startLine: 0,
+			endLine: 0,
+			truncated: false,
+		},
+		error: {
+			code: input.code,
+			message: input.message,
+		},
+	};
 }

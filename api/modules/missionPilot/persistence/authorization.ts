@@ -1,11 +1,6 @@
 import type { MissionPilotAuthorizationV4 } from "@nightworkers/mission-pilot/contracts";
-import {
-	digestTaskOperatorCapabilityGrant,
-	readCurrentTaskOperatorUserCapabilities,
-	type TaskOperatorCapability,
-} from "../../taskOperator";
 
-const DELEGATED_CAPABILITIES: readonly TaskOperatorCapability[] = [
+export const MISSION_PILOT_DELEGATED_CAPABILITIES = [
 	"plan",
 	"queue",
 	"implementation",
@@ -14,7 +9,10 @@ const DELEGATED_CAPABILITIES: readonly TaskOperatorCapability[] = [
 	"localCommit",
 	"taskComplete",
 	"taskArchive",
-];
+] as const;
+
+export type MissionPilotDelegatedCapability =
+	(typeof MISSION_PILOT_DELEGATED_CAPABILITIES)[number];
 
 export function createMissionPilotPersistenceAuthorization(input: {
 	sessionId: string;
@@ -27,18 +25,10 @@ export function createMissionPilotPersistenceAuthorization(input: {
 		actorId: string;
 		authorizationRef: string;
 	};
+	capabilities: readonly MissionPilotDelegatedCapability[];
+	capabilityDigest: string;
 }): MissionPilotAuthorizationV4 {
-	const userCapabilities = new Set(
-		readCurrentTaskOperatorUserCapabilities({
-			subjectUserId: input.principal.actorId,
-			authorizationRef: input.principal.authorizationRef,
-		}),
-	);
-	const granted = new Set(
-		DELEGATED_CAPABILITIES.filter((capability) =>
-			userCapabilities.has(capability),
-		),
-	);
+	const granted = new Set(input.capabilities);
 	const scopes = {
 		plan: granted.has("plan"),
 		queue: granted.has("queue"),
@@ -50,19 +40,6 @@ export function createMissionPilotPersistenceAuthorization(input: {
 		taskArchive: granted.has("taskArchive"),
 		push: false,
 	} as const;
-	const capabilities = (
-		Object.entries(scopes) as Array<[TaskOperatorCapability, boolean]>
-	)
-		.filter(([, enabled]) => enabled)
-		.map(([capability]) => capability);
-	const capabilityDigest = digestTaskOperatorCapabilityGrant({
-		subjectUserId: input.principal.actorId,
-		authorizationRef: input.principal.authorizationRef,
-		sessionId: input.sessionId,
-		taskId: input.taskId,
-		grantedAt: input.grantedAt,
-		capabilities,
-	});
 	return {
 		version: 4,
 		sessionId: input.sessionId,
@@ -74,7 +51,7 @@ export function createMissionPilotPersistenceAuthorization(input: {
 		grantedAt: input.grantedAt,
 		subjectUserId: input.principal.actorId,
 		userAuthorizationRef: input.principal.authorizationRef,
-		capabilityDigest,
+		capabilityDigest: input.capabilityDigest,
 		scopes,
 		pushPolicy: "never",
 	};

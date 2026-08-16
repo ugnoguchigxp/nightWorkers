@@ -1,5 +1,8 @@
 import { logEvent } from "../../../lib/logger";
-import { estimateTokens } from "../../../services/conversation-context/token-budget";
+import {
+	estimateMissionPilotUsageTokens,
+	MISSION_PILOT_USAGE_ESTIMATE_ALGORITHM_VERSION,
+} from "../../../services/conversation-context/token-budget";
 import { recordLlmUsage } from "../../../services/llm-usage";
 import { missionPilotThoughtTrace } from "../mission-pilot-trace-provenance";
 import type { MissionPilotProviderPort } from "./mission-pilot-agent.ports";
@@ -35,8 +38,12 @@ export async function recordMissionPilotProviderTurnUsage(input: {
 			usage: input.response.usage,
 			durationMs: input.durationMs,
 			promptPartTokenEstimates: {
-				systemPromptTokens: estimateTokens(input.systemContext),
-				userPromptTokens: estimateTokens(JSON.stringify(input.messages)),
+				systemPromptTokens: estimateMissionPilotUsageTokens(
+					input.systemContext,
+				),
+				userPromptTokens: estimateMissionPilotUsageTokens(
+					JSON.stringify(input.messages),
+				),
 			},
 			trace: missionPilotThoughtTrace({
 				sessionId: input.sessionId,
@@ -48,6 +55,10 @@ export async function recordMissionPilotProviderTurnUsage(input: {
 				turnId: input.turnId,
 				providerCallIndex: input.providerCallIndex,
 				callKind: input.label,
+				tokenEstimate: {
+					purpose: "usage_estimate",
+					algorithmVersion: MISSION_PILOT_USAGE_ESTIMATE_ALGORITHM_VERSION,
+				},
 				systemContextAudit: input.response.systemContextAudit ?? [],
 			},
 		});

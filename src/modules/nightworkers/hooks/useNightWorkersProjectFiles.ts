@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
+import { readJsonResponse } from "../../../lib/api-error";
 import {
 	browseFolders,
 	createFolder as createFolderCommand,
@@ -43,13 +44,11 @@ export function useNightWorkersProjectFiles(
 	const fetchDirectories = async (targetPath?: string) => {
 		setIsBrowserLoading(true);
 		try {
-			const res = await browseFolders(targetPath);
-			if (!res.ok) return;
-			const data = (await res.json()) as {
+			const data = await readJsonResponse<{
 				currentPath: string | null;
 				parentPath: string | null;
 				directories: FolderDir[];
-			};
+			}>(await browseFolders(targetPath));
 			setCurrentBrowserPath(data.currentPath);
 			setBrowserParentPath(data.parentPath);
 			setBrowserDirectories(data.directories || []);
@@ -59,9 +58,7 @@ export function useNightWorkersProjectFiles(
 	};
 
 	const createFolder = async (input: { parentPath?: string; name: string }) => {
-		const res = await createFolderCommand(input);
-		if (!res.ok) throw new Error(await res.text());
-		return (await res.json()) as FolderDir;
+		return readJsonResponse<FolderDir>(await createFolderCommand(input));
 	};
 
 	const {
@@ -77,13 +74,13 @@ export function useNightWorkersProjectFiles(
 		],
 		queryFn: async () => {
 			if (!activeProjectId) return [];
-			const res = await fetchRepositoryFiles(
-				activeProjectId,
-				rootProjectDirectory,
-				activeRunId,
+			return readJsonResponse<ProjectFileEntry[]>(
+				await fetchRepositoryFiles(
+					activeProjectId,
+					rootProjectDirectory,
+					activeRunId,
+				),
 			);
-			if (!res.ok) throw new Error("Failed to fetch project files");
-			return (await res.json()) as ProjectFileEntry[];
 		},
 		enabled: !!activeProjectId,
 		refetchOnWindowFocus: false,
@@ -113,13 +110,13 @@ export function useNightWorkersProjectFiles(
 		],
 		queryFn: async () => {
 			if (!activeProjectId || !selectedProjectFilePath) return null;
-			const res = await fetchRepositoryFile(
-				activeProjectId,
-				selectedProjectFilePath,
-				activeRunId,
+			return readJsonResponse<ProjectFileContent>(
+				await fetchRepositoryFile(
+					activeProjectId,
+					selectedProjectFilePath,
+					activeRunId,
+				),
 			);
-			if (!res.ok) throw new Error("Failed to fetch project file");
-			return (await res.json()) as ProjectFileContent;
 		},
 		enabled: !!activeProjectId && !!selectedProjectFilePath,
 		refetchOnWindowFocus: false,
@@ -134,9 +131,9 @@ export function useNightWorkersProjectFiles(
 		queryKey: ["projectDiff", activeProjectId, activeRunId],
 		queryFn: async () => {
 			if (!activeProjectId) return null;
-			const res = await fetchRepositoryDiff(activeProjectId, activeRunId);
-			if (!res.ok) throw new Error("Failed to fetch repository diff");
-			return (await res.json()) as ProjectDiff;
+			return readJsonResponse<ProjectDiff>(
+				await fetchRepositoryDiff(activeProjectId, activeRunId),
+			);
 		},
 		enabled: false,
 		refetchOnWindowFocus: false,
@@ -156,13 +153,12 @@ export function useNightWorkersProjectFiles(
 		try {
 			const expandedResults = await Promise.all(
 				expandedPaths.map(async (path) => {
-					const res = await fetchRepositoryFiles(
-						activeProjectId,
+					return [
 						path,
-						activeRunId,
-					);
-					if (!res.ok) throw new Error("Failed to fetch project files");
-					return [path, (await res.json()) as ProjectFileEntry[]] as const;
+						await readJsonResponse<ProjectFileEntry[]>(
+							await fetchRepositoryFiles(activeProjectId, path, activeRunId),
+						),
+					] as const;
 				}),
 			);
 			await refetchRootProjectFiles();
@@ -209,13 +205,9 @@ export function useNightWorkersProjectFiles(
 			return;
 		setLoadingProjectDirectories((prev) => ({ ...prev, [path]: true }));
 		try {
-			const res = await fetchRepositoryFiles(
-				activeProjectId,
-				path,
-				activeRunId,
+			const entries = await readJsonResponse<ProjectFileEntry[]>(
+				await fetchRepositoryFiles(activeProjectId, path, activeRunId),
 			);
-			if (!res.ok) throw new Error("Failed to fetch project files");
-			const entries = (await res.json()) as ProjectFileEntry[];
 			setProjectFileEntriesByDirectory((prev) => ({
 				...prev,
 				[path]: entries,

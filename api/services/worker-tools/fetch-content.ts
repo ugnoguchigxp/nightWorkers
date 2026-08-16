@@ -1,5 +1,6 @@
 import { unknownErrorMessage } from "../../../shared/json-record";
 import { sanitizePlainText } from "../../../shared/sanitize-plain-text";
+import { safeOutboundFetch } from "../security/safe-outbound-fetch";
 import type { WorkerToolResult } from "./types";
 
 export interface FetchContentInput {
@@ -99,39 +100,6 @@ function isTextualContentType(contentType: string): boolean {
 	);
 }
 
-function toReaderMirrorUrl(url: URL): string {
-	return `https://r.jina.ai/http://${url.host}${url.pathname}${url.search}${url.hash}`;
-}
-
-function isLowSignalText(
-	text: string,
-	title?: string,
-	description?: string,
-): boolean {
-	if (text.trim().length < 250) return true;
-	const alphaCount = (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
-	const signalRatio = alphaCount / Math.max(1, text.length);
-	return (!title && !description) || signalRatio < 0.2;
-}
-
-function extractReaderMirrorContent(raw: string): {
-	title?: string;
-	text: string;
-} {
-	const titleMatch = raw.match(/^Title:\s*(.+)$/im);
-	const markdownIndex = raw.indexOf("Markdown Content:");
-	const body =
-		markdownIndex >= 0
-			? raw.slice(markdownIndex + "Markdown Content:".length).trim()
-			: raw.trim();
-	return {
-		...(titleMatch?.[1]
-			? { title: sanitizePlainText(titleMatch[1]).trim() }
-			: {}),
-		text: normalizeWhitespace(sanitizePlainText(discardRawTextElements(body))),
-	};
-}
-
 export function validateFetchContentUrl(rawUrl: string): URL {
 	const url = new URL(rawUrl);
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -140,21 +108,14 @@ export function validateFetchContentUrl(rawUrl: string): URL {
 	return url;
 }
 
-async function fetchText(url: URL): Promise<Response> {
-	return fetch(url, {
+async function fetchText(url: URL) {
+	return safeOutboundFetch({
+		url,
+		maxResponseBytes: 4 * 1024 * 1024,
+		timeoutMs: 15_000,
 		headers: {
 			Accept:
 				"text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
-			"User-Agent":
-				"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-		},
-	});
-}
-
-async function fetchReaderMirror(url: URL): Promise<Response> {
-	return fetch(toReaderMirrorUrl(url), {
-		headers: {
-			Accept: "text/plain,text/markdown,text/html;q=0.8,*/*;q=0.5",
 			"User-Agent":
 				"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
 		},
@@ -198,32 +159,9 @@ export async function fetchContentTool(
 	}
 
 	try {
-		const response = await fetchText(url);
+		const { response, finalUrl } = await fetchText(url);
 		const contentType = response.headers.get("content-type") ?? "";
 		if (!response.ok) {
-			const mirrorResponse = await fetchReaderMirror(url);
-			if (mirrorResponse.ok) {
-				const mirrorBody = await mirrorResponse.text();
-				const mirror = extractReaderMirrorContent(mirrorBody);
-				const text = mirror.text.slice(0, maxChars);
-				return {
-					ok: true,
-					toolName: "fetch_content",
-					startedAt,
-					finishedAt: new Date().toISOString(),
-					payload: {
-						url: url.href,
-						finalUrl: mirrorResponse.url || toReaderMirrorUrl(url),
-						contentType:
-							mirrorResponse.headers.get("content-type") ??
-							"text/markdown; source=r.jina.ai",
-						status: mirrorResponse.status,
-						...(mirror.title ? { title: mirror.title } : {}),
-						text,
-						truncated: mirror.text.length > maxChars || text.length >= maxChars,
-					},
-				};
-			}
 			return {
 				ok: false,
 				toolName: "fetch_content",
@@ -231,7 +169,7 @@ export async function fetchContentTool(
 				finishedAt: new Date().toISOString(),
 				payload: {
 					url: url.href,
-					finalUrl: response.url || url.href,
+					finalUrl,
 					contentType,
 					status: response.status,
 					text: "",
@@ -252,7 +190,7 @@ export async function fetchContentTool(
 				finishedAt: new Date().toISOString(),
 				payload: {
 					url: url.href,
-					finalUrl: response.url || url.href,
+					finalUrl,
 					contentType,
 					status: response.status,
 					text: "",
@@ -286,38 +224,6 @@ export async function fetchContentTool(
 					.join("\n\n"),
 			).slice(0, maxChars);
 
-			if (isLowSignalText(extractedText, title, description)) {
-				const mirrorResponse = await fetchReaderMirror(url);
-				if (mirrorResponse.ok) {
-					const mirrorBody = await mirrorResponse.text();
-					const mirror = extractReaderMirrorContent(mirrorBody);
-					const text = mirror.text.slice(0, maxChars);
-					return {
-						ok: true,
-						toolName: "fetch_content",
-						startedAt,
-						finishedAt: new Date().toISOString(),
-						payload: {
-							url: url.href,
-							finalUrl: mirrorResponse.url || toReaderMirrorUrl(url),
-							contentType:
-								mirrorResponse.headers.get("content-type") ??
-								"text/markdown; source=r.jina.ai",
-							status: mirrorResponse.status,
-							...(mirror.title
-								? { title: mirror.title }
-								: title
-									? { title }
-									: {}),
-							...(description ? { description } : {}),
-							text,
-							truncated:
-								mirror.text.length > maxChars || text.length >= maxChars,
-						},
-					};
-				}
-			}
-
 			return {
 				ok: true,
 				toolName: "fetch_content",
@@ -325,7 +231,7 @@ export async function fetchContentTool(
 				finishedAt: new Date().toISOString(),
 				payload: {
 					url: url.href,
-					finalUrl: response.url || url.href,
+					finalUrl,
 					contentType,
 					status: response.status,
 					...(title ? { title } : {}),
@@ -353,7 +259,7 @@ export async function fetchContentTool(
 			finishedAt: new Date().toISOString(),
 			payload: {
 				url: url.href,
-				finalUrl: response.url || url.href,
+				finalUrl,
 				contentType,
 				status: response.status,
 				...(title ? { title } : {}),

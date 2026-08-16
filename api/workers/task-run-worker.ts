@@ -1,3 +1,4 @@
+import { initializeComposedCodingAgent } from "../composition/coding-agent";
 import { suspendCodingAgentRunForHostShutdown } from "../modules/codingAgent";
 import { startTaskRunInProcess } from "../modules/nightworkers/run-orchestration/start-task-run";
 import type { StartTaskRunOptions } from "../modules/nightworkers/run-orchestration/start-task-run-types";
@@ -13,6 +14,7 @@ let activeRunId: string | null = null;
 let shuttingDown = false;
 
 consumeApplicationSettingsWorkerSnapshot();
+initializeComposedCodingAgent();
 
 async function shutdown() {
 	if (shuttingDown) return;

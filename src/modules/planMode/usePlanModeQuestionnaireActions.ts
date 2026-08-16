@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import { readJsonResponse } from "../../lib/api-error";
 import type {
 	DesignQuestionnaireAnswer,
 	DesignQuestionnaireSession,
@@ -57,11 +58,11 @@ export function usePlanModeQuestionnaireActions(input: {
 		if (isImplementationLocked) return;
 		if (!questionnaireEnabled) return;
 		await runAction("start", async () => {
-			const res = await startDesignQuestionnaire(sessionId, {
-				sourceBlueprintMessageId: activeBlueprintMessage?.id ?? null,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			const created = (await res.json()) as DesignQuestionnaireSession;
+			const created = await readJsonResponse<DesignQuestionnaireSession>(
+				await startDesignQuestionnaire(sessionId, {
+					sourceBlueprintMessageId: activeBlueprintMessage?.id ?? null,
+				}),
+			);
 			setActiveSessionId(created.id);
 			selectActiveTab("questionnaire");
 		});
@@ -86,9 +87,8 @@ export function usePlanModeQuestionnaireActions(input: {
 					),
 				},
 			);
-			if (!answersRes.ok) throw new Error(await answersRes.text());
 			const updatedSession =
-				(await answersRes.json()) as DesignQuestionnaireSession;
+				await readJsonResponse<DesignQuestionnaireSession>(answersRes);
 			setSessions((prev) => {
 				const exists = prev.some((session) => session.id === updatedSession.id);
 				if (!exists) return [updatedSession, ...prev];
@@ -116,22 +116,19 @@ export function usePlanModeQuestionnaireActions(input: {
 		if (isImplementationLocked) return;
 		if (!questionnaireEnabled) return;
 		await runAction("questionnaire-additional", async () => {
-			const res = await generateAdditionalDesignQuestionnaireQuestions(
-				sessionId,
-				{
-					source: "user_requested",
-					reason: "Plan Mode Status からの追加確認",
-					maxQuestions: 5,
-				},
-			);
-			if (!res.ok) throw new Error(await res.text());
-			const payload = (await res.json()) as {
+			const payload = await readJsonResponse<{
 				session: DesignQuestionnaireSession | null;
 				result: {
 					addedCount: number;
 					skippedDuplicateCount: number;
 				};
-			};
+			}>(
+				await generateAdditionalDesignQuestionnaireQuestions(sessionId, {
+					source: "user_requested",
+					reason: "Plan Mode Status からの追加確認",
+					maxQuestions: 5,
+				}),
+			);
 			if (payload.session) {
 				setActiveSessionId(payload.session.id);
 				setAnswers(

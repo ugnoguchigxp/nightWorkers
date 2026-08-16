@@ -531,7 +531,7 @@ describe("NightWorkers workbench routes", () => {
 
 		expect(queueRes.status).toBe(422);
 		const body = await queueRes.json();
-		expect(body.code).toBe("IMPLEMENTATION_PLAN_REQUIRED");
+		expect(body.error.code).toBe("IMPLEMENTATION_PLAN_REQUIRED");
 		expect((await repo.getTask(task.id))?.status).toBe("draft");
 	});
 
@@ -588,7 +588,7 @@ describe("NightWorkers workbench routes", () => {
 			},
 		);
 		expect(duplicateRes.status).toBe(409);
-		expect((await duplicateRes.json()).code).toBe("QUEUE_ENTRY_EXISTS");
+		expect((await duplicateRes.json()).error.code).toBe("QUEUE_ENTRY_EXISTS");
 	});
 });
 

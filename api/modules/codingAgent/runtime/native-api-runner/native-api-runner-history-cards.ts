@@ -1,4 +1,4 @@
-import * as repo from "../../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../../ports/coding-agent-host.binding";
 import { toRecord } from "./native-api-runner-routing";
 import type { NativeApiPostImportState } from "./native-api-tool-dispatcher";
 import type { NativeApiHistoryItem } from "./native-api-tool-history";
@@ -32,9 +32,10 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 	currentTodo: NativeApiRuntimeTodoSnapshot | null;
 } | null> {
 	try {
+		const host = requireCodingAgentHost();
 		const [run, todos] = await Promise.all([
-			repo.getTaskRun(runId),
-			repo.listTaskRunTodosForRun(runId),
+			host.runReader.getRun(runId),
+			host.runReader.listRunTodos(runId),
 		]);
 		if (todos.length === 0) return null;
 		const lines = todos
@@ -57,8 +58,8 @@ export async function buildTodoSnapshotHistory(runId: string): Promise<{
 					systemContext: todo.context ?? "",
 					context: todo.context,
 					nextAction: todo.nextAction,
-					acceptanceCriteria: Array.isArray(todo.acceptanceCriteriaJson)
-						? todo.acceptanceCriteriaJson
+					acceptanceCriteria: Array.isArray(todo.acceptanceCriteria)
+						? todo.acceptanceCriteria
 						: [],
 					dependsOn: Array.isArray(todo.dependsOn)
 						? todo.dependsOn.filter(

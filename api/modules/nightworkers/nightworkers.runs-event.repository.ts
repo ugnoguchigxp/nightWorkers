@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { WorkspaceArtifactRef } from "../../../shared/schemas/workspace-authority.schema";
-import { db } from "../../db/client";
+import { type DbTransaction, db } from "../../db/client";
 import { withSqliteBusyRetry } from "../../db/retry";
 import { artifacts, taskEvents, taskRuns } from "../../db/schema";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
@@ -199,6 +199,74 @@ export async function createRunEvent(
 		});
 	}
 	return finalEvent;
+}
+
+/**
+ * Writes a Run event as part of a caller-owned transaction.
+ *
+ * This intentionally does not emit realtime or activity projections. Callers
+ * must do that only after their enclosing transaction commits.
+ */
+export async function createRunEventInTransaction(
+	event: RunEventBase,
+	options:
+		| { legacyPayload?: unknown; payloadJson?: Record<string, unknown> }
+		| undefined,
+	database: DbTransaction,
+) {
+	if (event.type === "model.response_delta") return null;
+	event = sanitizePersistenceValue(event);
+	options = sanitizePersistenceValue(options);
+
+	const normalized = normalizeRunEventToLegacy({
+		event,
+		legacyPayload: options?.legacyPayload,
+	});
+	const payloadJson = {
+		...normalized.payloadJson,
+		...(options?.payloadJson || {}),
+	};
+	const maxSequence = await database
+		.select({
+			maxSeq: sql<number>`coalesce(max(${taskEvents.seq}), 0)`,
+		})
+		.from(taskEvents)
+		.where(eq(taskEvents.taskRunId, event.runId));
+	const [created] = await database
+		.insert(taskEvents)
+		.values({
+			taskRunId: event.runId,
+			seq: (maxSequence[0]?.maxSeq || 0) + 1,
+			actor: normalized.actor,
+			type: normalized.type,
+			eventType: normalized.eventType,
+			message: normalized.message,
+			payloadJson,
+			timestamp: normalized.timestamp,
+		})
+		.returning();
+	if (!created) return null;
+
+	const { payload, runEvent: currentRunEvent } = readRunEventPayload(
+		created.payloadJson,
+	);
+	if (!currentRunEvent) return created;
+	const patchedPayload = sanitizePersistenceValue({
+		...payload,
+		...(options?.payloadJson || {}),
+		runEvent: {
+			...currentRunEvent,
+			id: created.id,
+			seq: created.seq,
+			runId: currentRunEvent.runId || created.taskRunId,
+		},
+	});
+	const [updated] = await database
+		.update(taskEvents)
+		.set({ payloadJson: patchedPayload })
+		.where(eq(taskEvents.id, created.id))
+		.returning();
+	return updated ?? { ...created, payloadJson: patchedPayload };
 }
 
 export async function listTaskEventsForRun(

@@ -14,7 +14,8 @@ vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
 
 vi.mock("../api/modules/queue/queue.repository", () => ({
 	hasActiveImplementationQueueEntry: vi.fn(),
-	createImplementationQueueEntry: vi.fn(),
+	admitImplementationQueueEntry: vi.fn(),
+	QueueEntryTransitionConflict: class QueueEntryTransitionConflict extends Error {},
 }));
 
 vi.mock(
@@ -63,9 +64,10 @@ beforeEach(() => {
 		false,
 	);
 	vi.mocked(repo.updateTask).mockResolvedValue(queuedTask as never);
-	vi.mocked(queueRepo.createImplementationQueueEntry).mockResolvedValue(
-		queueEntry as never,
-	);
+	vi.mocked(queueRepo.admitImplementationQueueEntry).mockResolvedValue({
+		task: queuedTask,
+		entry: queueEntry,
+	} as never);
 	vi.mocked(repo.createTaskMessage).mockResolvedValue({
 		id: "message-2",
 	} as never);
@@ -122,10 +124,12 @@ describe("NightWorkers queue management side effects", () => {
 			autoDrain: false,
 		});
 
-		expect(queueRepo.createImplementationQueueEntry).toHaveBeenCalledWith(
+		expect(queueRepo.admitImplementationQueueEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
-				workspaceId: "workspace-1",
-				workspaceRequired: true,
+				entry: expect.objectContaining({
+					workspaceId: "workspace-1",
+					workspaceRequired: true,
+				}),
 			}),
 		);
 	});
@@ -153,12 +157,16 @@ describe("NightWorkers queue management side effects", () => {
 			autoDrain: false,
 		});
 
-		expect(queueRepo.createImplementationQueueEntry).toHaveBeenCalledWith(
+		expect(queueRepo.admitImplementationQueueEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
-				executionType: "exclusive",
-				sequenceGroupId: null,
-				sequenceOrder: null,
-				schedulingReason: expect.stringContaining("sequence metadata missing"),
+				entry: expect.objectContaining({
+					executionType: "exclusive",
+					sequenceGroupId: null,
+					sequenceOrder: null,
+					schedulingReason: expect.stringContaining(
+						"sequence metadata missing",
+					),
+				}),
 			}),
 		);
 	});

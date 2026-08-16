@@ -78,7 +78,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 			} catch (error) {
 				if (!isMissionProposalApprovalRequiredError(error)) throw error;
 				const approved = window.confirm(
-					"この Mission proposal は Queue 投入前の明示承認が必要です。承認して Queue に追加しますか？",
+					t("nightWorkers.queue.missionProposalApproval"),
 				);
 				if (!approved) throw error;
 				await queueState.createImplementationQueueEntry(sessionId, {
@@ -86,7 +86,7 @@ export function NightWorkersShell(props: NightWorkersShellProps) {
 				});
 			}
 		},
-		[queueState],
+		[queueState, t],
 	);
 	const visibleActiveSessionId =
 		showSettings ||

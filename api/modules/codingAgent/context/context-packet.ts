@@ -3,7 +3,9 @@ import {
 	bindSystemContextTextCatalog,
 	readSystemContextBindingSnapshot,
 } from "../../../systemContexts/catalog";
-import * as repo from "../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../ports/coding-agent-host.port";
+import type { CodingAgentRunTodoSnapshot } from "../ports/coding-agent-host.types";
 import {
 	buildCodingAgentSystemContext,
 	buildCodingAgentTaskGoal,
@@ -16,13 +18,14 @@ import type {
 
 export async function loadCodingAgentContextPacket(
 	runId: string,
+	host: CodingAgentHostPorts = requireCodingAgentHost(),
 ): Promise<CodingAgentContextPacket | null> {
-	const run = await repo.getTaskRun(runId);
+	const run = await host.runReader.getRun(runId);
 	if (!run) return null;
 	const [task, repository, todos] = await Promise.all([
-		repo.getTask(run.taskId),
-		run.repositoryId ? repo.getRepository(run.repositoryId) : null,
-		repo.listTaskRunTodosForRun(run.id),
+		host.taskReader.getTask(run.taskId),
+		run.repositoryId ? host.taskReader.getRepository(run.repositoryId) : null,
+		host.runReader.listRunTodos(run.id),
 	]);
 	if (!task || !repository) return null;
 	const systemContexts = bindSystemContextTextCatalog(
@@ -58,7 +61,7 @@ export async function loadCodingAgentContextPacket(
 				title: todo.title,
 				status: todo.status,
 				revision: todo.revision,
-				humanBlocker: parseHumanBlocker(todo.humanBlockerJson),
+				humanBlocker: parseHumanBlocker(todo.humanBlocker),
 			})),
 		},
 		currentTodo: current.length === 1 ? toCurrentTodoContext(current[0]) : null,
@@ -119,7 +122,7 @@ export function requiresCurrentTodo(
 }
 
 function toCurrentTodoContext(
-	todo: Awaited<ReturnType<typeof repo.listTaskRunTodosForRun>>[number],
+	todo: CodingAgentRunTodoSnapshot,
 ): CodingAgentCurrentTodoContext {
 	return {
 		id: todo.id,
@@ -132,8 +135,8 @@ function toCurrentTodoContext(
 		systemContext: todo.context ?? "",
 		context: todo.context,
 		nextAction: todo.nextAction,
-		acceptanceCriteria: Array.isArray(todo.acceptanceCriteriaJson)
-			? todo.acceptanceCriteriaJson.filter(
+		acceptanceCriteria: Array.isArray(todo.acceptanceCriteria)
+			? todo.acceptanceCriteria.filter(
 					(value): value is string => typeof value === "string",
 				)
 			: [],

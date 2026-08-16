@@ -10,8 +10,8 @@ function basePath(repositoryId: string) {
 	return `/api/repositories/${encodeURIComponent(repositoryId)}/security-scans`;
 }
 
-export function fetchSecurityScanProviderSettings() {
-	return apiFetch("/api/settings/vulnerability-scan-provider");
+export function fetchSecurityScanProviderSettings(init?: RequestInit) {
+	return apiFetch("/api/settings/vulnerability-scan-provider", init);
 }
 
 export function saveSecurityScanProviderSettings(
@@ -23,12 +23,18 @@ export function saveSecurityScanProviderSettings(
 	);
 }
 
-export function fetchSecurityScanHistory(repositoryId: string) {
-	return apiFetch(basePath(repositoryId));
+export function fetchSecurityScanHistory(
+	repositoryId: string,
+	init?: RequestInit,
+) {
+	return apiFetch(basePath(repositoryId), init);
 }
 
-export function fetchSecurityScanCapabilities(repositoryId: string) {
-	return apiFetch(`${basePath(repositoryId)}/capabilities`);
+export function fetchSecurityScanCapabilities(
+	repositoryId: string,
+	init?: RequestInit,
+) {
+	return apiFetch(`${basePath(repositoryId)}/capabilities`, init);
 }
 
 export function previewSecurityScan(
@@ -56,9 +62,14 @@ export function startSecurityScan(
 	return apiFetch(basePath(repositoryId), { ...request, headers });
 }
 
-export function fetchSecurityScan(repositoryId: string, scanRunRef: string) {
+export function fetchSecurityScan(
+	repositoryId: string,
+	scanRunRef: string,
+	init?: RequestInit,
+) {
 	return apiFetch(
 		`${basePath(repositoryId)}/${encodeURIComponent(scanRunRef)}`,
+		init,
 	);
 }
 
@@ -73,20 +84,24 @@ export function fetchSecurityScanFindings(
 	repositoryId: string,
 	scanRunRef: string,
 	cursor?: string,
+	init?: RequestInit,
 ) {
 	const query = new URLSearchParams({ limit: "100" });
 	if (cursor) query.set("cursor", cursor);
 	return apiFetch(
 		`${basePath(repositoryId)}/${encodeURIComponent(scanRunRef)}/findings?${query.toString()}`,
+		init,
 	);
 }
 
 export function fetchSecurityScanReports(
 	repositoryId: string,
 	scanRunRef: string,
+	init?: RequestInit,
 ) {
 	return apiFetch(
 		`${basePath(repositoryId)}/${encodeURIComponent(scanRunRef)}/reports`,
+		init,
 	);
 }
 

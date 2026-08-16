@@ -279,13 +279,15 @@ Area Bでは、repository CAS、application transaction、Queue command、migrat
   contextSnapshotを上書きしない。resume既存CASのerror contractは維持する。
 - Done: 4つのbarrier caseでstale callerのRun/Task/Queue/event writeが0件になり、最新snapshotを返す/409にする。
 
-### B-T3: ReviewをRun/Task/Queueの一transactionへ集約する
+### B-T3: Run outcomeとReviewをRun/Task/Queueの一transactionへ集約する
 
 - Findings: `C4`, `M6`
 - Depends on: `B-T1`, `B-T2`
 - Write set: 新規`api/modules/run/application/run-outcome-transition.command.ts`、新規
   `api/modules/run/run-outcome-transition.repository.ts`、`api/modules/run/application/run-review.command.ts`、
   `api/modules/nightworkers/nightworkers.service.ts`、
+  `api/modules/nightworkers/run-orchestration/stop-task-run.ts`、
+  `api/modules/nightworkers/nightworkers.run-query.service.ts`、
   `api/modules/nightworkers/nightworkers.task-status-cas.repository.ts`、
   `api/modules/queue/queue-repository-commands.ts`、`tests/run-review-command-extra-coverage.test.ts`、B-T0
 - Transaction contract: 1 transactionでRun expected status/updatedAt CAS、Task expected status/updatedAt projection、
@@ -296,6 +298,9 @@ Area Bでは、repository CAS、application transaction、Queue command、migrat
   repository内で意味判断を複製しない。
 - Review consolidation: `nightworkers.service.ts`の重複Review実装は新commandへdelegateし、Review result IDを
   idempotency keyにする。CAS winnerだけがmanual confirmationsと2つのRun eventを一度生成する。
+- Caller migration: B-T2で個別CAS化したstopとstale recoveryも新commandへ接続し、Run CAS後にTask/Queueを
+  別writeする中間実装を残さない。prompt preparationはterminal projectionではないため、B-T2のRun/compiled prompt
+  transactionを維持する。
 - Post-commit: realtime publish、Area A cleanup、queue drainはcommit後に順序付きdispatcherから呼ぶ。
   汎用outbox subsystemは新設せず、cleanupはprocess row、queue drainは既存scheduler、realtimeは再queryで回復する。
 - Stop: `recordManualConditionConfirmationsForReview`をtransactionへ参加させられずexactly-onceが崩れる場合は、

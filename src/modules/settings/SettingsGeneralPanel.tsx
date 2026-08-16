@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { formatDateTime } from "../../i18n/format";
 import { applyAppLanguage } from "../../i18n/I18nProvider";
+import { readJsonResponse } from "../../lib/api-error";
 import type { FxRateCache, GeneralSettings } from "../nightworkers/types";
 import { SelectField } from "./SettingsFields";
 import { SettingsRetentionPanel } from "./SettingsRetentionPanel";
@@ -114,14 +115,15 @@ export function GeneralSettingsPanel({
 	const loadPricingRows = useCallback(async () => {
 		setPricingLoading(true);
 		try {
-			const res = await fetchPricingRows({
-				provider: pricingProvider || undefined,
-				model: pricingModelQuery.trim() || undefined,
-				limit: pricingPageSize,
-				cursor: pricingPage > 0 ? String(pricingPage * pricingPageSize) : null,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			const page = (await res.json()) as LlmPricingPageView;
+			const page = await readJsonResponse<LlmPricingPageView>(
+				await fetchPricingRows({
+					provider: pricingProvider || undefined,
+					model: pricingModelQuery.trim() || undefined,
+					limit: pricingPageSize,
+					cursor:
+						pricingPage > 0 ? String(pricingPage * pricingPageSize) : null,
+				}),
+			);
 			setPricingRows(page.rows);
 			setPricingTotalCount(page.totalCount);
 			setPricingNextCursor(page.nextCursor);
@@ -141,9 +143,9 @@ export function GeneralSettingsPanel({
 		setPricingImporting(true);
 		setPricingMessage("");
 		try {
-			const res = await importPublicPricingRows();
-			if (!res.ok) throw new Error(await res.text());
-			const result = (await res.json()) as PublicPricingImportView;
+			const result = await readJsonResponse<PublicPricingImportView>(
+				await importPublicPricingRows(),
+			);
 			setPricingMessageKind("success");
 			setPricingMessage(
 				t("settings.general.pricing.importSucceeded", {

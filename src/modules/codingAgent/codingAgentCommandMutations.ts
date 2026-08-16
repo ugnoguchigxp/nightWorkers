@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { taskRunSchema } from "../../../shared/schemas/nightworkers/run.schema";
 import { apiFetch } from "../../lib/api-base";
+import { readJsonResponse } from "../../lib/api-error";
 import {
 	type CodingAgentCommandClient,
 	createCodingAgentCommandRequest,
@@ -73,8 +74,7 @@ async function executeAndLoadRun(
 			createCodingAgentCommandRequest(command),
 		);
 		const response = await apiFetch(`/api/runs/${result.data.runId}`);
-		if (!response.ok) throw new Error("Failed to load Coding Agent run");
-		return taskRunSchema.parse(await response.json());
+		return readJsonResponse(response, taskRunSchema);
 	} catch (error) {
 		await input.onFailure?.(taskId, error);
 		throw error;

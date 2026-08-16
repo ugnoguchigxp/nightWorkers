@@ -15,6 +15,7 @@ import {
 	synchronizeLegacyProviderEnablement,
 } from "../modules/settings";
 import { getRuntimePaths } from "../runtime/paths";
+import { replaceRuntimeSecretValues } from "../services/security/secret-redaction";
 import {
 	archiveLegacySettingsFile,
 	readApplicationSetting,
@@ -133,6 +134,7 @@ const readRuntimeSettings = (): {
 };
 
 const writeRuntimeSettings = async (settings: LlmSettings) => {
+	synchronizeRuntimeLogSecrets(settings);
 	if (TEST_RUNTIME_SETTINGS_PATH) {
 		fs.mkdirSync(path.dirname(TEST_RUNTIME_SETTINGS_PATH), { recursive: true });
 		fs.writeFileSync(
@@ -273,15 +275,25 @@ export const getCurrentSettings = (): LlmSettings => {
 	) {
 		void writeRuntimeSettings(migration.settings).catch(() => undefined);
 	}
+	synchronizeRuntimeLogSecrets(migration.settings);
 	return migration.settings;
 };
 
 const applySettingsToProcessEnv = (settings: LlmSettings) => {
+	synchronizeRuntimeLogSecrets(settings);
 	for (const [key, val] of Object.entries(settings)) {
 		if (Array.isArray(val)) continue;
 		process.env[key] = String(val);
 	}
 };
+
+function synchronizeRuntimeLogSecrets(settings: LlmSettings) {
+	replaceRuntimeSecretValues("llm-settings", [
+		...SECRET_SETTING_KEYS.map((key) => settings[key]),
+		settings.AWS_ACCESS_KEY_ID,
+		...(settings.providerEndpoints || []).map((endpoint) => endpoint.apiKey),
+	]);
+}
 
 export function maskLlmSettings(settings: LlmSettings) {
 	const masked = { ...settings };

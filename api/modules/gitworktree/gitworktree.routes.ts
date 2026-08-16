@@ -1,11 +1,15 @@
 import type { Context, Input } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
 	createWorktreeRequestSchema,
 	removeWorktreeRequestSchema,
 	worktreeIdRequestSchema,
 } from "../../../shared/schemas/gitworktree.schema";
+import {
+	logSerializedApiError,
+	serializeApiError,
+} from "../../lib/api-error-response";
 import { AppError } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { createOpenApiRouter } from "../../lib/openapi";
 import type { AppEnv } from "../../lib/types";
 import * as service from "./gitworktree.service";
@@ -15,17 +19,9 @@ export const gitworktreeRouter = createOpenApiRouter();
 type GitworktreeRouteContext = Context<AppEnv, string, Input>;
 
 function routeErrorResponse(c: GitworktreeRouteContext, error: unknown) {
-	if (error instanceof AppError) {
-		return c.json(
-			{
-				error: error.message,
-				code: error.code,
-				...(error.details || {}),
-			},
-			error.statusCode as ContentfulStatusCode,
-		);
-	}
-	return c.json({ error: "Internal server error" }, 500);
+	const serialized = serializeApiError(error);
+	logSerializedApiError(logger, serialized);
+	return c.json(serialized.body, serialized.status);
 }
 
 function withRouteError(

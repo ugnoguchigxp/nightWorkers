@@ -47,12 +47,15 @@ import {
 } from "../src/modules/planMode/usePlanModeArtifactGeneration";
 import { usePlanModeQuestionnaireActions } from "../src/modules/planMode/usePlanModeQuestionnaireActions";
 
-function response(body: unknown, ok = true, text?: string) {
-	return {
-		ok,
-		json: vi.fn(async () => body),
-		text: vi.fn(async () => text ?? JSON.stringify(body)),
-	} as never;
+function response(body: unknown, ok = true) {
+	return new Response(JSON.stringify(body), {
+		status: ok ? 200 : 500,
+		headers: { "content-type": "application/json" },
+	});
+}
+
+function errorResponse(code: string, message: string) {
+	return response({ error: { code, message } }, false);
 }
 
 const generatedMessage = { id: "generated-1", taskId: "task-1" };
@@ -223,10 +226,9 @@ describe("Plan Mode artifact generation action coverage", () => {
 
 	it("throws typed questionnaire and plain generation errors", async () => {
 		commands.generateFeaturePlanArtifact.mockResolvedValueOnce(
-			response(
-				{},
-				false,
-				JSON.stringify({ code: "BLOCKING_QUESTIONNAIRE_ANSWERS_REQUIRED" }),
+			errorResponse(
+				"BLOCKING_QUESTIONNAIRE_ANSWERS_REQUIRED",
+				"Questionnaire answers are required.",
 			),
 		);
 		const input = artifactInput();
@@ -237,7 +239,7 @@ describe("Plan Mode artifact generation action coverage", () => {
 		expect(input.selectActiveTab).toHaveBeenCalledWith("questionnaire");
 
 		commands.generateBlueprintArtifact.mockResolvedValueOnce(
-			response({}, false, "blueprint failed"),
+			errorResponse("BLUEPRINT_FAILED", "blueprint failed"),
 		);
 		actions = usePlanModeArtifactGeneration(artifactInput() as never);
 		await expect(
@@ -296,7 +298,7 @@ describe("Plan Mode artifact generation action coverage", () => {
 			expect(await actions.generateDedicatedViews(["user_flow"])).toBe(false);
 		}
 		commands.generatePlanViewArtifact.mockResolvedValueOnce(
-			response({}, false, "view failed"),
+			errorResponse("PLAN_VIEW_FAILED", "view failed"),
 		);
 		const actions = usePlanModeArtifactGeneration(artifactInput() as never);
 		await expect(actions.generateDedicatedViews(["user_flow"])).rejects.toThrow(
@@ -375,7 +377,7 @@ describe("Plan Mode artifact generation action coverage", () => {
 		expect(input.setGeneratedMessages).not.toHaveBeenCalled();
 
 		commands.generatePlanViewArtifact.mockResolvedValueOnce(
-			response({}, false, "repair failed"),
+			errorResponse("PLAN_VIEW_REPAIR_FAILED", "repair failed"),
 		);
 		input = artifactInput();
 		actions = usePlanModeArtifactGeneration(input as never);
@@ -469,17 +471,20 @@ function questionnaireInput(overrides: Record<string, unknown> = {}) {
 describe("Plan Mode questionnaire action coverage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		commands.startDesignQuestionnaire.mockResolvedValue(
-			response(questionnaireSession()),
+		commands.startDesignQuestionnaire.mockImplementation(() =>
+			Promise.resolve(response(questionnaireSession())),
 		);
-		commands.submitDesignQuestionnaireAnswers.mockResolvedValue(
-			response(questionnaireSession()),
+		commands.submitDesignQuestionnaireAnswers.mockImplementation(() =>
+			Promise.resolve(response(questionnaireSession())),
 		);
-		commands.generateAdditionalDesignQuestionnaireQuestions.mockResolvedValue(
-			response({
-				session: questionnaireSession(),
-				result: { addedCount: 2, skippedDuplicateCount: 0 },
-			}),
+		commands.generateAdditionalDesignQuestionnaireQuestions.mockImplementation(
+			() =>
+				Promise.resolve(
+					response({
+						session: questionnaireSession(),
+						result: { addedCount: 2, skippedDuplicateCount: 0 },
+					}),
+				),
 		);
 	});
 
@@ -506,7 +511,7 @@ describe("Plan Mode questionnaire action coverage", () => {
 		expect(input.selectActiveTab).toHaveBeenCalledWith("questionnaire");
 
 		commands.startDesignQuestionnaire.mockResolvedValueOnce(
-			response({}, false, "start failed"),
+			errorResponse("QUESTIONNAIRE_START_FAILED", "start failed"),
 		);
 		input = questionnaireInput({ activeBlueprintMessage: null });
 		actions = usePlanModeQuestionnaireActions(input as never);
@@ -537,8 +542,8 @@ describe("Plan Mode questionnaire action coverage", () => {
 
 	it("submits answers, inserts or replaces sessions, and marks completion", async () => {
 		const completed = questionnaireSession({ status: "accepted" });
-		commands.submitDesignQuestionnaireAnswers.mockResolvedValue(
-			response(completed),
+		commands.submitDesignQuestionnaireAnswers.mockImplementation(() =>
+			Promise.resolve(response(completed)),
 		);
 		const input = questionnaireInput();
 		const actions = usePlanModeQuestionnaireActions(input as never);
@@ -580,7 +585,7 @@ describe("Plan Mode questionnaire action coverage", () => {
 		expect(input.setAssemblyReadySessionIds).not.toHaveBeenCalled();
 
 		commands.submitDesignQuestionnaireAnswers.mockResolvedValueOnce(
-			response({}, false, "submit failed"),
+			errorResponse("QUESTIONNAIRE_SUBMIT_FAILED", "submit failed"),
 		);
 		input = questionnaireInput();
 		actions = usePlanModeQuestionnaireActions(input as never);
@@ -628,7 +633,7 @@ describe("Plan Mode questionnaire action coverage", () => {
 		);
 
 		commands.generateAdditionalDesignQuestionnaireQuestions.mockResolvedValueOnce(
-			response({}, false, "additional failed"),
+			errorResponse("QUESTIONNAIRE_ADDITIONAL_FAILED", "additional failed"),
 		);
 		actions = usePlanModeQuestionnaireActions(questionnaireInput() as never);
 		await expect(

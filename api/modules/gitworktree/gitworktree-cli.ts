@@ -15,6 +15,7 @@ export class GitCliError extends Error {
 		message: string,
 		public readonly stderr = "",
 		public readonly exitCode: number | null = null,
+		public readonly stdout = "",
 	) {
 		super(message);
 		this.name = "GitCliError";
@@ -50,9 +51,12 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 				cwd: options.cwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
-				env: buildChildProcessEnvironment({
-					purpose: "workspace_bootstrap",
-				}),
+				env: {
+					...buildChildProcessEnvironment({
+						purpose: "workspace_bootstrap",
+					}),
+					GIT_TERMINAL_PROMPT: "0",
+				},
 			},
 		);
 		const stdout: Buffer[] = [];
@@ -61,18 +65,28 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 		let settled = false;
 		let timedOut = false;
 		let oversized = false;
+		let escalationTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const terminate = () => {
+			child.kill("SIGTERM");
+			escalationTimer = setTimeout(() => {
+				if (!settled) child.kill("SIGKILL");
+			}, 1_000);
+			escalationTimer.unref();
+		};
 
 		const finishWithError = (error: GitCliError) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			if (escalationTimer) clearTimeout(escalationTimer);
 			reject(error);
 		};
 		const collect = (target: Buffer[], chunk: Buffer) => {
 			totalBytes += chunk.byteLength;
 			if (totalBytes > maxOutputBytes) {
 				oversized = true;
-				child.kill("SIGTERM");
+				terminate();
 				return;
 			}
 			target.push(chunk);
@@ -83,7 +97,7 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 
 		const timer = setTimeout(() => {
 			timedOut = true;
-			child.kill("SIGTERM");
+			terminate();
 		}, timeoutMs);
 		timer.unref();
 
@@ -99,6 +113,7 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			if (escalationTimer) clearTimeout(escalationTimer);
 			const stdoutText = Buffer.concat(stdout).toString("utf8");
 			const stderrText = Buffer.concat(stderr).toString("utf8");
 			if (timedOut) {
@@ -108,6 +123,7 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 						`git command timed out after ${timeoutMs}ms`,
 						stderrText,
 						code,
+						stdoutText,
 					),
 				);
 				return;
@@ -119,6 +135,7 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 						`git command output exceeded ${maxOutputBytes} bytes`,
 						stderrText,
 						code,
+						stdoutText,
 					),
 				);
 				return;
@@ -130,6 +147,7 @@ export const runGitCommand: GitCommandRunner = (args, options = {}) =>
 						stderrText.trim() || `git exited with code ${code ?? "unknown"}`,
 						stderrText,
 						code,
+						stdoutText,
 					),
 				);
 				return;

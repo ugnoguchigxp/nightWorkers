@@ -1,7 +1,9 @@
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { Context, Input } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { AppError } from "../../lib/errors";
+import {
+	logSerializedApiError,
+	serializeApiError,
+} from "../../lib/api-error-response";
 import { logger } from "../../lib/logger";
 import type { AppEnv } from "../../lib/types";
 
@@ -17,15 +19,9 @@ export function queueRouteError<ContextType extends NightWorkersRouteContext>(
 	c: ContextType,
 	err: unknown,
 ): Response {
-	if (err instanceof AppError) {
-		return c.json(
-			{ error: err.message, code: err.code, ...(err.details || {}) },
-			err.statusCode as ContentfulStatusCode,
-		);
-	}
-	logger.error(err, "Unhandled route error");
-	const message = err instanceof Error ? err.message : String(err);
-	return c.json({ error: message }, 500);
+	const serialized = serializeApiError(err);
+	logSerializedApiError(logger, serialized);
+	return c.json(serialized.body, serialized.status);
 }
 
 export function routeErrorResponse<

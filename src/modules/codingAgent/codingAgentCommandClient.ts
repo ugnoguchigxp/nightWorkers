@@ -7,6 +7,7 @@ import {
 } from "../../../shared/modules/codingAgent";
 import type { TaskOperatorFailure } from "../../../shared/modules/taskOperator";
 import { apiFetch } from "../../lib/api-base";
+import { readJsonResponse } from "../../lib/api-error";
 import { jsonRequest } from "../../lib/api-request";
 
 export type CodingAgentCommandConnection = {
@@ -110,6 +111,5 @@ async function sendRestCommand(request: CodingAgentCommandRequestV1) {
 		"/api/coding-agent/commands",
 		jsonRequest("POST", request),
 	);
-	const payload = await response.json();
-	return codingAgentCommandResponseV1Schema.parse(payload);
+	return readJsonResponse(response, codingAgentCommandResponseV1Schema);
 }

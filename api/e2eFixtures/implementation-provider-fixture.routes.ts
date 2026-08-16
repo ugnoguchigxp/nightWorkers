@@ -1,8 +1,15 @@
 import { createRoute } from "@hono/zod-openapi";
 import { z } from "zod";
+import { apiErrorOpenApiResponse } from "../../shared/schemas/api-error.schema";
+import { serializeApiError } from "../lib/api-error-response";
+import { NotFoundError } from "../lib/errors";
 import { createOpenApiRouter } from "../lib/openapi";
 import { registerFixtureProviderToolTurns } from "../services/structured-llm/fixture-tool-provider";
 import { buildImplementationDirectRunFixtureTurns } from "./implementation-direct-run-fixture";
+
+function notFound(message = "Not found") {
+	return serializeApiError(new NotFoundError(message)).body;
+}
 
 const prepareImplementationScenarioFixtureRoute = createRoute({
 	method: "post",
@@ -32,7 +39,7 @@ const prepareImplementationScenarioFixtureRoute = createRoute({
 			description:
 				"Prepare a deterministic implementation-provider scenario in isolated E2E.",
 		},
-		404: { description: "Route unavailable" },
+		404: apiErrorOpenApiResponse("Route unavailable"),
 	},
 });
 
@@ -44,7 +51,7 @@ export const implementationProviderFixtureRouter =
 				process.env.NIGHTWORKERS_E2E_ISOLATED !== "1" ||
 				c.req.header("x-nightworkers-e2e") !== "1"
 			) {
-				return c.json({ error: "Not found" }, 404);
+				return c.json(notFound(), 404);
 			}
 			const input = c.req.valid("json");
 			registerFixtureProviderToolTurns(

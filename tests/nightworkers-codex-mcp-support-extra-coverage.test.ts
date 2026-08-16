@@ -116,6 +116,11 @@ import {
 	resolveTaskRepository,
 	toolResultToMcp,
 } from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-support";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../api/modules/codingAgent/ports/coding-agent-host.port";
 
 function successfulToolResult(toolName = "read_file") {
 	return {
@@ -130,6 +135,7 @@ function successfulToolResult(toolName = "read_file") {
 describe("nightworkers Codex MCP support extra coverage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		configureCodingAgentHost(hostFake());
 		mocks.transports.length = 0;
 		mocks.getTaskRun.mockResolvedValue(null);
 		mocks.getTask.mockResolvedValue(null);
@@ -155,6 +161,7 @@ describe("nightworkers Codex MCP support extra coverage", () => {
 	});
 
 	afterEach(() => {
+		clearCodingAgentHostForTest();
 		vi.unstubAllEnvs();
 	});
 
@@ -617,3 +624,46 @@ describe("nightworkers Codex MCP support extra coverage", () => {
 		expect(execute).toHaveBeenCalledOnce();
 	});
 });
+
+function hostFake(): CodingAgentHostPorts {
+	return {
+		taskReader: {
+			getTask: mocks.getTask,
+			getRepository: mocks.getRepository,
+			readArtifactContent: async () => null,
+		},
+		runReader: {
+			getRun: mocks.getTaskRun,
+			listRunTodos: async () => [],
+		},
+		runLifecycle: {
+			startRun: async () => {
+				throw new Error("not used");
+			},
+			resumeRunTodo: async () => {
+				throw new Error("not used");
+			},
+			resumeInterruptedRun: async () => {
+				throw new Error("not used");
+			},
+			updateRunContext: async () => ({ kind: "not_found" }),
+		},
+		runJournal: {
+			appendRunEvent: async () => {},
+			appendTaskMessage: async () => {},
+			publishRun: async () => {},
+			appendTaskEvent: async () => {},
+		},
+		verificationReader: {
+			getLatestActiveDocument: async () => null,
+			runCompletionCheck: async () => ({
+				ok: false,
+				reason: null,
+				suggestedAction: null,
+				sourceStateHash: null,
+				verify: { status: "not_run" },
+				confirmation: { status: "not_required" },
+			}),
+		},
+	};
+}

@@ -6,6 +6,7 @@ import {
 	useRef,
 } from "react";
 import { toDeepRecord } from "../../../../shared/json-record";
+import { readJsonResponse } from "../../../lib/api-error";
 import { fetchDesignQuestionnaireSession } from "../../questionnaire";
 import { fetchPlanModeWorkspace } from "../../specification";
 import type { NightWorkersWorkspaceState } from "../hooks/useNightWorkersWorkspace";
@@ -52,9 +53,14 @@ export function useNightWorkersQuestionnaire(input: {
 					fetchPlanModeWorkspace(message.taskId),
 					fetchDesignQuestionnaireSession(message.taskId, sessionId),
 				]);
-				if (workspaceRes.ok && sessionRes.ok) {
-					const questionnaireSession = await sessionRes.json();
-					if (questionnaireSession?.questionSets?.length) return true;
+				try {
+					await readJsonResponse(workspaceRes);
+					const questionnaireSession = await readJsonResponse<{
+						questionSets?: unknown[];
+					}>(sessionRes);
+					if (questionnaireSession.questionSets?.length) return true;
+				} catch {
+					// Readiness remains false until both snapshots satisfy their contract.
 				}
 				await new Promise((resolve) => setTimeout(resolve, 250));
 			}

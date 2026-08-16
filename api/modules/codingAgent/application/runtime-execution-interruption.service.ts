@@ -9,7 +9,6 @@ import {
 	tasks,
 } from "../../../db/schema";
 import { AppError } from "../../../lib/errors";
-import * as nightworkersRepo from "../../nightworkers/nightworkers.repository";
 import {
 	type CodingAgentProcessInterruptionSnapshot,
 	projectUnknownOutcomeToolCalls,
@@ -18,6 +17,7 @@ import {
 	type CodingAgentRunInterruptionReason,
 	codingAgentRunExecutions,
 } from "../persistence/runtime-execution-schema";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import {
 	type CodingAgentExecutionOwnerIdentity,
 	getCodingAgentExecutionOwnerIdentity,
@@ -506,7 +506,7 @@ export async function interruptCodingAgentRun(input: {
 	});
 	if (!transition) return null;
 	await Promise.allSettled([
-		nightworkersRepo.createRunEvent({
+		requireCodingAgentHost().runJournal.appendRunEvent({
 			version: 1,
 			runId: transition.run.id,
 			taskId: transition.run.taskId,
@@ -518,7 +518,7 @@ export async function interruptCodingAgentRun(input: {
 				"Coding Agent runtime process was interrupted; the same Run can be resumed.",
 			data: transition.snapshot,
 		}),
-		nightworkersRepo.createTaskMessage({
+		requireCodingAgentHost().runJournal.appendTaskMessage({
 			taskId: transition.run.taskId,
 			runId: transition.run.id,
 			role: "system",
@@ -533,7 +533,7 @@ export async function interruptCodingAgentRun(input: {
 			},
 		}),
 		...transition.snapshot.unresolvedToolCalls.map((toolCall) =>
-			nightworkersRepo.createRunEvent({
+			requireCodingAgentHost().runJournal.appendRunEvent({
 				version: 1,
 				runId: transition.run.id,
 				taskId: transition.run.taskId,
@@ -546,7 +546,7 @@ export async function interruptCodingAgentRun(input: {
 				data: toolCall,
 			}),
 		),
-		nightworkersRepo.publishTaskRunUpdate(transition.run),
+		requireCodingAgentHost().runJournal.publishRun({ id: transition.run.id }),
 	]);
 	return transition;
 }

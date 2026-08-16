@@ -5,7 +5,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	commandArgumentsReferenceProjectSecret,
 	isProjectSecretPath,
+	listExistingProjectSecretPaths,
 	listTrackedProjectSecretPaths,
 } from "../api/services/security/project-secret-paths";
 
@@ -42,5 +44,53 @@ describe("Project secret path boundary", () => {
 			".env",
 			"credentials.json",
 		]);
+	});
+
+	it("finds untracked secret files and denies aliases without reading contents", async () => {
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "nw-secret-paths-"));
+		const outside = await fs.mkdtemp(
+			path.join(os.tmpdir(), "nw-secret-outside-"),
+		);
+		temporaryRoots.push(root, outside);
+		await fs.writeFile(path.join(root, ".env.local"), "fixture-content\n");
+		await fs.writeFile(path.join(root, "regular.txt"), "safe\n");
+		await fs.writeFile(path.join(outside, "external.txt"), "outside\n");
+		await fs.symlink(".env.local", path.join(root, "secret-alias"));
+		await fs.symlink(
+			path.join(outside, "external.txt"),
+			path.join(root, "outside-alias"),
+		);
+
+		const canonicalRoot = await fs.realpath(root);
+		const existing = await listExistingProjectSecretPaths(root);
+		expect(existing).toEqual(
+			expect.arrayContaining([
+				path.join(canonicalRoot, ".env.local"),
+				path.join(canonicalRoot, "secret-alias"),
+				path.join(canonicalRoot, "outside-alias"),
+			]),
+		);
+		for (const args of [
+			[".env.local"],
+			[path.join(root, ".env.local")],
+			["secret-alias"],
+			["outside-alias"],
+			["--config=.env.local"],
+		]) {
+			await expect(
+				commandArgumentsReferenceProjectSecret({
+					args,
+					repositoryRoot: root,
+					cwd: root,
+				}),
+			).resolves.toBe(true);
+		}
+		await expect(
+			commandArgumentsReferenceProjectSecret({
+				args: ["regular.txt"],
+				repositoryRoot: root,
+				cwd: root,
+			}),
+		).resolves.toBe(false);
 	});
 });

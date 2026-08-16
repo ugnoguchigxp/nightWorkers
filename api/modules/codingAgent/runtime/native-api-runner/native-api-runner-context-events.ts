@@ -1,4 +1,4 @@
-import * as repo from "../../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../../ports/coding-agent-host.binding";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -43,7 +43,7 @@ export async function emitNativeApiContextBudgetEvent(input: {
 		payload,
 	});
 	try {
-		await repo.createTaskEvent({
+		await requireCodingAgentHost().runJournal.appendTaskEvent({
 			taskRunId: input.context.runId,
 			type: input.action,
 			actor: "runtime",
@@ -60,6 +60,8 @@ export function summarizeNativeApiContextBudget(
 	budget: NativeApiContextBudget,
 ) {
 	return {
+		estimator: budget.estimator,
+		capability: budget.capability,
 		estimatedPromptTokens: budget.estimatedPromptTokens,
 		modelContextWindowTokens: budget.modelContextWindowTokens,
 		safePromptBudgetTokens: budget.safePromptBudgetTokens,

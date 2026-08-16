@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
@@ -16,18 +14,10 @@ import {
 	consumeCloseoutAdmission,
 } from "../gitCloseout/closeout-admission.service";
 import { listRepositoryWorktrees } from "../gitworktree/gitworktree.service";
+import { GitCliError } from "../gitworktree/gitworktree-cli";
 import { withRepositoryGitMutationLock } from "../gitworktree/repository-git-mutation-lock";
+import { runMergeGitCommand as git } from "./git-merge-command-runner";
 import * as mergeRepo from "./nightworkers.git-merge.repository";
-
-const execFileAsync = promisify(execFile);
-
-async function git(cwd: string, args: string[]) {
-	const { stdout } = await execFileAsync("git", args, {
-		cwd,
-		maxBuffer: 8 * 1024 * 1024,
-	});
-	return stdout.trim();
-}
 
 export async function createMergeRecordForCommittedRun(runId: string) {
 	const existing = await mergeRepo.getTaskRunMergeRecord(runId);
@@ -177,11 +167,12 @@ export async function previewTaskRunMerge(input: {
 				lastErrorCode: "source_push_required",
 			},
 		});
-	const ancestor = await execFileAsync(
-		"git",
-		["merge-base", "--is-ancestor", record.sourceCommitSha, targetHead],
-		{ cwd: repository.localPath },
-	)
+	const ancestor = await git(repository.localPath, [
+		"merge-base",
+		"--is-ancestor",
+		record.sourceCommitSha,
+		targetHead,
+	])
 		.then(() => true)
 		.catch(() => false);
 	const mergeBase = await git(repository.localPath, [
@@ -199,15 +190,16 @@ export async function previewTaskRunMerge(input: {
 				lastErrorCode: "unrelated_history",
 			},
 		});
-	const previewMerge = await execFileAsync(
-		"git",
+	const previewMerge = await git(
+		repository.localPath,
 		["merge-tree", "--write-tree", targetHead, record.sourceCommitSha],
-		{ cwd: repository.localPath, maxBuffer: 8 * 1024 * 1024 },
+		"mutation",
 	)
 		.then(() => ({ conflict: false, output: "" }))
-		.catch((error: { stdout?: string; stderr?: string }) => ({
+		.catch((error: unknown) => ({
 			conflict: true,
-			output: `${error.stdout ?? ""}\n${error.stderr ?? ""}`,
+			output:
+				error instanceof GitCliError ? `${error.stdout}\n${error.stderr}` : "",
 		}));
 	if (previewMerge.conflict) {
 		const conflictPaths = Array.from(
@@ -226,11 +218,12 @@ export async function previewTaskRunMerge(input: {
 		});
 	}
 	if (record.strategy === "fast_forward_only" && !ancestor) {
-		const canFastForward = await execFileAsync(
-			"git",
-			["merge-base", "--is-ancestor", targetHead, record.sourceCommitSha],
-			{ cwd: repository.localPath },
-		)
+		const canFastForward = await git(repository.localPath, [
+			"merge-base",
+			"--is-ancestor",
+			targetHead,
+			record.sourceCommitSha,
+		])
 			.then(() => true)
 			.catch(() => false);
 		if (!canFastForward)
@@ -474,11 +467,12 @@ async function executeTaskRunMergeUnlocked(input: {
 			"Target worktree has uncommitted changes",
 		);
 	try {
-		const alreadyIntegrated = await execFileAsync(
-			"git",
-			["merge-base", "--is-ancestor", record.sourceCommitSha, targetHead],
-			{ cwd: targetRoot },
-		)
+		const alreadyIntegrated = await git(targetRoot, [
+			"merge-base",
+			"--is-ancestor",
+			record.sourceCommitSha,
+			targetHead,
+		])
 			.then(() => true)
 			.catch(() => false);
 		const args =
@@ -487,13 +481,13 @@ async function executeTaskRunMergeUnlocked(input: {
 				: record.strategy === "fast_forward_only"
 					? ["merge", "--ff-only", record.sourceCommitSha]
 					: ["merge", "--no-ff", "--no-edit", record.sourceCommitSha];
-		await git(targetRoot, args);
+		await git(targetRoot, args, "mutation");
 		if (record.strategy === "squash")
-			await git(targetRoot, [
-				"commit",
-				"-m",
-				`Merge reviewed task ${record.taskId.slice(0, 8)}`,
-			]);
+			await git(
+				targetRoot,
+				["commit", "-m", `Merge reviewed task ${record.taskId.slice(0, 8)}`],
+				"mutation",
+			);
 		const after = await git(targetRoot, ["rev-parse", "HEAD"]);
 		const updated = await mergeRepo.persistMergedLifecycle({
 			record,
@@ -525,7 +519,11 @@ async function executeTaskRunMergeUnlocked(input: {
 					.update(taskRunMergeRecords)
 					.set({ targetPushStatus: "pushing", updatedAt: new Date() })
 					.where(eq(taskRunMergeRecords.id, record.id));
-				await git(targetRoot, ["push", policy.remoteName, record.targetBranch])
+				await git(
+					targetRoot,
+					["push", policy.remoteName, record.targetBranch],
+					"mutation",
+				)
 					.then(async () => {
 						await db
 							.update(taskRunMergeRecords)
@@ -559,15 +557,13 @@ async function executeTaskRunMergeUnlocked(input: {
 			"--name-only",
 			"--diff-filter=U",
 		]).catch(() => "");
-		await execFileAsync("git", ["merge", "--abort"], {
-			cwd: targetRoot,
-		}).catch(() => undefined);
-		await execFileAsync(
-			"git",
+		await git(targetRoot, ["merge", "--abort"], "mutation").catch(
+			() => undefined,
+		);
+		await git(
+			targetRoot,
 			["reset", "--merge", record.observedTargetSha ?? "HEAD"],
-			{
-				cwd: targetRoot,
-			},
+			"mutation",
 		).catch(() => undefined);
 		await mergeRepo.compareAndSetTaskRunMergeRecord({
 			id: record.id,

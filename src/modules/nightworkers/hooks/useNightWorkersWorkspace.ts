@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { client } from "../../../lib/api";
+import { readJsonResponse } from "../../../lib/api-error";
 import { CodingAgentCommandClient } from "../../codingAgent";
 import { planModeWorkspaceQueryOptions } from "../../specification";
 import { taskOperatorProjectionQueryOptions } from "../../taskOperator";
@@ -13,13 +14,16 @@ import {
 	fetchTaskLlmUsage,
 	fetchTaskMessages,
 } from "../nightWorkersCommands";
+import {
+	repositoriesQueryOptions,
+	repositoryQueryKeys,
+} from "../queries/repository-queries";
 import type { NightWorkersRealtimeConnection } from "../realtime/nightWorkersRealtimeConnection";
 import { mergeRunEvents } from "../realtimeEvents";
 import type {
 	BackgroundProcess,
 	GitCloseoutState,
 	ImplementationQueueDashboard,
-	Repository,
 	ReviewSessionDetail,
 	RunDetails,
 	Task,
@@ -112,12 +116,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		isFetching: isProjectsFetching,
 		refetch: refetchProjects,
 	} = useQuery({
-		queryKey: ["projects"],
-		queryFn: async () => {
-			const res = await client.repositories.$get();
-			if (!res.ok) throw new Error("Failed to fetch projects");
-			return (await res.json()) as Repository[];
-		},
+		...repositoriesQueryOptions(),
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 	});
@@ -130,9 +129,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	} = useQuery({
 		queryKey: ["sessions"],
 		queryFn: async () => {
-			const res = await client.tasks.$get();
-			if (!res.ok) throw new Error("Failed to fetch sessions");
-			return (await res.json()) as Task[];
+			return readJsonResponse<Task[]>(await client.tasks.$get());
 		},
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
@@ -141,9 +138,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 	const { data: implementationQueue = null } = useQuery({
 		queryKey: ["implementationQueue"],
 		queryFn: async () => {
-			const res = await fetchImplementationQueue();
-			if (!res.ok) throw new Error("Failed to fetch implementation queue");
-			return (await res.json()) as ImplementationQueueDashboard;
+			return readJsonResponse<ImplementationQueueDashboard>(
+				await fetchImplementationQueue(),
+			);
 		},
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
@@ -153,11 +150,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["sessionRuns", activeSessionId],
 		queryFn: async () => {
 			if (!activeSessionId) return [];
-			const res = await client.tasks[":id"].runs.$get({
-				param: { id: activeSessionId },
-			});
-			if (!res.ok) throw new Error("Failed to fetch session runs");
-			return (await res.json()) as TaskRun[];
+			return readJsonResponse<TaskRun[]>(
+				await client.tasks[":id"].runs.$get({
+					param: { id: activeSessionId },
+				}),
+			);
 		},
 		enabled: !!activeSessionId,
 		refetchInterval: false,
@@ -169,9 +166,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["gitCloseout", latestRun?.id],
 		queryFn: async () => {
 			if (!latestRun?.id) return null;
-			const res = await fetchRunGitCloseout(latestRun.id);
-			if (!res.ok) throw new Error("Failed to fetch Git closeout state");
-			return (await res.json()) as GitCloseoutState;
+			return readJsonResponse<GitCloseoutState>(
+				await fetchRunGitCloseout(latestRun.id),
+			);
 		},
 		enabled: !!latestRun?.id,
 		refetchInterval: false,
@@ -182,9 +179,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["taskMessages", activeSessionId],
 		queryFn: async () => {
 			if (!activeSessionId) return [];
-			const res = await fetchTaskMessages(activeSessionId);
-			if (!res.ok) throw new Error("Failed to fetch task messages");
-			return (await res.json()) as TaskMessage[];
+			return readJsonResponse<TaskMessage[]>(
+				await fetchTaskMessages(activeSessionId),
+			);
 		},
 		enabled: !!activeSessionId,
 		refetchOnWindowFocus: false,
@@ -202,9 +199,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["llmUsage", activeSessionId],
 		queryFn: async () => {
 			if (!activeSessionId) return null;
-			const res = await fetchTaskLlmUsage(activeSessionId);
-			if (!res.ok) throw new Error("Failed to fetch LLM usage summary");
-			return (await res.json()) as TaskLlmUsageSummary;
+			return readJsonResponse<TaskLlmUsageSummary>(
+				await fetchTaskLlmUsage(activeSessionId),
+			);
 		},
 		enabled: !!activeSessionId,
 		refetchOnWindowFocus: false,
@@ -215,9 +212,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["activityReplay", activeSessionId],
 		queryFn: async () => {
 			if (!activeSessionId) return emptyActivityReplay;
-			const res = await fetchTaskActivityEvents(activeSessionId);
-			if (!res.ok) throw new Error("Failed to fetch activity events");
-			return normalizeActivityReplay(await res.json());
+			return normalizeActivityReplay(
+				await readJsonResponse(await fetchTaskActivityEvents(activeSessionId)),
+			);
 		},
 		enabled: !!activeSessionId,
 		refetchOnWindowFocus: false,
@@ -230,9 +227,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["reviewSession", activeSessionId],
 		queryFn: async () => {
 			if (!activeSessionId) return null;
-			const res = await fetchLatestTaskReviewSession(activeSessionId);
-			if (!res.ok) throw new Error("Failed to fetch Review Mode session");
-			return (await res.json()) as ReviewSessionDetail | null;
+			return readJsonResponse<ReviewSessionDetail | null>(
+				await fetchLatestTaskReviewSession(activeSessionId),
+			);
 		},
 		enabled: !!activeSessionId,
 		refetchOnWindowFocus: false,
@@ -243,9 +240,9 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["backgroundProcesses", activeSessionId],
 		queryFn: async () => {
 			if (!activeSessionId) return [];
-			const res = await fetchBackgroundProcessesForTask(activeSessionId);
-			if (!res.ok) throw new Error("Failed to fetch background processes");
-			return (await res.json()) as BackgroundProcess[];
+			return readJsonResponse<BackgroundProcess[]>(
+				await fetchBackgroundProcessesForTask(activeSessionId),
+			);
 		},
 		enabled: !!activeSessionId,
 		refetchInterval: false,
@@ -325,11 +322,11 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 		queryKey: ["runDetails", latestRun?.id],
 		queryFn: async () => {
 			if (!latestRun?.id) return null;
-			const res = await client.runs[":id"].$get({
-				param: { id: latestRun.id },
-			});
-			if (!res.ok) throw new Error("Failed to fetch run details");
-			return (await res.json()) as RunDetails;
+			return readJsonResponse<RunDetails>(
+				await client.runs[":id"].$get({
+					param: { id: latestRun.id },
+				}),
+			);
 		},
 		enabled: !!latestRun?.id,
 		refetchInterval: false,
@@ -547,7 +544,7 @@ export function useNightWorkersWorkspace(): NightWorkersWorkspaceState {
 			moveWorkbenchSessionMutation.mutateAsync(input),
 		...chatActions,
 		refreshWorkspace: () => {
-			queryClient.invalidateQueries({ queryKey: ["projects"] });
+			queryClient.invalidateQueries({ queryKey: repositoryQueryKeys.all });
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });
 			queryClient.invalidateQueries({
 				queryKey: ["sessionRuns", activeSessionId],

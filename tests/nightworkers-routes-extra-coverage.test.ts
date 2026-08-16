@@ -56,7 +56,7 @@ vi.mock("../api/lib/openapi", () => ({
 }));
 vi.mock("../api/lib/logger", () => ({
 	logEvent: mocks.logEvent,
-	logger: { error: mocks.loggerError },
+	logger: { error: mocks.loggerError, warn: mocks.loggerError },
 }));
 vi.mock("../api/modules/ontology", () => ({
 	getOntologyRunDebugReportRoute: {
@@ -270,13 +270,23 @@ describe("repository route coverage", () => {
 			await call("GET", "/repositories/:id", {
 				params: { id: repositoryId },
 			}),
-		).toEqual({ status: 404, body: { error: "Repository not found" } });
+		).toEqual({
+			status: 404,
+			body: {
+				error: { code: "NOT_FOUND", message: "Repository not found" },
+			},
+		});
 		mocks.deleteRepository.mockResolvedValueOnce(null);
 		expect(
 			await call("DELETE", "/repositories/:id", {
 				params: { id: repositoryId },
 			}),
-		).toEqual({ status: 404, body: { error: "Repository not found" } });
+		).toEqual({
+			status: 404,
+			body: {
+				error: { code: "NOT_FOUND", message: "Repository not found" },
+			},
+		});
 	});
 
 	it("creates a validated repository without legacy normalization", async () => {
@@ -375,7 +385,12 @@ describe("repository route coverage", () => {
 			await call("GET", "/repositories/:id/file", {
 				params: { id: repositoryId },
 			}),
-		).toEqual({ status: 400, body: { error: "path is required" } });
+		).toEqual({
+			status: 400,
+			body: {
+				error: { code: "VALIDATION_ERROR", message: "path is required" },
+			},
+		});
 		mocks.updateRepository.mockRejectedValueOnce(
 			new AppError(409, "REPOSITORY_CONFLICT", "conflict", {
 				revision: 2,
@@ -389,9 +404,11 @@ describe("repository route coverage", () => {
 		).toEqual({
 			status: 409,
 			body: {
-				error: "conflict",
-				code: "REPOSITORY_CONFLICT",
-				revision: 2,
+				error: {
+					code: "REPOSITORY_CONFLICT",
+					message: "conflict",
+					details: { revision: 2 },
+				},
 			},
 		});
 		mocks.listProjectFiles.mockRejectedValueOnce(new Error("filesystem down"));
@@ -399,7 +416,15 @@ describe("repository route coverage", () => {
 			await call("GET", "/repositories/:id/files", {
 				params: { id: repositoryId },
 			}),
-		).toEqual({ status: 500, body: { error: "filesystem down" } });
+		).toEqual({
+			status: 500,
+			body: {
+				error: {
+					code: "INTERNAL_SERVER_ERROR",
+					message: "An unexpected error occurred",
+				},
+			},
+		});
 	});
 });
 
@@ -418,11 +443,19 @@ describe("task and workbench route coverage", () => {
 		mocks.getTask.mockResolvedValueOnce(null);
 		mocks.deleteTask.mockResolvedValueOnce(null);
 		expect(await call("GET", "/tasks/:id", { params: { id: taskId } })).toEqual(
-			{ status: 404, body: { error: "Task not found" } },
+			{
+				status: 404,
+				body: { error: { code: "NOT_FOUND", message: "Task not found" } },
+			},
 		);
 		expect(
 			await call("DELETE", "/tasks/:id", { params: { id: taskId } }),
-		).toEqual({ status: 404, body: { error: "Task not found" } });
+		).toEqual({
+			status: 404,
+			body: {
+				error: { code: "NOT_FOUND", message: "Task not found" },
+			},
+		});
 	});
 
 	it("creates canonical and normalized legacy tasks", async () => {
@@ -525,7 +558,12 @@ describe("task and workbench route coverage", () => {
 				params: { id: taskId },
 				json: {},
 			}),
-		).toEqual({ status: 404, body: { error: "Task not found" } });
+		).toEqual({
+			status: 404,
+			body: {
+				error: { code: "NOT_FOUND", message: "Task not found" },
+			},
+		});
 		expect(mocks.logEvent).toHaveBeenLastCalledWith(
 			expect.objectContaining({
 				meta: expect.objectContaining({ hasPriority: false }),
@@ -616,7 +654,12 @@ describe("run, activity, and utility route coverage", () => {
 				params: { id: runId },
 				json: { action: "complete" },
 			}),
-		).toEqual({ status: 404, body: { error: "Run not found" } });
+		).toEqual({
+			status: 404,
+			body: {
+				error: { code: "NOT_FOUND", message: "Run not found" },
+			},
+		});
 
 		mocks.executeCommand.mockResolvedValueOnce({ data: { reviewed: true } });
 		expect(
@@ -696,7 +739,9 @@ describe("run, activity, and utility route coverage", () => {
 			}),
 		).toEqual({
 			status: 404,
-			body: { error: "Task not found", code: "TASK_NOT_FOUND" },
+			body: {
+				error: { code: "TASK_NOT_FOUND", message: "Task not found" },
+			},
 		});
 		mocks.createLocalFolder.mockRejectedValueOnce("folder unavailable");
 		expect(
@@ -705,7 +750,12 @@ describe("run, activity, and utility route coverage", () => {
 			}),
 		).toEqual({
 			status: 500,
-			body: { error: "folder unavailable" },
+			body: {
+				error: {
+					code: "INTERNAL_SERVER_ERROR",
+					message: "An unexpected error occurred",
+				},
+			},
 		});
 	});
 });

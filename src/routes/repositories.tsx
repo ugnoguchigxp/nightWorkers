@@ -9,15 +9,22 @@ import {
 	Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { client } from "../lib/api";
+import { readJsonResponse } from "../lib/api-error";
+import {
+	repositoriesQueryOptions,
+	repositoryQueryKeys,
+} from "../modules/nightworkers/queries/repository-queries";
 import type { CreateProjectInput } from "../modules/nightworkers/types";
 
 export const Route = createFileRoute("/repositories")({
 	component: RepositoriesPage,
 });
 
-function RepositoriesPage() {
+export function RepositoriesPage() {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const [name, setName] = useState("");
 	const [localPath, setLocalPath] = useState("");
@@ -33,24 +40,16 @@ function RepositoriesPage() {
 		useState(false);
 
 	// Fetch Repositories
-	const { data: repos = [], isLoading } = useQuery({
-		queryKey: ["repositories"],
-		queryFn: async () => {
-			const res = await client.repositories.$get();
-			if (!res.ok) throw new Error("Failed to fetch repositories");
-			return res.json();
-		},
-	});
+	const { data: repos = [], isLoading } = useQuery(repositoriesQueryOptions());
 
 	// Create Repository Mutation
 	const createRepoMutation = useMutation({
 		mutationFn: async (data: CreateProjectInput) => {
 			const res = await client.repositories.$post({ json: data });
-			if (!res.ok) throw new Error("Failed to create repository");
-			return res.json();
+			return readJsonResponse(res);
 		},
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["repositories"] });
+			queryClient.invalidateQueries({ queryKey: repositoryQueryKeys.all });
 			setName("");
 			setLocalPath("");
 			setBranch("main");
@@ -67,13 +66,14 @@ function RepositoriesPage() {
 	const deleteRepoMutation = useMutation({
 		mutationFn: async (id: string) => {
 			const res = await client.repositories[":id"].$delete({ param: { id } });
-			if (!res.ok) throw new Error("Failed to delete repository");
-			return res.json();
+			return readJsonResponse(res);
 		},
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["repositories"] });
+			queryClient.invalidateQueries({ queryKey: repositoryQueryKeys.all });
 		},
 	});
+	const repositoryMutationError =
+		createRepoMutation.error ?? deleteRepoMutation.error;
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -101,11 +101,16 @@ function RepositoriesPage() {
 		<div className="max-w-7xl mx-auto px-6 py-10">
 			<div className="mb-8">
 				<h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent">
-					Repositories
+					{t("repositories.title")}
 				</h1>
-				<p className="text-muted-foreground">
-					Register local workspaces for coding agents to work inside
-				</p>
+				<p className="text-muted-foreground">{t("repositories.description")}</p>
+				{repositoryMutationError ? (
+					<p className="mt-2 text-sm text-rose-400" role="alert">
+						{repositoryMutationError instanceof Error
+							? repositoryMutationError.message
+							: String(repositoryMutationError)}
+					</p>
+				) : null}
 			</div>
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -113,16 +118,16 @@ function RepositoriesPage() {
 				<div className="lg:col-span-1 bg-card border border-border rounded-xl p-6 shadow-lg shadow-black/20">
 					<h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-foreground">
 						<Plus className="h-5 w-5 text-primary" />
-						Register Repository
+						{t("repositories.register")}
 					</h2>
 					<form onSubmit={handleSubmit} className="space-y-4">
 						<div>
 							<span className="block text-sm font-medium text-muted-foreground mb-1">
-								Friendly Name
+								{t("repositories.friendlyName")}
 							</span>
 							<input
 								type="text"
-								placeholder="e.g. My Awesome App"
+								placeholder={t("repositories.friendlyNamePlaceholder")}
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -132,11 +137,11 @@ function RepositoriesPage() {
 
 						<div>
 							<span className="block text-sm font-medium text-muted-foreground mb-1">
-								Absolute Local Path
+								{t("repositories.localPath")}
 							</span>
 							<input
 								type="text"
-								placeholder="e.g. /Users/name/Projects/app"
+								placeholder={t("repositories.localPathPlaceholder")}
 								value={localPath}
 								onChange={(e) => setLocalPath(e.target.value)}
 								className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -146,11 +151,11 @@ function RepositoriesPage() {
 
 						<div>
 							<span className="block text-sm font-medium text-muted-foreground mb-1">
-								Target Git Branch
+								{t("repositories.targetBranch")}
 							</span>
 							<input
 								type="text"
-								placeholder="e.g. main"
+								placeholder={t("repositories.targetBranchPlaceholder")}
 								value={branch}
 								onChange={(e) => setBranch(e.target.value)}
 								className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -161,16 +166,16 @@ function RepositoriesPage() {
 						<div className="border-t border-border/60 pt-4 mt-4 space-y-4">
 							<h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
 								<Shield className="h-4 w-4 text-emerald-400" />
-								Safety & Execution Policies
+								{t("repositories.safetyPolicies")}
 							</h3>
 
 							<div>
 								<span className="block text-xs font-medium text-muted-foreground mb-1">
-									Allowed Subdirs (comma separated, relative)
+									{t("repositories.allowedSubdirs")}
 								</span>
 								<input
 									type="text"
-									placeholder="e.g. src, lib (leave empty for all)"
+									placeholder={t("repositories.allowedSubdirsPlaceholder")}
 									value={allowedPaths}
 									onChange={(e) => setAllowedPaths(e.target.value)}
 									className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -179,11 +184,11 @@ function RepositoriesPage() {
 
 							<div>
 								<span className="block text-xs font-medium text-muted-foreground mb-1">
-									Denied Subdirs (comma separated, relative)
+									{t("repositories.deniedSubdirs")}
 								</span>
 								<input
 									type="text"
-									placeholder="e.g. tests/e2e, config (leave empty for none)"
+									placeholder={t("repositories.deniedSubdirsPlaceholder")}
 									value={deniedPaths}
 									onChange={(e) => setDeniedPaths(e.target.value)}
 									className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -192,11 +197,11 @@ function RepositoriesPage() {
 
 							<div>
 								<span className="block text-xs font-medium text-muted-foreground mb-1">
-									Blocked Shell Commands (comma separated)
+									{t("repositories.blockedCommands")}
 								</span>
 								<input
 									type="text"
-									placeholder="e.g. rm -rf, npm publish"
+									placeholder={t("repositories.blockedCommandsPlaceholder")}
 									value={blockedCommands}
 									onChange={(e) => setBlockedCommands(e.target.value)}
 									className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -206,7 +211,7 @@ function RepositoriesPage() {
 							<div className="flex gap-4">
 								<div className="flex-1">
 									<span className="block text-xs font-medium text-muted-foreground mb-1">
-										Command Timeout (s)
+										{t("repositories.commandTimeout")}
 									</span>
 									<input
 										type="number"
@@ -231,7 +236,7 @@ function RepositoriesPage() {
 										htmlFor="requireRead"
 										className="text-xs font-medium text-muted-foreground cursor-pointer select-none"
 									>
-										Read Before Edit
+										{t("repositories.readBeforeEdit")}
 									</label>
 								</div>
 							</div>
@@ -244,10 +249,7 @@ function RepositoriesPage() {
 									}
 									className="mt-0.5 rounded bg-background border-border text-primary focus:ring-primary h-4 w-4"
 								/>
-								<span>
-									trackedされた.env・credential
-									fileがある場合、その存在を確認済みとしてRunを許可する（内容はNightWorkersへ保存しません）
-								</span>
+								<span>{t("repositories.secretAcknowledgement")}</span>
 							</label>
 						</div>
 
@@ -257,8 +259,8 @@ function RepositoriesPage() {
 							className="w-full"
 						>
 							{createRepoMutation.isPending
-								? "Registering..."
-								: "Register Workspace"}
+								? t("repositories.registering")
+								: t("repositories.registerWorkspace")}
 						</Button>
 					</form>
 				</div>
@@ -267,19 +269,22 @@ function RepositoriesPage() {
 				<div className="lg:col-span-2 space-y-4">
 					<h2 className="text-xl font-bold flex items-center gap-2 text-foreground">
 						<FolderGit2 className="h-5 w-5 text-cyan-400" />
-						Registered Workspaces
+						{t("repositories.registeredWorkspaces")}
 					</h2>
 
 					{isLoading ? (
-						<div className="text-center py-12 border border-border border-dashed rounded-xl bg-card/25">
-							<p className="text-muted-foreground">Loading workspaces...</p>
+						<div
+							className="text-center py-12 border border-border border-dashed rounded-xl bg-card/25"
+							aria-busy="true"
+						>
+							<p className="text-muted-foreground">
+								{t("repositories.loading")}
+							</p>
 						</div>
 					) : repos.length === 0 ? (
 						<div className="text-center py-12 border border-border border-dashed rounded-xl bg-card/25">
 							<FolderGit2 className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-							<p className="text-muted-foreground">
-								No repositories registered yet.
-							</p>
+							<p className="text-muted-foreground">{t("repositories.empty")}</p>
 						</div>
 					) : (
 						<div className="grid gap-4">
@@ -302,7 +307,7 @@ function RepositoriesPage() {
 												<span>{repo.branch}</span>
 												<span className="text-border">|</span>
 												<Shield className="h-3.5 w-3.5 text-muted-foreground/60" />
-												<span>Sandbox execution active</span>
+												<span>{t("repositories.sandboxActive")}</span>
 											</div>
 											<div className="font-mono text-xs">
 												identity {repo.repositoryIdentityStatus ?? "unknown"} v
@@ -316,11 +321,7 @@ function RepositoriesPage() {
 
 									<Button
 										onClick={() => {
-											if (
-												confirm(
-													"Are you sure you want to delete this repository?",
-												)
-											) {
+											if (confirm(t("repositories.deleteConfirm"))) {
 												deleteRepoMutation.mutate(repo.id);
 											}
 										}}
@@ -330,7 +331,7 @@ function RepositoriesPage() {
 										className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 gap-1.5"
 									>
 										<Trash2 className="h-4 w-4" />
-										Delete
+										{t("repositories.delete")}
 									</Button>
 								</div>
 							))}

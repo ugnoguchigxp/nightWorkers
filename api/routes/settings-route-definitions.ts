@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { apiErrorOpenApiResponse } from "../../shared/schemas/api-error.schema";
 import {
 	SUPPORTED_CURRENCIES,
 	SUPPORTED_LANGUAGES,
@@ -235,9 +236,7 @@ export const saveLlmSettingsRoute = createRoute({
 		200: {
 			content: {
 				"application/json": {
-					schema: z.object({
-						success: z.boolean().openapi({ example: true }),
-					}),
+					schema: llmSettingsSchema,
 				},
 			},
 			description: "Save LLM Settings",
@@ -406,12 +405,7 @@ export const refreshFxRatesRoute = createRoute({
 			content: { "application/json": { schema: fxRateCacheSchema.unwrap() } },
 			description: "Refresh FX rate cache",
 		},
-		500: {
-			content: {
-				"application/json": { schema: z.object({ error: z.string() }) },
-			},
-			description: "FX refresh failed",
-		},
+		500: apiErrorOpenApiResponse("FX refresh failed"),
 	},
 });
 
@@ -485,12 +479,7 @@ export const importPublicPricingRoute = createRoute({
 			description:
 				"Import LLM pricing rows from the public LiteLLM model price JSON",
 		},
-		500: {
-			content: {
-				"application/json": { schema: z.object({ error: z.string() }) },
-			},
-			description: "Public LLM pricing import failed",
-		},
+		500: apiErrorOpenApiResponse("Public LLM pricing import failed"),
 	},
 });
 

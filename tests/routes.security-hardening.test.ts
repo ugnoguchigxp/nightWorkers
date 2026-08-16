@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NIGHTWORKERS_API_MAX_BODY_BYTES } from "../api/security/nightworkers-request-policy";
 
 function isolatedSettingsPath() {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nightworkers-settings-"));
@@ -23,6 +24,44 @@ async function importSettingsRuntimeWithPath(settingsPath: string) {
 afterEach(() => {
 	vi.unstubAllEnvs();
 	vi.resetModules();
+});
+
+describe("API request body limit", () => {
+	it("rejects an API request with an oversized declared body before routing", async () => {
+		const { default: app } = await import("../api/app");
+		const response = await app.fetch(
+			new Request("http://localhost/api/health/live", {
+				method: "POST",
+				headers: {
+					"content-length": String(NIGHTWORKERS_API_MAX_BODY_BYTES + 1),
+				},
+				body: "{}",
+			}),
+		);
+
+		expect(response.status).toBe(413);
+		expect(await response.json()).toMatchObject({
+			error: { code: "REQUEST_BODY_TOO_LARGE" },
+		});
+	}, 15_000);
+
+	it("keeps body limiting enabled for non-upgrade WebSocket paths", async () => {
+		const { default: app } = await import("../api/app");
+		const response = await app.fetch(
+			new Request("http://localhost/api/ws/nightworkers", {
+				method: "POST",
+				headers: {
+					"content-length": String(NIGHTWORKERS_API_MAX_BODY_BYTES + 1),
+				},
+				body: "{}",
+			}),
+		);
+
+		expect(response.status).toBe(413);
+		expect(await response.json()).toMatchObject({
+			error: { code: "REQUEST_BODY_TOO_LARGE" },
+		});
+	}, 15_000);
 });
 
 describe("LLM settings secret hardening", () => {

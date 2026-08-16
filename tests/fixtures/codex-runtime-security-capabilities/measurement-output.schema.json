@@ -1,0 +1,30 @@
+{
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"normalFileRead": { "type": "boolean" },
+		"projectEnvRead": { "type": "boolean" },
+		"projectEnvLocalRead": { "type": "boolean" },
+		"projectPemRead": { "type": "boolean" },
+		"registryCredentialRead": { "type": "boolean" },
+		"workspaceWrite": { "type": "boolean" },
+		"outsideFileRead": { "type": "boolean" },
+		"symlinkOutsideRead": { "type": "boolean" },
+		"outsideFileWrite": { "type": "boolean" },
+		"childProcess": { "type": "boolean" },
+		"networkAccess": { "type": "boolean" }
+	},
+	"required": [
+		"normalFileRead",
+		"projectEnvRead",
+		"projectEnvLocalRead",
+		"projectPemRead",
+		"registryCredentialRead",
+		"workspaceWrite",
+		"outsideFileRead",
+		"symlinkOutsideRead",
+		"outsideFileWrite",
+		"childProcess",
+		"networkAccess"
+	]
+}

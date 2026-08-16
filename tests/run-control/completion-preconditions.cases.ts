@@ -1,10 +1,15 @@
 import { eq } from "drizzle-orm";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createCodingAgentHostAdapter } from "../../api/composition/coding-agent";
 import { db } from "../../api/db/client";
 import { taskRunTodos } from "../../api/db/schema";
 import { verificationDocuments } from "../../api/db/verification-schema";
 import { ActionExecutionJournal } from "../../api/modules/codingAgent/application/action-execution-journal";
 import { RunFinalizeController } from "../../api/modules/codingAgent/application/run-finalize-controller";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../../api/modules/codingAgent/ports/coding-agent-host.binding";
 import {
 	type CodingAgentSystemContextSnapshot,
 	TodoMutationService,
@@ -32,7 +37,12 @@ const systemContext: CodingAgentSystemContextSnapshot = {
 	todoPolicy: "adaptive",
 };
 
+beforeEach(() => {
+	configureCodingAgentHost(createCodingAgentHostAdapter());
+});
+
 afterEach(async () => {
+	clearCodingAgentHostForTest();
 	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
 });
 

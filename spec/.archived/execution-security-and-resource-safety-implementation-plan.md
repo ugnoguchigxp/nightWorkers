@@ -227,11 +227,16 @@ terminal hookまたはapplication portから、`runId`を指定してcleanupを�
 - Findings: `C1`
 - Write set: `api/services/worker-tools/command-policy.ts`、
   `api/services/worker-tools/tool-policy-enforcer.ts`、`api/services/worker-tools/run-command.ts`、
-  `api/services/worker-tools/run-background-command.ts`、A-T0のcommand test、
-  `tests/worker-tools/services-worker-tools-05.test.ts`、
+  `api/services/worker-tools/run-background-command.ts`、
+  `api/services/background-processes/index.ts`、
+  `api/services/execution/workspace-process-confinement.ts`、A-T0のcommand test、
+  `tests/services.workspace-process-confinement.test.ts`、`tests/worker-tools/services-worker-tools-05.test.ts`、
   `tests/worker-tools/services-worker-tools-06.test.ts`
 - 新規symbol: `parseSingleCommand(command): ParsedSingleCommandResult`。成功値は`program`と`args`を持ち、
   execution層は`execFile`/`spawn`相当へこの値だけを渡す。`/bin/bash -c`へraw commandを渡さない。
+- 実行主体: `run_background_command`は`background-processes`へ委譲するため、同serviceと
+  confinement adapterも`ParsedSingleCommand`を受け取るように変更する。wrapperだけを変更して
+  raw commandのshell実行を残さない。
 - Parser contract: stateはunquoted/single-quoted/double-quoted/escapedを持つ。空文字、NUL、CR/LF、
   unquotedの`|`, `||`, `&`, `&&`, `;`, `<`, `>`、subshell、command/process substitution、先頭の
   environment assignmentを拒否する。single quote内の文字はliteral、quoteはargvから除去する。
@@ -251,7 +256,8 @@ terminal hookまたはapplication portから、`runId`を指定してcleanupを�
 - Depends on: `A-T1`
 - Write set: `api/services/security/project-secret-paths.ts`、
   `api/services/execution/workspace-process-confinement.ts`、`api/services/worker-tools/run-command.ts`、
-  `api/services/worker-tools/run-background-command.ts`、A-T0のsecret test
+  `api/services/worker-tools/run-background-command.ts`、`api/services/background-processes/index.ts`、
+  `tests/services.project-secret-paths.test.ts`、A-T0のsecret test
 - 新規symbol: `listExistingProjectSecretPaths(repositoryRoot)`。tracked fileだけでなくworkspace内に実在する
   catalog一致fileを列挙し、`realpath`がroot外へ出るsymlinkはsecret候補としてdenyする。内容は読まない。
 - macOS contract: 生成するsandbox profileに各canonical secret pathのread denyを追加し、workspace全体の

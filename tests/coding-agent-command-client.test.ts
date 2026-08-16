@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CodingAgentCommandRequestV1 } from "../shared/modules/codingAgent";
+
+const controls = vi.hoisted(() => ({ apiFetch: vi.fn() }));
+
+vi.mock("../src/lib/api-base", () => ({ apiFetch: controls.apiFetch }));
+
 import {
 	CodingAgentCommandClient,
 	CodingAgentCommandError,
@@ -143,6 +148,29 @@ describe("CodingAgentCommandClient", () => {
 			CodingAgentCommandError,
 		);
 		expect(restSender).toHaveBeenCalledTimes(1);
+	});
+
+	it("decodes a canonical REST transport error before command-response parsing", async () => {
+		controls.apiFetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					error: {
+						code: "TASK_REVISION_CONFLICT",
+						message: "Task revision changed.",
+					},
+				}),
+				{ status: 409 },
+			),
+		);
+		const client = new CodingAgentCommandClient({
+			getConnection: () => null,
+		});
+
+		await expect(client.execute(request)).rejects.toMatchObject({
+			status: 409,
+			code: "TASK_REVISION_CONFLICT",
+			message: "Task revision changed.",
+		});
 	});
 
 	it("rejects a response correlated to a different request", async () => {

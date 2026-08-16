@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { readJsonResponse } from "../../lib/api-error";
 import type { PlanModeWorkspace } from "../nightworkers/types";
 import { fetchPlanModeWorkspace } from "./specificationCommands";
 
@@ -10,9 +11,9 @@ export function planModeWorkspaceQueryOptions(taskId: string | null) {
 		queryKey: planModeWorkspaceQueryKey(taskId),
 		queryFn: async () => {
 			if (!taskId) return null;
-			const response = await fetchPlanModeWorkspace(taskId);
-			if (!response.ok) throw new Error("Failed to fetch Plan Mode workspace");
-			return (await response.json()) as PlanModeWorkspace;
+			return readJsonResponse<PlanModeWorkspace>(
+				await fetchPlanModeWorkspace(taskId),
+			);
 		},
 		enabled: Boolean(taskId),
 		refetchOnWindowFocus: false,

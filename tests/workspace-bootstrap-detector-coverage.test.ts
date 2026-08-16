@@ -67,7 +67,8 @@ describe("workspace bootstrap detector coverage", () => {
 			"apps/web/package.json": "{}",
 		});
 		const result = await detectWorkspaceBootstrapComponents(root);
-		const pnpm = result.find((component) => component.adapterId === "pnpm")!;
+		const pnpm = result.find((component) => component.adapterId === "pnpm");
+		if (!pnpm) throw new Error("pnpm workspace bootstrap was not detected.");
 		expect(pnpm.evidencePaths).toContain(
 			path.join("packages", "ui", "package.json"),
 		);
@@ -98,7 +99,8 @@ describe("workspace bootstrap detector coverage", () => {
 			"packages/api/sub/package.json": "{}",
 		});
 		const result = await detectWorkspaceBootstrapComponents(root);
-		const yarn = result.find((component) => component.adapterId === "yarn")!;
+		const yarn = result.find((component) => component.adapterId === "yarn");
+		if (!yarn) throw new Error("Yarn workspace bootstrap was not detected.");
 		expect(yarn.evidencePaths).toContain(
 			path.join("packages", "ui", "package.json"),
 		);
@@ -147,9 +149,8 @@ describe("workspace bootstrap detector coverage", () => {
 				"gradle",
 			]),
 		);
-		const gradle = result.find(
-			(component) => component.adapterId === "gradle",
-		)!;
+		const gradle = result.find((component) => component.adapterId === "gradle");
+		if (!gradle) throw new Error("Gradle bootstrap was not detected.");
 		expect(gradle.evidencePaths).toContain(
 			path.join("java", "gradle", "build.gradle"),
 		);

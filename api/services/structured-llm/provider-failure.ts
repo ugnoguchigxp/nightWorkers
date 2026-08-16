@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 
 const MAX_PROVIDER_ERROR_BODY_BYTES = 8_192;
+export const MAX_PROVIDER_RESPONSE_BYTES = 4 * 1024 * 1024;
+export const PROVIDER_RESPONSE_COMPACTION_CHUNK_COUNT = 1024;
 
 export type StructuredProviderFailureKind =
 	| "transport"
@@ -79,6 +81,93 @@ export function providerInvalidResponseError(input: {
 		retryable: false,
 		providerBody: body,
 		cause: input.cause,
+	});
+}
+
+export function providerResponseTooLargeError(
+	maxResponseBytes = MAX_PROVIDER_RESPONSE_BYTES,
+) {
+	return new StructuredProviderError({
+		kind: "invalid_response",
+		message: "Provider response exceeds the configured size limit.",
+		code: "PROVIDER_RESPONSE_TOO_LARGE",
+		retryable: false,
+		providerBody: `[provider response exceeded byte limit: ${maxResponseBytes}]`,
+	});
+}
+
+/**
+ * Reads an HTTP provider response with a byte ceiling before decoding JSON.
+ * The native Response.text() helper has no ceiling and would otherwise allow
+ * a misconfigured or hostile provider endpoint to exhaust the API process.
+ */
+export async function readBoundedProviderResponseText(
+	response: Response,
+	maxResponseBytes = MAX_PROVIDER_RESPONSE_BYTES,
+) {
+	const declaredBytes = Number.parseInt(
+		response.headers.get("content-length") ?? "",
+		10,
+	);
+	if (Number.isFinite(declaredBytes) && declaredBytes > maxResponseBytes) {
+		await response.body?.cancel().catch(() => undefined);
+		throw providerResponseTooLargeError(maxResponseBytes);
+	}
+	if (!response.body) return "";
+
+	const reader = response.body.getReader();
+	const compactedChunks: Uint8Array[] = [];
+	let chunks: Uint8Array[] = [];
+	let pendingBytes = 0;
+	let totalBytes = 0;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			totalBytes += value.byteLength;
+			if (totalBytes > maxResponseBytes) {
+				throw providerResponseTooLargeError(maxResponseBytes);
+			}
+			chunks.push(value);
+			pendingBytes += value.byteLength;
+			if (chunks.length < PROVIDER_RESPONSE_COMPACTION_CHUNK_COUNT) continue;
+			compactedChunks.push(Buffer.concat(chunks, pendingBytes));
+			chunks = [];
+			pendingBytes = 0;
+		}
+	} catch (error) {
+		await reader.cancel().catch(() => undefined);
+		throw error;
+	}
+	return Buffer.concat([...compactedChunks, ...chunks], totalBytes).toString(
+		"utf8",
+	);
+}
+
+export function providerInvalidToolArgumentsError(input: {
+	provider: string;
+	toolName: string;
+	rawArguments: string;
+	failure: "invalid_json" | "non_object" | "unknown_tool" | "schema_invalid";
+	content?: string;
+	responseBody?: string;
+	schemaError?: string;
+}) {
+	return new StructuredProviderError({
+		kind: "invalid_response",
+		message: `${input.provider} returned invalid arguments for tool ${input.toolName}.`,
+		code: "INVALID_TOOL_ARGUMENTS",
+		retryable: false,
+		providerBody: boundedProviderErrorBody(
+			JSON.stringify({
+				content: input.content ?? null,
+				responseBody: input.responseBody ?? null,
+				toolName: input.toolName,
+				rawArguments: input.rawArguments,
+				failure: input.failure,
+				schemaError: input.schemaError ?? null,
+			}),
+		),
 	});
 }
 

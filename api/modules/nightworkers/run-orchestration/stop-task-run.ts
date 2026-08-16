@@ -1,9 +1,9 @@
 import { AppError, NotFoundError } from "../../../lib/errors";
+import { stopBackgroundProcessesForRun } from "../../../services/background-processes";
 import { stopIsolatedTaskRun } from "../../../services/execution/worker-process-manager";
 import { resolveAgentRuntime } from "../../codingAgent";
+import { applyRunOutcomeTransition } from "../../run/application/run-outcome-transition.command";
 import * as repo from "../nightworkers.repository";
-import { completeImplementationQueueEntryForRun } from "./queues";
-import { assertRunStatusTransition } from "./status";
 import { normalizeAgentRuntimeKind } from "./utils";
 
 export async function stopTaskRun(
@@ -17,6 +17,8 @@ export async function stopTaskRun(
 	if (!run) {
 		throw new NotFoundError("Run not found");
 	}
+	const task = await repo.getTask(run.taskId);
+	if (!task) throw new NotFoundError("Task not found");
 	if (precondition) {
 		if (run.taskId !== precondition.expectedTaskId)
 			throw new AppError(
@@ -24,7 +26,6 @@ export async function stopTaskRun(
 				"TASK_RESOURCE_OWNERSHIP_MISMATCH",
 				"Run does not belong to the requested Task.",
 			);
-		const task = await repo.getTask(run.taskId);
 		if (task?.revision !== precondition.expectedTaskRevision)
 			throw new AppError(
 				409,
@@ -34,12 +35,9 @@ export async function stopTaskRun(
 			);
 	}
 	if (
-		![
-			"running",
-			"context_compiling",
-			"compiling_context",
-			"finalizing",
-		].includes(run.status)
+		!(["running", "context_compiling", "finalizing"] as string[]).includes(
+			run.status,
+		)
 	) {
 		return run;
 	}
@@ -51,6 +49,32 @@ export async function stopTaskRun(
 		normalizeAgentRuntimeKind(run.workerKind),
 	);
 	await runtime.stop(runId);
+	const transition = await applyRunOutcomeTransition({
+		run: {
+			id: runId,
+			expectedStatuses: [run.status],
+			expectedUpdatedAt: run.updatedAt,
+			targetStatus: "cancelled",
+			patch: {
+				endedAt: new Date(),
+				finishedAt: new Date(),
+				summary: run.summary || "Run stop requested by user.",
+				finalReport: run.finalReport || "Run stop requested by user.",
+			},
+		},
+		task: {
+			id: task.id,
+			expectedStatus: task.status,
+			expectedUpdatedAt: task.updatedAt,
+			targetStatus: "ready",
+		},
+	});
+	const stoppedRun = transition.run;
+	await repo.publishTaskRunUpdate(stoppedRun);
+	await stopBackgroundProcessesForRun(runId, "run_cancelled").catch(() => {
+		// Process cleanup is a post-commit best effort. It must not resurrect a
+		// cancelled Run when an OS process is already gone.
+	});
 	await repo.createRunEvent({
 		version: 1,
 		runId,
@@ -65,15 +89,5 @@ export async function stopTaskRun(
 			previousStatus: run.status,
 		},
 	});
-	assertRunStatusTransition(run.status, "cancelled");
-	const stoppedRun = await repo.updateTaskRun(runId, {
-		status: "cancelled",
-		endedAt: new Date(),
-		finishedAt: new Date(),
-		summary: run.summary || "Run stop requested by user.",
-		finalReport: run.finalReport || "Run stop requested by user.",
-	});
-	await repo.updateTaskStatus(run.taskId, "ready");
-	await completeImplementationQueueEntryForRun(runId, "cancelled");
-	return stoppedRun ?? run;
+	return stoppedRun;
 }

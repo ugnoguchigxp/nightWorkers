@@ -1,4 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../api/services/security/safe-outbound-fetch", () => ({
+	safeOutboundFetch: async (input: {
+		url: URL;
+		headers?: Record<string, string>;
+	}) => {
+		const fetched = await fetch(input.url, { headers: input.headers });
+		return {
+			response: fetched,
+			finalUrl: fetched.url || input.url.href,
+		};
+	},
+}));
+
 import {
 	fetchContentTool,
 	validateFetchContentUrl,
@@ -149,82 +163,57 @@ describe("fetchContentTool HTTP and redirect coverage", () => {
 	});
 });
 
-describe("fetchContentTool HTTP error and reader mirror coverage", () => {
-	it("uses the reader mirror when the origin returns an HTTP error", async () => {
-		const fetchSpy = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(
-				response({
-					ok: false,
-					status: 403,
-					url: "https://example.com/protected",
-					contentType: "text/html",
-				}),
-			)
-			.mockResolvedValueOnce(
-				response({
-					status: 200,
-					url: "",
-					contentType: null,
-					body: [
-						"Title: Mirror Title",
-						"Source: example",
-						"Markdown Content:",
-						"# Heading",
-						"Readable mirror body",
-					].join("\n"),
-				}),
-			);
+describe("fetchContentTool HTTP error coverage", () => {
+	it("returns the origin HTTP error without making an unvalidated mirror request", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({
+				ok: false,
+				status: 403,
+				url: "https://example.com/protected",
+				contentType: "text/html",
+			}),
+		);
 		const result = await fetchContentTool({
 			url: "https://example.com/protected?q=1#part",
 			maxChars: 500,
 		});
 		expect(result).toMatchObject({
-			ok: true,
+			ok: false,
 			payload: {
-				finalUrl: "https://r.jina.ai/http://example.com/protected?q=1#part",
-				contentType: "text/markdown; source=r.jina.ai",
-				title: "Mirror Title",
-				text: "# Heading\nReadable mirror body",
+				finalUrl: "https://example.com/protected",
+				contentType: "text/html",
+				status: 403,
+				text: "",
 				truncated: false,
 			},
+			error: { code: "FETCH_CONTENT_FAILED" },
 		});
-		expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
-			"https://r.jina.ai/http://example.com/protected?q=1#part",
-		);
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 
-	it("truncates a successful error-page mirror at minimum size", async () => {
-		vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(response({ ok: false, status: 429 }))
-			.mockResolvedValueOnce(
-				response({
-					url: "https://r.jina.ai/http://example.com/limited",
-					contentType: "text/markdown",
-					body: "x".repeat(800),
-				}),
-			);
+	it("does not interpret an HTTP error page as successful content", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({
+				ok: false,
+				status: 429,
+				contentType: "text/html",
+				body: "x".repeat(800),
+			}),
+		);
 		const result = await fetchContentTool({
 			url: "https://example.com/limited",
 			maxChars: 1,
 		});
 		expect(result).toMatchObject({
-			ok: true,
-			payload: { text: "x".repeat(500), truncated: true },
+			ok: false,
+			payload: { status: 429, text: "", truncated: false },
 		});
 	});
 
-	it("returns the origin HTTP error when the reader mirror also fails", async () => {
-		vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(
-				response({
-					ok: false,
-					status: 404,
-					url: "",
-					contentType: null,
-				}),
-			)
-			.mockResolvedValueOnce(response({ ok: false, status: 502 }));
+	it("returns the origin HTTP error with its direct final URL", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({ ok: false, status: 404, url: "", contentType: null }),
+		);
 		const result = await fetchContentTool({
 			url: "https://example.com/missing",
 		});
@@ -280,15 +269,13 @@ describe("fetchContentTool HTML extraction and security coverage", () => {
 		expect(result.payload.text).not.toMatch(/alert|hidden|raw secret|fallback/);
 	});
 
-	it("returns direct HTML when low-signal mirror retrieval fails", async () => {
-		vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(
-				response({
-					contentType: "text/html",
-					body: "<title>Short</title><p>tiny</p>",
-				}),
-			)
-			.mockResolvedValueOnce(response({ ok: false, status: 503 }));
+	it("returns direct HTML without a low-signal mirror request", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({
+				contentType: "text/html",
+				body: "<title>Short</title><p>tiny</p>",
+			}),
+		);
 		const result = await fetchContentTool({ url: "https://example.com/short" });
 		expect(result).toMatchObject({
 			ok: true,
@@ -297,74 +284,56 @@ describe("fetchContentTool HTML extraction and security coverage", () => {
 				text: "Title: Short\n\nContent:\ntiny",
 			},
 		});
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 
-	it("prefers mirror title and retains origin description for low-signal HTML", async () => {
-		vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(
-				response({
-					contentType: "text/html",
-					body: [
-						"<title>Origin</title>",
-						'<meta name="description" content="Origin description">',
-						"<p>short</p>",
-					].join(""),
-				}),
-			)
-			.mockResolvedValueOnce(
-				response({
-					url: "",
-					contentType: null,
-					body: "Title: Mirror\n\nMirror body",
-				}),
-			);
+	it("retains the direct title and description for low-signal HTML", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({
+				contentType: "text/html",
+				body: [
+					"<title>Origin</title>",
+					'<meta name="description" content="Origin description">',
+					"<p>short</p>",
+				].join(""),
+			}),
+		);
 		const result = await fetchContentTool({
 			url: "https://example.com/low-signal",
 		});
 		expect(result).toMatchObject({
 			ok: true,
 			payload: {
-				title: "Mirror",
+				title: "Origin",
 				description: "Origin description",
-				text: "Title: Mirror\n\nMirror body",
+				text: "Title: Origin\n\nDescription: Origin description\n\nContent:\nshort",
 			},
 		});
 	});
 
-	it("falls back to the origin title when a low-signal mirror has no title", async () => {
-		vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(
-				response({
-					contentType: "text/html",
-					body: "<title>Origin title</title><p>short</p>",
-				}),
-			)
-			.mockResolvedValueOnce(
-				response({
-					url: "https://r.jina.ai/http://example.com/fallback",
-					body: "Markdown Content:\nMirror content",
-				}),
-			);
+	it("keeps the direct title when HTML has no long-form content", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({
+				contentType: "text/html",
+				body: "<title>Origin title</title><p>short</p>",
+			}),
+		);
 		const result = await fetchContentTool({
 			url: "https://example.com/fallback",
 		});
 		expect(result.payload).toMatchObject({
 			title: "Origin title",
-			text: "Mirror content",
+			text: "Title: Origin title\n\nContent:\nshort",
 		});
 	});
 
 	it("omits empty title, description, and content after sanitization", async () => {
-		vi.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(
-				response({
-					contentType: "text/html",
-					body: '<title><script>x</script></title><meta name="description" content=""><body></body>',
-				}),
-			)
-			.mockResolvedValueOnce(
-				response({ body: "Markdown Content:\n<script>x</script>" }),
-			);
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			response({
+				contentType: "text/html",
+				body: '<title><script>x</script></title><meta name="description" content=""><body></body>',
+			}),
+		);
 		const result = await fetchContentTool({ url: "https://example.com/empty" });
 		expect(result.ok).toBe(true);
 		expect(result.payload.title).toBeUndefined();

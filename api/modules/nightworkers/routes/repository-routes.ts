@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { apiErrorOpenApiResponse } from "../../../../shared/schemas/api-error.schema";
 import { projectGitIntegrationPolicySchema } from "../../../../shared/schemas/git-integration.schema";
 import {
 	createRepositorySchema,
@@ -63,9 +64,7 @@ export const getRepositoryRoute = createRoute({
 			},
 			description: "Repository detail",
 		},
-		404: {
-			description: "Repository not found",
-		},
+		404: apiErrorOpenApiResponse("Repository not found"),
 	},
 });
 
@@ -102,9 +101,7 @@ export const updateRepositoryRoute = createRoute({
 			},
 			description: "Repository updated successfully",
 		},
-		404: {
-			description: "Repository not found",
-		},
+		404: apiErrorOpenApiResponse("Repository not found"),
 	},
 });
 
@@ -136,7 +133,7 @@ export const listProjectFilesRoute = createRoute({
 			},
 			description: "Project file tree entries",
 		},
-		404: { description: "Repository not found" },
+		404: apiErrorOpenApiResponse("Repository not found"),
 	},
 });
 
@@ -166,7 +163,7 @@ export const readProjectFileRoute = createRoute({
 			},
 			description: "Project file content",
 		},
-		404: { description: "Repository not found" },
+		404: apiErrorOpenApiResponse("Repository not found"),
 	},
 });
 
@@ -194,7 +191,7 @@ export const readRepositoryDiffRoute = createRoute({
 			},
 			description: "Current repository git diff",
 		},
-		404: { description: "Repository not found" },
+		404: apiErrorOpenApiResponse("Repository not found"),
 	},
 });
 
@@ -215,8 +212,6 @@ export const deleteRepositoryRoute = createRoute({
 			},
 			description: "Repository deleted successfully",
 		},
-		404: {
-			description: "Repository not found",
-		},
+		404: apiErrorOpenApiResponse("Repository not found"),
 	},
 });

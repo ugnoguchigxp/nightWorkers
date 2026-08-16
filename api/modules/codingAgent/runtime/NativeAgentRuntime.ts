@@ -4,8 +4,7 @@ import type {
 	AgentHookInput,
 	AgentHookRunEvent,
 } from "../../../services/hooks/types";
-import { listTaskRunTodosForRun } from "../../nightworkers/nightworkers.runs.repository";
-import { createRunEvent } from "../../nightworkers/nightworkers.runs-event.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import { NativeApiRunner } from "./native-api-runner/native-api-runner";
 import type {
 	AgentRunContext,
@@ -27,13 +26,18 @@ type NativeApiRunnerLike = Pick<
 	NativeApiRunner,
 	"run" | "stop" | "suspendForHostShutdown"
 >;
+type AgentHooksRunner = typeof runAgentHooks;
 
 export class NativeAgentRuntime implements AgentRuntime {
 	readonly kind = "native-local" as const;
 	private readonly runner: NativeApiRunnerLike;
+	private readonly runHooks: AgentHooksRunner;
 
-	constructor(input: { runner?: NativeApiRunnerLike } = {}) {
+	constructor(
+		input: { runner?: NativeApiRunnerLike; runHooks?: AgentHooksRunner } = {},
+	) {
 		this.runner = input.runner ?? new NativeApiRunner();
+		this.runHooks = input.runHooks ?? runAgentHooks;
 	}
 
 	async start(
@@ -65,27 +69,24 @@ export class NativeAgentRuntime implements AgentRuntime {
 			await sink.emit(enrichedEvent);
 		};
 		const emitHookEvent = async (event: AgentHookRunEvent) => {
-			await createRunEvent(
-				{
-					version: 1,
-					runId: context.runId,
-					taskId: context.taskId,
-					timestamp: new Date().toISOString(),
-					type: event.type,
-					severity: event.severity,
-					actor: "system",
-					message: event.message,
-					data: event.data,
-				},
-				{ payloadJson: event.data },
-			);
+			await requireCodingAgentHost().runJournal.appendRunEvent({
+				version: 1,
+				runId: context.runId,
+				taskId: context.taskId,
+				timestamp: new Date().toISOString(),
+				type: event.type,
+				severity: event.severity,
+				actor: "system",
+				message: event.message,
+				data: event.data,
+			});
 		};
 		let sessionHookOpened = false;
 		let sessionHookClosed = false;
 		const runSessionEndHook = async (result?: AgentRuntimeResult) => {
 			if (!sessionHookOpened || sessionHookClosed) return;
 			sessionHookClosed = true;
-			await runAgentHooks({
+			await this.runHooks({
 				input: buildSessionHookInput("SessionEnd", context, result),
 				repoRoot: context.repoRoot,
 				onEvent: emitHookEvent,
@@ -102,14 +103,14 @@ export class NativeAgentRuntime implements AgentRuntime {
 				message: `[System] Native API Runner started execution in workspace: ${context.repoRoot}`,
 			});
 
-			await runAgentHooks({
+			await this.runHooks({
 				input: buildSessionHookInput("SessionStart", context),
 				repoRoot: context.repoRoot,
 				onEvent: emitHookEvent,
 			});
 			sessionHookOpened = true;
 
-			const promptHook = await runAgentHooks({
+			const promptHook = await this.runHooks({
 				input: {
 					...buildBaseHookInput("UserPromptSubmit", context),
 					hook_event_name: "UserPromptSubmit",
@@ -209,7 +210,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 }
 
 async function readCurrentTodo(runId: string) {
-	const todos = await listTaskRunTodosForRun(runId);
+	const todos = await requireCodingAgentHost().runReader.listRunTodos(runId);
 	return todos
 		.filter((todo) => todo.status === "running")
 		.sort((a, b) => a.seq - b.seq)[0];

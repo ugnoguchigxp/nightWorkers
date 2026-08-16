@@ -8,6 +8,9 @@ import {
 	NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
 	NIGHTWORKERS_WS_INVALID_PAYLOAD_MESSAGE,
 	NIGHTWORKERS_WS_MAX_MESSAGE_BYTES,
+	NIGHTWORKERS_WS_MESSAGE_RATE_LIMIT,
+	NIGHTWORKERS_WS_RATE_LIMIT_CLOSE_CODE,
+	NIGHTWORKERS_WS_RATE_LIMIT_CODE,
 	nightWorkersWsClientMessageSchema,
 	parseNightWorkersWsClientMessage,
 } from "../api/security/nightworkers-websocket-policy";
@@ -40,6 +43,18 @@ function waitForUnexpectedStatus(socket: WebSocket) {
 	});
 }
 
+function waitForMessageCode(socket: WebSocket, code: string) {
+	return new Promise<Record<string, unknown>>((resolve) => {
+		const onMessage = (data: WebSocket.RawData) => {
+			const parsed = JSON.parse(data.toString()) as Record<string, unknown>;
+			if (parsed.code !== code) return;
+			socket.off("message", onMessage);
+			resolve(parsed);
+		};
+		socket.on("message", onMessage);
+	});
+}
+
 beforeAll(async () => {
 	server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
 	nodeWebSocket.injectWebSocket(server);
@@ -61,6 +76,52 @@ afterAll(async () => {
 });
 
 describe("NightWorkers WebSocket security", () => {
+	it("closes only the connection that exceeds its message rate limit", async () => {
+		const first = connect(allowedOrigin);
+		const second = connect(allowedOrigin);
+		await Promise.all([waitForOpen(first), waitForOpen(second)]);
+
+		for (
+			let index = 0;
+			index < NIGHTWORKERS_WS_MESSAGE_RATE_LIMIT;
+			index += 1
+		) {
+			const invalidMessage = waitForMessageCode(
+				first,
+				NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
+			);
+			first.send("not-json");
+			await expect(invalidMessage).resolves.toMatchObject({
+				code: NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
+			});
+		}
+		const rateLimited = waitForMessageCode(
+			first,
+			NIGHTWORKERS_WS_RATE_LIMIT_CODE,
+		);
+		const firstClosed = new Promise<number>((resolve) => {
+			first.once("close", (code) => resolve(code));
+		});
+		const secondError = waitForMessageCode(
+			second,
+			NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
+		);
+		first.send("not-json");
+		second.send("not-json");
+
+		await expect(rateLimited).resolves.toMatchObject({
+			code: NIGHTWORKERS_WS_RATE_LIMIT_CODE,
+		});
+		await expect(firstClosed).resolves.toBe(
+			NIGHTWORKERS_WS_RATE_LIMIT_CLOSE_CODE,
+		);
+		await expect(secondError).resolves.toMatchObject({
+			code: NIGHTWORKERS_WS_INVALID_PAYLOAD_CODE,
+		});
+		expect(second.readyState).toBe(WebSocket.OPEN);
+		second.close();
+	}, 15_000);
+
 	it("accepts an explicitly allowed Origin", async () => {
 		const socket = connect(allowedOrigin);
 		const connected = new Promise<Record<string, unknown>>((resolve) => {

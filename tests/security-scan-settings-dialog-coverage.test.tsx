@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let setters: Array<ReturnType<typeof vi.fn>> = [];
-let pendingEffects: Array<() => void | (() => void)> = [];
+let pendingEffects: Array<() => undefined | (() => void)> = [];
 
 function mockReact(
 	values: unknown[],
@@ -17,7 +17,7 @@ function mockReact(
 		const actual = await vi.importActual<typeof import("react")>("react");
 		return {
 			...actual,
-			useEffect: (callback: () => void | (() => void)) => {
+			useEffect: (callback: () => undefined | (() => void)) => {
 				if (effectMode === "defer") pendingEffects.push(callback);
 				else if (effectMode === "run") callback();
 			},
@@ -231,7 +231,10 @@ describe("vulnerability scan provider settings coverage", () => {
 		mockReact(settingsState({ 0: true, 1: "http", 3: "" }));
 		let commands = mockSettingsCommands({
 			saveSecurityScanProviderSettings: vi.fn(async () =>
-				jsonResponse({ error: { message: "save denied" } }, 403),
+				jsonResponse(
+					{ error: { code: "FORBIDDEN", message: "save denied" } },
+					403,
+				),
 			),
 			fetchSecurityScanCapabilities: vi.fn(async () => {
 				throw "test offline";
@@ -290,8 +293,16 @@ describe("vulnerability scan provider settings coverage", () => {
 
 		mockReact(settingsState({ 6: true }), "run");
 		commands = mockSettingsCommands({
-			fetchSecurityScanProviderSettings: vi.fn(
-				async () => new Response("bad", { status: 500 }),
+			fetchSecurityScanProviderSettings: vi.fn(async () =>
+				jsonResponse(
+					{
+						error: {
+							code: "SERVICE_UNAVAILABLE",
+							message: "Provider settings unavailable",
+						},
+					},
+					500,
+				),
 			),
 		});
 		module = await import(
@@ -301,7 +312,7 @@ describe("vulnerability scan provider settings coverage", () => {
 			activeProject: project as never,
 		});
 		await flush();
-		expect(setters[9]).toHaveBeenCalledWith("Request failed (500)");
+		expect(setters[9]).toHaveBeenCalledWith("Provider settings unavailable");
 
 		mockReact(settingsState({ 6: true }), "defer");
 		commands = mockSettingsCommands();

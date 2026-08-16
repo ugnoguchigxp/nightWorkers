@@ -4,10 +4,9 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DbTransaction } from "../../../../db/client";
 import { db } from "../../../../db/client";
 import {
-	humanTaskOperatorPrincipal,
-	readTaskOperatorProjection,
-} from "../../../taskOperator";
-import { createMissionPilotPersistenceAuthorization } from "../authorization";
+	createMissionPilotPersistenceAuthorization,
+	type MissionPilotDelegatedCapability,
+} from "../authorization";
 import { sanitizeMissionPilotPersistenceContext } from "../context";
 import {
 	missionPilotAgentSessions,
@@ -118,7 +117,11 @@ export async function claimAgentPlay(
 		kind: "human";
 		actorId: string;
 		authorizationRef: string;
-	} = humanTaskOperatorPrincipal(),
+	} = {
+		kind: "human",
+		actorId: "local-task-operator-user",
+		authorizationRef: "local-user",
+	},
 	activation?: {
 		systemContext: (authorization: MissionPilotAuthorizationV4) => string;
 		initialPrompt: string;
@@ -126,11 +129,13 @@ export async function claimAgentPlay(
 		taskRevision: number;
 		sourceEventId: string;
 	},
+	hostInput?: MissionPilotAgentPlayHostInput,
 ) {
-	const taskProjection = await readTaskOperatorProjection(taskId, {
-		principal,
-	});
-	if (activation && taskProjection.task.revision !== activation.taskRevision)
+	if (!hostInput)
+		throw new Error(
+			"Mission Pilot play requires a host-provided Task Operator projection and authorization snapshot.",
+		);
+	if (activation && hostInput.task.revision !== activation.taskRevision)
 		return null;
 	const claimed = await db.transaction(async (tx) => {
 		const [session] = await tx
@@ -176,7 +181,7 @@ export async function claimAgentPlay(
 				? (previousContext.task as Record<string, unknown>)
 				: {};
 		const objective =
-			activation?.initialPrompt ?? taskProjection.task.objective?.text ?? "";
+			activation?.initialPrompt ?? hostInput.task.objective ?? "";
 		const context = {
 			...previousContext,
 			version: 1,
@@ -187,11 +192,11 @@ export async function claimAgentPlay(
 			},
 			task: {
 				...previousTask,
-				title: taskProjection.task.title,
+				title: hostInput.task.title,
 				initialPrompt: objective,
 				acceptanceCriteria:
 					activation?.acceptanceCriteria ??
-					taskProjection.task.acceptanceCriteria?.text ??
+					hostInput.task.acceptanceCriteria ??
 					null,
 			},
 		};
@@ -204,7 +209,7 @@ export async function claimAgentPlay(
 		const revision = reuse
 			? currentAuthorization.activationContextRevision
 			: session.contextRevision + 1;
-		const now = new Date();
+		const now = new Date(hostInput.grantedAt);
 		if (!reuse)
 			await tx.insert(missionPilotContextSnapshots).values({
 				id: crypto.randomUUID(),
@@ -223,6 +228,8 @@ export async function claimAgentPlay(
 			activationContextDigest: digest,
 			grantedAt: now.toISOString(),
 			principal,
+			capabilities: hostInput.capabilities,
+			capabilityDigest: hostInput.capabilityDigest,
 		});
 		const [existingConversation] = activation
 			? await tx
@@ -353,6 +360,18 @@ export async function claimAgentPlay(
 	});
 	return claimed;
 }
+
+export type MissionPilotAgentPlayHostInput = {
+	grantedAt: string;
+	task: {
+		revision: number;
+		title: string;
+		objective: string | null;
+		acceptanceCriteria: string | null;
+	};
+	capabilities: readonly MissionPilotDelegatedCapability[];
+	capabilityDigest: string;
+};
 
 export async function completeAgentInitialPromptDispatch(input: {
 	taskId: string;

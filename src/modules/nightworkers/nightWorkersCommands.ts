@@ -111,6 +111,13 @@ export function stopRun(runId: string) {
 	});
 }
 
+export function reviewTaskRun(
+	runId: string,
+	input: { action: "complete" | "cancel"; note?: string },
+) {
+	return apiFetch(`/api/runs/${runId}/review`, jsonRequest("POST", input));
+}
+
 export function resumeTaskRunTodo(
 	runId: string,
 	todoId: string,

@@ -1,10 +1,9 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import * as repo from "../../nightworkers/nightworkers.repository";
-import { getLatestVerificationDocumentForTask } from "../../nightworkers/nightworkers.verification.repository";
 import { createReviewerEvaluation } from "../../review/review-files.service";
 import { runCompletionCheck } from "../application/completion-check.service";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -43,7 +42,9 @@ export async function runE2eFixtureRuntime(
 			payload: { fixture: true, behavior },
 		});
 		while (true) {
-			const run = await repo.getTaskRun(context.runId);
+			const run = await requireCodingAgentHost().runReader.getRun(
+				context.runId,
+			);
 			if (!run || run.status === "cancelled") break;
 			await new Promise((resolve) => setTimeout(resolve, 25));
 		}
@@ -166,7 +167,9 @@ export async function runE2eFixtureRuntime(
 		payload: { command: verificationCommand, exitCode: 0, ok: true },
 	});
 	const verificationDocument = testRuntime
-		? await getLatestVerificationDocumentForTask(context.taskId)
+		? await requireCodingAgentHost().verificationReader.getLatestActiveDocument(
+				context.taskId,
+			)
 		: null;
 	if (verificationDocument) {
 		const completionCheck = await runCompletionCheck({

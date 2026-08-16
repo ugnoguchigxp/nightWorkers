@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
 import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { db } from "../../../../db/client";
+import { sanitizePersistenceValue } from "../../../../services/security/secret-persistence-firewall";
 import type {
 	ProviderToolCall,
 	ProviderToolMessage,
@@ -24,6 +25,10 @@ export async function finishMissionPilotAgentTurn(input: {
 	error?: unknown;
 }) {
 	const now = new Date();
+	const error =
+		input.error === undefined
+			? undefined
+			: sanitizePersistenceValue(input.error);
 	const updated = await db.transaction(async (tx) => {
 		const [base] = await tx
 			.select()
@@ -39,7 +44,7 @@ export async function finishMissionPilotAgentTurn(input: {
 							? "failed"
 							: "completed",
 				finishedAt: now,
-				errorJson: input.error ?? null,
+				errorJson: error ?? null,
 			})
 			.where(
 				and(
@@ -54,9 +59,7 @@ export async function finishMissionPilotAgentTurn(input: {
 				currentTurnId: null,
 				leaseOwner: null,
 				leaseExpiresAt: null,
-				lastFailureJson: input.error
-					? (input.error as MissionPilotActionFailure)
-					: null,
+				lastFailureJson: error ? (error as MissionPilotActionFailure) : null,
 				updatedAt: now,
 			})
 			.where(
@@ -82,11 +85,9 @@ export async function finishMissionPilotAgentTurn(input: {
 					input.state === "completed" ? "stopped" : base.desiredState,
 				nextWakeAt: input.state === "completed" ? null : base.nextWakeAt,
 				stoppedAt: input.state === "completed" ? now : base.stoppedAt,
-				lastErrorCode: input.error
-					? (input.error as MissionPilotActionFailure).kind
-					: null,
-				lastErrorMessage: input.error
-					? (input.error as MissionPilotActionFailure).message
+				lastErrorCode: error ? (error as MissionPilotActionFailure).kind : null,
+				lastErrorMessage: error
+					? (error as MissionPilotActionFailure).message
 					: null,
 				version: base.version + 1,
 				updatedAt: now,

@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import type { CoverageFileReport } from "../../../../shared/schemas/quality.schema";
+import { ApiResponseError, readJsonResponse } from "../../../lib/api-error";
 import { FileViewer } from "../../nightworkers/components/ArtifactFileViewers";
 import { fetchRepositoryFile } from "../../nightworkers/nightWorkersCommands";
 import type { ProjectFileContent } from "../../nightworkers/types";
@@ -79,18 +80,18 @@ export function CoverageFileDrawer({
 		setReportError("");
 		setSourceLoading(true);
 		fetchRepositoryFile(repositoryId, row.file)
-			.then(async (response) => {
-				if (!response.ok)
-					throw new Error(t("projectDetail.quality.sourceLoadFailed"));
-				return (await response.json()) as ProjectFileContent;
-			})
+			.then((response) => readJsonResponse<ProjectFileContent>(response))
 			.then((value) => {
 				if (!cancelled) setSource(value);
 			})
 			.catch((error) => {
 				if (!cancelled)
 					setSourceError(
-						error instanceof Error ? error.message : String(error),
+						error instanceof ApiResponseError
+							? t("projectDetail.quality.sourceLoadFailed")
+							: error instanceof Error
+								? error.message
+								: String(error),
 					);
 			})
 			.finally(() => {
@@ -106,18 +107,18 @@ export function CoverageFileDrawer({
 		let cancelled = false;
 		setReportLoading(true);
 		fetchCoverageFileReport(repositoryId, runId, row.key)
-			.then(async (response) => {
-				if (!response.ok)
-					throw new Error(t("projectDetail.quality.coverageReportLoadFailed"));
-				return (await response.json()) as CoverageFileReport;
-			})
+			.then((response) => readJsonResponse<CoverageFileReport>(response))
 			.then((value) => {
 				if (!cancelled) setReport(value);
 			})
 			.catch((error) => {
 				if (!cancelled)
 					setReportError(
-						error instanceof Error ? error.message : String(error),
+						error instanceof ApiResponseError
+							? t("projectDetail.quality.coverageReportLoadFailed")
+							: error instanceof Error
+								? error.message
+								: String(error),
 					);
 			})
 			.finally(() => {

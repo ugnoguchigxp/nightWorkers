@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type {
 	TraceChannel,
 	TraceProvenance,
@@ -202,16 +202,21 @@ export async function listTaskMessages(
 	options?: { traceChannel?: TraceChannel },
 ) {
 	const query = db.select().from(taskMessages);
-	return query
-		.where(
-			options?.traceChannel
-				? and(
-						eq(taskMessages.taskId, taskId),
-						eq(taskMessages.traceChannel, options.traceChannel),
-					)
-				: eq(taskMessages.taskId, taskId),
-		)
-		.orderBy(taskMessages.createdAt);
+	return (
+		query
+			.where(
+				options?.traceChannel
+					? and(
+							eq(taskMessages.taskId, taskId),
+							eq(taskMessages.traceChannel, options.traceChannel),
+						)
+					: eq(taskMessages.taskId, taskId),
+			)
+			// `created_at` is stored at second precision.  Use SQLite's insertion
+			// sequence to preserve the causal order of messages created in the same
+			// second (for example, a user retry immediately after a policy block).
+			.orderBy(taskMessages.createdAt, sql<number>`rowid`)
+	);
 }
 
 export async function createTaskMessage(

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as safeOutboundFetchModule from "../../api/services/security/safe-outbound-fetch";
 import {
 	fetchContentTool,
 	findFileTool,
@@ -63,17 +64,12 @@ describe("Worker Tools Unit Tests", () => {
 
 describe("fetchContentTool", () => {
 	it("fetches and extracts text from HTML pages", async () => {
-		const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
-			ok: true,
-			status: 200,
-			url: "https://example.com/docs",
-			headers: {
-				get: (name: string) =>
-					name.toLowerCase() === "content-type"
-						? "text/html; charset=utf-8"
-						: null,
-			},
-			text: async () => `
+		const outboundFetchSpy = vi
+			.spyOn(safeOutboundFetchModule, "safeOutboundFetch")
+			.mockResolvedValue({
+				finalUrl: "https://example.com/docs",
+				response: new Response(
+					`
           <html>
             <head>
               <title>Example Docs</title>
@@ -86,18 +82,18 @@ describe("fetchContentTool", () => {
             </body>
           </html>
         `,
-		} as Response);
+					{
+						status: 200,
+						headers: { "content-type": "text/html; charset=utf-8" },
+					},
+				),
+			});
 
 		const result = await fetchContentTool({ url: "https://example.com/docs" });
 
-		expect(fetchSpy).toHaveBeenCalled();
-		const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [
-			URL | string,
-			RequestInit,
-		];
-		expect(String(calledUrl)).toBe("https://example.com/docs");
-		expect(calledInit).toEqual(
+		expect(outboundFetchSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
+				url: expect.objectContaining({ href: "https://example.com/docs" }),
 				headers: expect.objectContaining({
 					Accept: expect.stringContaining("text/html"),
 				}),
@@ -110,19 +106,22 @@ describe("fetchContentTool", () => {
 	});
 
 	it("removes executable markup from fetched titles and HTML content", async () => {
-		vi.spyOn(global, "fetch").mockResolvedValue({
-			ok: true,
-			status: 200,
-			url: "https://example.com/untrusted",
-			headers: { get: () => "text/html; charset=utf-8" },
-			text: async () => `
+		vi.spyOn(safeOutboundFetchModule, "safeOutboundFetch").mockResolvedValue({
+			finalUrl: "https://example.com/untrusted",
+			response: new Response(
+				`
 				<title>安全な題名<img src=x onerror=alert(1)></title>
 				<meta name="description" content="説明">
 				<main>${"通常の本文です。".repeat(80)}</main>
 				<xmp><img src=x onerror=alert(1)></xmp>
 				<script><script>alert(1)</script></script>
 			`,
-		} as Response);
+				{
+					status: 200,
+					headers: { "content-type": "text/html; charset=utf-8" },
+				},
+			),
+		});
 
 		const result = await fetchContentTool({
 			url: "https://example.com/untrusted",

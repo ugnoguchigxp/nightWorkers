@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { readJsonResponse } from "../../lib/api-error";
 import type {
 	CodexSdkStatus,
 	LlmModelTarget,
@@ -72,9 +73,9 @@ export function useSettingsLlmPanelController(input: {
 	const refreshCodexStatus = useCallback(async () => {
 		setCodexStatusLoading(true);
 		try {
-			const response = await fetchCodexSdkStatus();
-			if (!response.ok) return;
-			setCodexStatus((await response.json()) as CodexSdkStatus);
+			setCodexStatus(
+				await readJsonResponse<CodexSdkStatus>(await fetchCodexSdkStatus()),
+			);
 		} catch {
 			// Keep the last known status; the next manual or section refresh can retry.
 		} finally {
@@ -154,9 +155,9 @@ export function useSettingsLlmPanelController(input: {
 	const checkEndpointHealth = async (endpoint: LlmProviderEndpoint) => {
 		setHealthBusyEndpointId(endpoint.id);
 		try {
-			const response = await testLlmProviderHealth(endpoint.id, endpoint);
-			if (!response.ok) throw new Error(await response.text());
-			const result = (await response.json()) as LlmProviderHealthResult;
+			const result = await readJsonResponse<LlmProviderHealthResult>(
+				await testLlmProviderHealth(endpoint.id, endpoint),
+			);
 			setHealthResults((current) => ({ ...current, [endpoint.id]: result }));
 		} catch (error) {
 			setHealthResults((current) => ({

@@ -4,7 +4,6 @@ import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/cont
 import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "../../../../db/client";
 import type { ProviderToolCall } from "../../../../services/structured-llm/public";
-import { getTaskOperatorActionDefinition } from "../../../taskOperator";
 import {
 	missionPilotAgentSessions,
 	missionPilotAgentTurns,
@@ -249,6 +248,7 @@ export async function persistMissionPilotProviderTurn(input: {
 	toolCalls: ProviderToolCall[];
 	provider?: string | null;
 	model?: string | null;
+	resolvedActionIds?: Readonly<Record<string, string>>;
 }) {
 	return db.transaction(async (tx) => {
 		const [session] = await tx
@@ -282,15 +282,7 @@ export async function persistMissionPilotProviderTurn(input: {
 		sequence += 1;
 		const rows = [];
 		for (const call of input.toolCalls) {
-			const selectedActionId =
-				call.name === "execute_task_action" &&
-				typeof call.arguments.actionId === "string"
-					? call.arguments.actionId
-					: null;
-			const action = selectedActionId
-				? getTaskOperatorActionDefinition(selectedActionId)
-				: null;
-			const actionId = action?.actionId ?? call.name;
+			const actionId = input.resolvedActionIds?.[call.id] ?? call.name;
 			const idempotencyKey =
 				typeof call.arguments.idempotencyKey === "string" &&
 				call.arguments.idempotencyKey

@@ -15,6 +15,7 @@ import type {
 	NativeApiDispatchResult,
 	NativeApiDispatchState,
 } from "./native-api-dispatch-types";
+import { hasRegisteredIsolatedNativeApiFixture } from "./native-api-e2e-fixture-isolation";
 import {
 	type NativeApiToolResult,
 	readProjectExplorationCatalogPin,
@@ -123,7 +124,11 @@ export async function dispatchNativeApiToolCall(input: {
 			input.context,
 		),
 		runtimeEnvironment: readWorkspaceRuntimeEnvironment(input.context),
-		confinementRequired: true,
+		// The isolated fixture environment owns a disposable workspace and strips
+		// provider credentials. It is the only test capability that may execute a
+		// scripted verification command without an OS sandbox, because current
+		// macOS hosts can lack sandbox-exec while production must fail closed.
+		confinementRequired: !hasRegisteredIsolatedNativeApiFixture(input.context),
 	});
 	const result = projectWorkerResultToNativeApiToolResult(dispatch.result);
 	await input.sink.emit({

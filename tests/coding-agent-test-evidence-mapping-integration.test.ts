@@ -94,9 +94,9 @@ async function createTestRepository() {
 		path.join(repoRoot, "package.json"),
 		JSON.stringify({
 			scripts: {
-				test: "vitest run tests/coding-agent-test-evidence-matcher.test.ts",
+				test: "./node_modules/.bin/vitest run tests/coding-agent-test-evidence-matcher.test.ts",
 			},
-			devDependencies: { vitest: "test" },
+			devDependencies: { vitest: "^4.1.10" },
 		}),
 	);
 	await fs.symlink(

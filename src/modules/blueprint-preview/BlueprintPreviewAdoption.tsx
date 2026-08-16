@@ -1,6 +1,7 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { readJsonResponse } from "../../lib/api-error";
 import {
 	fetchBlueprintAdoption,
 	fetchBlueprintDesignTokenAdoption,
@@ -35,10 +36,7 @@ export function useBlueprintAdoption({
 						signal: controller.signal,
 					});
 		request
-			.then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as { adopted?: boolean };
-			})
+			.then((res) => readJsonResponse<{ adopted?: boolean }>(res))
 			.then((data) => {
 				if (controller.signal.aborted || !data) return;
 				setAdopted(Boolean(data.adopted));
@@ -67,11 +65,7 @@ export function useBlueprintAdoption({
 						adopted: next,
 					});
 		request
-			.then((res) => {
-				if (!res.ok)
-					throw new Error(`Failed to save Blueprint adoption: ${res.status}`);
-				return res.json();
-			})
+			.then((res) => readJsonResponse<{ adopted?: boolean }>(res))
 			.then((data: { adopted?: boolean }) => {
 				setAdopted(Boolean(data.adopted));
 			})

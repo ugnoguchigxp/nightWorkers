@@ -113,7 +113,12 @@ describe("useProjectQualityController", () => {
 
 	it("refreshes instead of creating a session callback for a stale run", async () => {
 		const { useProjectQualityController, commands, setters } =
-			await loadController(response({ error: { message: "stale" } }, 409));
+			await loadController(
+				response(
+					{ error: { code: "QUALITY_RUN_STALE", message: "stale" } },
+					409,
+				),
+			);
 		const onTasksCreated = vi.fn();
 		const controller = useProjectQualityController({
 			repositoryId: "repo-1",
@@ -130,7 +135,12 @@ describe("useProjectQualityController", () => {
 
 	it("keeps the selection available when task creation fails", async () => {
 		const { useProjectQualityController, setters } = await loadController(
-			response({ error: { message: "temporary failure" } }, 500),
+			response(
+				{
+					error: { code: "QUALITY_UNAVAILABLE", message: "temporary failure" },
+				},
+				500,
+			),
 		);
 		const controller = useProjectQualityController({
 			repositoryId: "repo-1",

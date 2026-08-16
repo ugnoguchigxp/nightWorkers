@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { jsonFixWrapper } from "./json";
+import { StructuredProviderError } from "./provider-failure";
+import { decodeProviderToolCall } from "./tool-argument-codec";
 import type {
 	ProviderToolCall,
 	ProviderToolDefinition,
@@ -60,9 +62,10 @@ export function buildCodexToolTurnPrompt(input: {
 
 export function parseCodexToolTurnResponse(
 	raw: string,
+	tools: readonly ProviderToolDefinition[] = [],
 ):
 	| { ok: true; content: string; toolCalls: ProviderToolCall[] }
-	| { ok: false; reason: string } {
+	| { ok: false; reason: string; error?: StructuredProviderError } {
 	const repaired = jsonFixWrapper(raw);
 	if (!repaired || !isRecord(repaired.parsedJson))
 		return { ok: false, reason: "response must be a JSON object" };
@@ -84,23 +87,29 @@ export function parseCodexToolTurnResponse(
 				ok: false,
 				reason: `toolCalls[${index}].argumentsJson must be a string`,
 			};
-		toolCalls.push({
-			id: `codex_call_${randomUUID()}`,
-			name: candidate.name,
-			arguments: parseArguments(candidate.argumentsJson),
-		});
+		try {
+			toolCalls.push(
+				decodeProviderToolCall({
+					provider: "Codex",
+					call: {
+						id: `codex_call_${randomUUID()}`,
+						name: candidate.name,
+						arguments: candidate.argumentsJson,
+					},
+					tools,
+					content: envelope.content,
+					responseBody: raw,
+				}),
+			);
+		} catch (error) {
+			return {
+				ok: false,
+				reason: error instanceof Error ? error.message : String(error),
+				...(error instanceof StructuredProviderError ? { error } : {}),
+			};
+		}
 	}
 	return { ok: true, content: envelope.content, toolCalls };
-}
-
-function parseArguments(raw: string): Record<string, unknown> {
-	if (!raw.trim()) return {};
-	try {
-		const parsed = JSON.parse(raw);
-		return isRecord(parsed) ? parsed : { value: parsed };
-	} catch {
-		return { _raw: raw };
-	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

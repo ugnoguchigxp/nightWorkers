@@ -9,9 +9,9 @@ import {
 	buildCodingAgentRecoveryGuidance,
 	contentDigest,
 } from "../../agentsShare";
-import * as repo from "../../nightworkers/nightworkers.repository";
 import { actionExecutionJournal } from "../application/action-execution-journal";
 import { loadCodingAgentContextPacket, requiresCurrentTodo } from "../context";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import {
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
@@ -151,8 +151,11 @@ export async function resolveTaskRepository(input: {
 	taskId: string;
 	runId: string;
 }) {
-	const run = input.runId ? await repo.getTaskRun(input.runId) : null;
-	const requestedTask = input.taskId ? await repo.getTask(input.taskId) : null;
+	const host = requireCodingAgentHost();
+	const run = input.runId ? await host.runReader.getRun(input.runId) : null;
+	const requestedTask = input.taskId
+		? await host.taskReader.getTask(input.taskId)
+		: null;
 	if (requestedTask && run && run.taskId !== requestedTask.id) {
 		return {
 			task: null,
@@ -163,7 +166,9 @@ export async function resolveTaskRepository(input: {
 		};
 	}
 	const task =
-		requestedTask ?? (run ? await repo.getTask(run.taskId) : null) ?? null;
+		requestedTask ??
+		(run ? await host.taskReader.getTask(run.taskId) : null) ??
+		null;
 	if (!task) {
 		return {
 			task: null,
@@ -175,7 +180,7 @@ export async function resolveTaskRepository(input: {
 	}
 	const repositoryId = run?.repositoryId || task.repositoryId;
 	const repository = repositoryId
-		? await repo.getRepository(repositoryId)
+		? await host.taskReader.getRepository(repositoryId)
 		: null;
 	const registeredRepoRoot = repository?.localPath ?? null;
 	const authority = run ? await resolveRunWorkspaceAuthority(run.id) : null;

@@ -176,10 +176,10 @@ test.describe("NightWorkers Agent Debug @regression", () => {
 			await page.goto(`/tasks/${taskId}`);
 
 			await expect(
-				page.getByRole("button", { name: "Agent Terminal Console" }),
+				page.getByRole("button", { name: "Agent ターミナルコンソール" }),
 			).toBeVisible();
 			await expect(
-				page.getByRole("button", { name: "Review Diffs" }),
+				page.getByRole("button", { name: "差分レビュー" }),
 			).toBeVisible();
 		} finally {
 			if (taskId)

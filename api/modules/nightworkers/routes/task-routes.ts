@@ -3,6 +3,7 @@ import {
 	PROMPT_IMAGE_MAX_COUNT,
 	PROMPT_IMAGE_MEDIA_TYPES,
 } from "../../../../shared/prompt-image";
+import { apiErrorOpenApiResponse } from "../../../../shared/schemas/api-error.schema";
 import {
 	createTaskSchema,
 	taskRunSchema,
@@ -65,9 +66,7 @@ export const getTaskRoute = createRoute({
 			},
 			description: "Task detail",
 		},
-		404: {
-			description: "Task not found",
-		},
+		404: apiErrorOpenApiResponse("Task not found"),
 	},
 });
 export const deleteTaskRoute = createRoute({
@@ -87,9 +86,7 @@ export const deleteTaskRoute = createRoute({
 			},
 			description: "Task deleted successfully",
 		},
-		404: {
-			description: "Task not found",
-		},
+		404: apiErrorOpenApiResponse("Task not found"),
 	},
 });
 export const updateTaskRoute = createRoute({
@@ -123,9 +120,7 @@ export const updateTaskRoute = createRoute({
 			},
 			description: "Task updated successfully",
 		},
-		404: {
-			description: "Task not found",
-		},
+		404: apiErrorOpenApiResponse("Task not found"),
 	},
 });
 export const startTaskRunRoute = createRoute({
@@ -145,9 +140,7 @@ export const startTaskRunRoute = createRoute({
 			},
 			description: "Task run started successfully",
 		},
-		404: {
-			description: "Task not found",
-		},
+		404: apiErrorOpenApiResponse("Task not found"),
 	},
 });
 export const appendTaskMessageRoute = createRoute({
@@ -176,9 +169,7 @@ export const appendTaskMessageRoute = createRoute({
 			},
 			description: "Task message appended",
 		},
-		404: {
-			description: "Task not found",
-		},
+		404: apiErrorOpenApiResponse("Task not found"),
 	},
 });
 const workbenchArtifactContextSchema = z.object({
@@ -269,7 +260,7 @@ export const appendWorkbenchMessageRoute = createRoute({
 			content: { "application/json": { schema: z.unknown() } },
 			description: "Workbench message handled",
 		},
-		404: { description: "Task not found" },
+		404: apiErrorOpenApiResponse("Task not found"),
 	},
 });
 export const createWorkbenchSessionRoute = createRoute({

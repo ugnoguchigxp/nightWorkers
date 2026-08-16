@@ -317,7 +317,8 @@ describe("review row model coverage", () => {
 			reasonsJson: [],
 			createdAt: "now",
 			updatedAt: "now",
-		} as never)!;
+		} as never);
+		if (!none) throw new Error("Expected omitted recommendation.");
 		expect(planSections(none).map((section) => section.requirement)).toEqual([
 			"omitted",
 			"omitted",
@@ -341,7 +342,8 @@ describe("review row model coverage", () => {
 			],
 			createdAt: "now",
 			updatedAt: "now",
-		} as never)!;
+		} as never);
+		if (!ordinary) throw new Error("Expected ordinary recommendation.");
 		expect(planSections(ordinary)[0]).toMatchObject({
 			requirement: "optional",
 			reason: "No security-sensitive change was detected.",

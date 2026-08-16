@@ -185,13 +185,28 @@ describe("project intelligence settings coverage", () => {
 		mockReactHooks(settingsState(), { runEffects: true });
 		const { mcpCommands } = mockCommands({
 			fetchProjectSecurityIntelligenceSettings: vi.fn(async () =>
-				jsonResponse({ error: true }, 503),
+				jsonResponse(
+					{
+						error: {
+							code: "SECURITY_SETTINGS_UNAVAILABLE",
+							message: "Security settings unavailable",
+						},
+					},
+					503,
+				),
 			),
 			fetchProjectExplorationSettings: vi.fn(async () => {
 				throw "exploration offline";
 			}),
 		});
-		mcpCommands.fetchMcpServers.mockResolvedValue(jsonResponse({}, 502));
+		mcpCommands.fetchMcpServers.mockResolvedValue(
+			jsonResponse(
+				{
+					error: { code: "MCP_UNAVAILABLE", message: "MCP unavailable" },
+				},
+				502,
+			),
+		);
 		const { useProjectIntelligenceSettings } = await import(
 			"../src/modules/settings/useProjectIntelligenceSettings"
 		);
@@ -199,12 +214,14 @@ describe("project intelligence settings coverage", () => {
 		await flushPromises();
 
 		expect(stateSetters[0]).toHaveBeenCalledWith(null);
-		expect(stateSetters[1]).toHaveBeenCalledWith("HTTP 503");
+		expect(stateSetters[1]).toHaveBeenCalledWith(
+			"Security settings unavailable",
+		);
 		expect(stateSetters[2]).toHaveBeenCalledWith("error");
 		expect(stateSetters[4]).toHaveBeenCalledWith(null);
 		expect(stateSetters[8]).toHaveBeenCalledWith([]);
 		expect(stateSetters[5]).toHaveBeenCalledWith(
-			"exploration offline / HTTP 502",
+			"exploration offline / MCP unavailable",
 		);
 		expect(stateSetters[6]).toHaveBeenCalledWith("error");
 	});

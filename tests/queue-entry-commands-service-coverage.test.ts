@@ -11,8 +11,12 @@ const mocks = vi.hoisted(() => ({
 	getEntry: vi.fn(),
 	hasActiveEntry: vi.fn(),
 	createEntry: vi.fn(),
+	admitEntry: vi.fn(),
 	updateEntry: vi.fn(),
+	cancelEntryWithoutRun: vi.fn(),
+	resumeEntryWithoutRun: vi.fn(),
 	completeEntryForRun: vi.fn(),
+	stopRun: vi.fn(),
 	updateSettings: vi.fn(),
 	getTodoSettings: vi.fn(),
 	updateTodoSettings: vi.fn(),
@@ -45,11 +49,18 @@ vi.mock("../api/modules/queue/queue.repository", () => ({
 	getImplementationQueueEntry: mocks.getEntry,
 	hasActiveImplementationQueueEntry: mocks.hasActiveEntry,
 	createImplementationQueueEntry: mocks.createEntry,
+	admitImplementationQueueEntry: mocks.admitEntry,
 	updateImplementationQueueEntry: mocks.updateEntry,
+	cancelImplementationQueueEntryWithoutRun: mocks.cancelEntryWithoutRun,
+	resumeImplementationQueueEntryWithoutRun: mocks.resumeEntryWithoutRun,
+	QueueEntryTransitionConflict: class QueueEntryTransitionConflict extends Error {},
 	completeImplementationQueueEntryForRunId: mocks.completeEntryForRun,
 	updateImplementationQueueSettings: mocks.updateSettings,
 	getTodoWorkflowSettings: mocks.getTodoSettings,
 	updateTodoWorkflowSettings: mocks.updateTodoSettings,
+}));
+vi.mock("../api/modules/nightworkers/run-orchestration/stop-task-run", () => ({
+	stopTaskRun: mocks.stopRun,
 }));
 vi.mock("../api/modules/queue/queue-admission.service", () => ({
 	assertMissionProposalQueueApproval: mocks.assertApproval,
@@ -80,6 +91,7 @@ const task = {
 	repositoryId: "repo-1",
 	status: "ready",
 	priority: 3,
+	updatedAt: new Date("2026-08-16T00:00:00.000Z"),
 };
 const queuedTask = { ...task, status: "queued" };
 const messages = [{ id: "message-1" }];
@@ -95,6 +107,7 @@ function entry(overrides: Record<string, unknown> = {}) {
 		statusReason: "existing reason",
 		processorSlot: null,
 		activeRunId: "run-1",
+		leaseVersion: 3,
 		...overrides,
 	};
 }
@@ -109,10 +122,39 @@ beforeEach(() => {
 	mocks.getEntry.mockResolvedValue(entry());
 	mocks.hasActiveEntry.mockResolvedValue(false);
 	mocks.createEntry.mockResolvedValue(entry());
+	mocks.admitEntry.mockResolvedValue({
+		entry: entry(),
+		task: queuedTask,
+		message: { id: "system-message" },
+	});
 	mocks.updateEntry.mockImplementation(
 		async (id: string, changes: Record<string, unknown>) =>
 			entry({ id, ...changes }),
 	);
+	mocks.cancelEntryWithoutRun.mockImplementation(
+		async ({ entry: snapshot }) => ({
+			kind: "applied",
+			entry: entry({
+				id: snapshot.id,
+				status: "cancelled",
+				activeRunId: snapshot.expectedActiveRunId,
+				leaseVersion: snapshot.expectedLeaseVersion + 1,
+			}),
+			task: null,
+		}),
+	);
+	mocks.resumeEntryWithoutRun.mockImplementation(async (snapshot) => ({
+		kind: "applied",
+		entry: entry({
+			id: snapshot.id,
+			status: "queued",
+			activeRunId: null,
+			leaseVersion: snapshot.expectedLeaseVersion + 1,
+			claimReady: true,
+		}),
+		task: null,
+	}));
+	mocks.stopRun.mockResolvedValue({ id: "run-1", status: "cancelled" });
 	mocks.completeEntryForRun.mockResolvedValue(
 		entry({ status: "execution_completed" }),
 	);
@@ -161,15 +203,21 @@ describe("queue settings and queueTask coverage", () => {
 	});
 
 	it("queues and rereads the task", async () => {
-		mocks.getTask.mockResolvedValueOnce(task).mockResolvedValueOnce(queuedTask);
+		mocks.getTask
+			.mockResolvedValueOnce(task)
+			.mockResolvedValueOnce(task)
+			.mockResolvedValueOnce(queuedTask);
 		await expect(service.queueTask(taskId, { autoDrain: false })).resolves.toBe(
 			queuedTask,
 		);
-		expect(mocks.createEntry).toHaveBeenCalledOnce();
+		expect(mocks.admitEntry).toHaveBeenCalledOnce();
 	});
 
 	it("fails queueTask when the post-command task disappears", async () => {
-		mocks.getTask.mockResolvedValueOnce(task).mockResolvedValueOnce(null);
+		mocks.getTask
+			.mockResolvedValueOnce(task)
+			.mockResolvedValueOnce(task)
+			.mockResolvedValueOnce(null);
 		await expect(service.queueTask(taskId)).rejects.toMatchObject({
 			statusCode: 404,
 			message: "Task not found",
@@ -214,6 +262,18 @@ describe("createImplementationQueueEntry coverage", () => {
 		).rejects.toMatchObject({ code: "IMPLEMENTATION_PLAN_REQUIRED" });
 	});
 
+	it("rechecks admission preconditions after workspace preparation changes the Task snapshot", async () => {
+		mocks.hasPlanEvidence.mockReturnValue(false);
+		mocks.getTask
+			.mockResolvedValueOnce(task)
+			.mockResolvedValueOnce({ ...task, status: "running" });
+
+		await expect(
+			service.createImplementationQueueEntry(taskId, { autoDrain: false }),
+		).rejects.toMatchObject({ code: "IMPLEMENTATION_PLAN_REQUIRED" });
+		expect(mocks.admitEntry).not.toHaveBeenCalled();
+	});
+
 	it("allows ready tasks without plan evidence and materializes workspace metadata", async () => {
 		mocks.hasPlanEvidence.mockReturnValue(false);
 		mocks.prepareRepository.mockResolvedValue({ id: "workspace-1" });
@@ -222,22 +282,24 @@ describe("createImplementationQueueEntry coverage", () => {
 		});
 		expect(result).toEqual(entry());
 		expect(mocks.assertApproval).toHaveBeenCalledWith(messages);
-		expect(mocks.createEntry).toHaveBeenCalledWith({
-			taskId,
-			repositoryId: "repo-1",
-			priority: 3,
-			executionType: "exclusive",
-			executionLockKey: "repository:repo-1",
-			sequenceGroupId: null,
-			sequenceOrder: null,
-			schedulingReason: "default",
-			workspaceId: "workspace-1",
-			workspaceRequired: true,
-		});
-		expect(mocks.createTaskMessage).toHaveBeenCalledWith(
+		expect(mocks.admitEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
-				taskId,
-				payloadJson: expect.objectContaining({ queueEntryId: entryId }),
+				task: expect.objectContaining({
+					id: taskId,
+					expectedStatus: "ready",
+				}),
+				entry: {
+					taskId,
+					repositoryId: "repo-1",
+					priority: 3,
+					executionType: "exclusive",
+					executionLockKey: "repository:repo-1",
+					sequenceGroupId: null,
+					sequenceOrder: null,
+					schedulingReason: "default",
+					workspaceId: "workspace-1",
+					workspaceRequired: true,
+				},
 			}),
 		);
 		expect(mocks.runQueue).toHaveBeenCalledWith({ autoDrain: false });
@@ -246,29 +308,42 @@ describe("createImplementationQueueEntry coverage", () => {
 	it("keeps already queued tasks and omits workspace metadata", async () => {
 		mocks.getTask.mockResolvedValue(queuedTask);
 		await service.createImplementationQueueEntry(taskId);
-		expect(mocks.updateTask).not.toHaveBeenCalled();
-		expect(mocks.createEntry).toHaveBeenCalledWith(
+		expect(mocks.admitEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
-				workspaceId: null,
-				workspaceRequired: false,
+				task: expect.objectContaining({ expectedStatus: "queued" }),
+				entry: expect.objectContaining({
+					workspaceId: null,
+					workspaceRequired: false,
+				}),
 			}),
 		);
 	});
 
-	it("fails if the queued task update loses the task", async () => {
-		mocks.updateTask.mockResolvedValue(null);
+	it("does not schedule when transactional admission reports a Task conflict", async () => {
+		mocks.admitEntry.mockRejectedValueOnce(new Error("Task snapshot conflict"));
 		await expect(
 			service.createImplementationQueueEntry(taskId),
-		).rejects.toMatchObject({ statusCode: 404 });
-		expect(mocks.createEntry).not.toHaveBeenCalled();
+		).rejects.toThrow("Task snapshot conflict");
+		expect(mocks.runQueue).not.toHaveBeenCalled();
 	});
 
 	it("does not publish or schedule when queue persistence fails", async () => {
 		const error = new Error("repository write failed");
-		mocks.createEntry.mockRejectedValue(error);
+		mocks.admitEntry.mockRejectedValue(error);
 		await expect(service.createImplementationQueueEntry(taskId)).rejects.toBe(
 			error,
 		);
+		expect(mocks.createTaskMessage).not.toHaveBeenCalled();
+		expect(mocks.runQueue).not.toHaveBeenCalled();
+	});
+
+	it("maps the active-task unique constraint to the Queue conflict contract", async () => {
+		mocks.admitEntry.mockRejectedValueOnce({
+			code: "SQLITE_CONSTRAINT_UNIQUE",
+		});
+		await expect(
+			service.createImplementationQueueEntry(taskId),
+		).rejects.toMatchObject({ code: "QUEUE_ENTRY_EXISTS", statusCode: 409 });
 		expect(mocks.createTaskMessage).not.toHaveBeenCalled();
 		expect(mocks.runQueue).not.toHaveBeenCalled();
 	});
@@ -282,39 +357,81 @@ describe("patchImplementationQueueEntry coverage", () => {
 		).rejects.toMatchObject({ statusCode: 404 });
 	});
 
-	it("cancels an entry and restores only queued tasks", async () => {
+	it("cancels an inactive entry with Queue and Task snapshots in one command", async () => {
 		mocks.getTask.mockResolvedValueOnce(queuedTask);
+		mocks.getEntry.mockResolvedValueOnce(entry({ activeRunId: null }));
 		const cancelled = await service.patchImplementationQueueEntry(
 			entryId,
 			{ action: "cancel" },
 			{ autoDrain: false },
 		);
 		expect(cancelled).toMatchObject({ status: "cancelled" });
-		expect(mocks.updateTask).toHaveBeenCalledWith(taskId, { status: "ready" });
+		expect(mocks.cancelEntryWithoutRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				entry: expect.objectContaining({
+					expectedStatus: "queued",
+					expectedLeaseVersion: 3,
+					expectedActiveRunId: null,
+				}),
+				task: expect.objectContaining({ expectedStatus: "queued" }),
+			}),
+		);
+		expect(mocks.updateTask).not.toHaveBeenCalled();
 
 		mocks.getTask.mockResolvedValueOnce(task);
+		mocks.getEntry.mockResolvedValueOnce(entry({ activeRunId: null }));
 		await service.patchImplementationQueueEntry(entryId, { action: "cancel" });
-		expect(mocks.updateTask).toHaveBeenCalledTimes(1);
+		expect(mocks.cancelEntryWithoutRun).toHaveBeenCalledTimes(2);
 
 		mocks.getTask.mockResolvedValueOnce(null);
+		mocks.getEntry.mockResolvedValueOnce(entry({ activeRunId: null }));
 		await expect(
 			service.patchImplementationQueueEntry(entryId, { action: "cancel" }),
-		).resolves.toMatchObject({ status: "cancelled" });
+		).rejects.toMatchObject({ statusCode: 404 });
 	});
 
-	it("resumes only needs_human entries and schedules processing", async () => {
+	it("resumes only inactive needs_human entries to queued and schedules a claim", async () => {
 		await expect(
 			service.patchImplementationQueueEntry(entryId, { action: "resume" }),
 		).rejects.toMatchObject({ code: "QUEUE_ENTRY_NOT_RESUMABLE" });
-		mocks.getEntry.mockResolvedValueOnce(entry({ status: "needs_human" }));
+		mocks.getEntry.mockResolvedValueOnce(
+			entry({ status: "needs_human", activeRunId: null }),
+		);
 		await expect(
 			service.patchImplementationQueueEntry(
 				entryId,
 				{ action: "resume" },
 				{ autoDrain: false },
 			),
-		).resolves.toMatchObject({ status: "processing", statusReason: null });
+		).resolves.toMatchObject({
+			status: "queued",
+			activeRunId: null,
+			claimReady: true,
+		});
+		expect(mocks.resumeEntryWithoutRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				expectedStatus: "needs_human",
+				expectedActiveRunId: null,
+			}),
+		);
 		expect(mocks.runQueue).toHaveBeenCalledWith({ autoDrain: false });
+	});
+
+	it("requires the Task Run resume command for an active human-blocked Run", async () => {
+		mocks.getEntry.mockResolvedValueOnce(
+			entry({ status: "needs_human", activeRunId: "run-1" }),
+		);
+		mocks.getTaskRun.mockResolvedValueOnce({
+			id: "run-1",
+			status: "needs_human",
+		});
+		await expect(
+			service.patchImplementationQueueEntry(entryId, { action: "resume" }),
+		).rejects.toMatchObject({
+			code: "QUEUE_RUN_REQUIRES_TASK_RESUME",
+			details: { activeRunId: "run-1" },
+		});
+		expect(mocks.resumeEntryWithoutRun).not.toHaveBeenCalled();
 	});
 
 	it("reorders only queued entries and preserves omitted values", async () => {
@@ -394,7 +511,9 @@ describe("recoverImplementationQueueEntry coverage", () => {
 			service.recoverImplementationQueueEntry(entryId, { action: "archive" }),
 		).resolves.toMatchObject({ status: "execution_archived" });
 
-		mocks.getEntry.mockResolvedValue(entry({ status: "queued" }));
+		mocks.getEntry.mockResolvedValue(
+			entry({ status: "queued", activeRunId: null }),
+		);
 		mocks.getTask.mockResolvedValue(task);
 		await expect(
 			service.recoverImplementationQueueEntry(entryId, {
@@ -404,7 +523,7 @@ describe("recoverImplementationQueueEntry coverage", () => {
 		).resolves.toMatchObject({ status: "cancelled" });
 		expect(mocks.recordRecoveryEvidence).toHaveBeenCalledWith({
 			taskId,
-			runId: "run-1",
+			runId: null,
 			queueEntryId: entryId,
 			action: "cancel",
 			reason: "manual_cancel",

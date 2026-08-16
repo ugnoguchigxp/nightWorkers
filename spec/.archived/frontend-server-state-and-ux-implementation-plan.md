@@ -2,7 +2,7 @@
 
 ## 0. 文書情報
 
-- 状態: Proposed
+- 状態: In progress
 - 作成日: 2026-08-16
 - 対象リポジトリ: `nightWorkers`
 - 対象指摘: `M7`, `M8`, `M9`, `m1`, `m6`, `m7`
@@ -33,7 +33,7 @@ Frontend に散在する server state の取得・更新・polling・error 表�
 
 ## 3. 現状認識と実装前の再確認
 
-前回調査時点では、repository 一覧に `['repositories']` と `['projects']` が併存し、Settings では `Promise.all` と local state による独自取得・保存、`TaskConsolePage` では error 時にも spinner を表示する分岐と固定 polling が確認された。また、Overview、Security、Evaluation、Quality、Git Worktree 周辺にも手書き `fetch` が残る。
+前回調査時点では、repository 一覧に `['repositories']` と `['projects']` が併存し、Settings では `Promise.all` と local state による独自取得・保存、`TaskConsolePage` では error 時にも spinner を表示する分岐と固定 polling が確認された。また、最新の再検索ではmanual controller stateが Overview、Security Scan、Project Evaluation に残り、直接のraw `fetch` は API base層を除くとTaskConsoleのReview commandが主対象だった。Quality/Git Worktreeは今回の`m1` backlogへ推測で追加しない。
 
 ただし実装時には、作業開始 HEAD で次を再取得し、変更済み箇所を古い観測で上書きしない。
 
@@ -132,7 +132,7 @@ rg -n "window\.confirm|window\.alert|>[[:space:]]*[A-Za-z][^<{]*<" src
 
 対象: `m1`
 
-優先順は、共有頻度、mutation 後の stale risk、独自 polling の有無、error 不可視性で決める。候補は Overview、Security、Evaluation、Quality、Git Worktree とし、実装前 inventory で確定する。
+優先順は、共有頻度、mutation 後の stale risk、独自 polling の有無、error 不可視性で決める。対象は Overview、Security Scan、Project Evaluation とし、SettingsとTaskConsoleはD1/D2で扱う。Quality/Git Worktreeは新しい実コード根拠が得られた場合だけ別ticketにする。
 
 各 feature は次の単位で移行する。
 
@@ -154,15 +154,127 @@ stream、long-poll、download、one-shot command など Query 化が不適切な
 4. error callout に適切な role、retry button に accessible name、loading に busy 状態を付ける。
 5. 少なくとも既定 locale と日本語 locale で欠落 key がないことを検証する。
 
-## 7. 領域間依存
+## 7. Terra実行チケット台帳
+
+Frontendは画面単位で実装し、query key、consumer、mutation invalidation、behavior testを同じticketで揃える。
+server snapshotとdraftを同じstateへ再統合してはならない。
+
+### D-T0: repository query identityを`repositories`へ統一する
+
+- Findings: `M7`
+- Write set: 新規`src/modules/nightworkers/queries/repository-queries.ts`、
+  `src/routes/repositories.tsx`、`src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts`、
+  `src/modules/nightworkers/hooks/useNightWorkersMutations.ts`、`tests/nightworkers-mutations.test.tsx`、
+  `tests/nightworkers-mutations-hook-extra-coverage.test.ts`、新規repository query behavior test
+- Fixed fact: routeの`['repositories']`とworkspace/mutationの`['projects']`はともに
+  `client.repositories.$get()`の同じ一覧responseを指す。
+- Exports: `repositoryQueryKeys.all = ['repositories'] as const`、`repositoryQueryKeys.detail(id)`、
+  `repositoriesQueryOptions()`。query functionは`Repository[]`を返し、非2xxはArea Eのdecoderでthrowする。
+- Migration: 3 consumerのquery/cancel/invalidateをfactoryへ一括置換する。旧`['projects']`へのbridge invalidationは
+  残さず、ticket完了時の`rg`でrepository resourceを指すliteral keyを0件にする。
+- Done: route作成/削除、workspace作成/更新/削除の成功後に同一cacheがinvalidateされ、別fetchなしでもconsumerが同期する。
+- 実装状況（2026-08-16）: 完了。`repositoryQueryKeys`/`repositoriesQueryOptions`を追加し、route、workspace、
+  create/update/delete mutationを同一keyへ移行した。repository query・mutation・workspace hookの対象テスト19件、
+  全体typecheck、lint、architecture checkは後続の統合検証で成功している。coverage と program verification は
+  Area E の accepted baseline 確定後に実行する。
+
+### D-T1: Settings remote snapshotとdraftを分離する
+
+- Findings: `M8`, `m1`
+- Depends on: `E-T3a`のFrontend decoder
+- Current conflict/stop: `src/modules/settings/SettingsLlmPanel.tsx`、新規
+  `src/modules/settings/useSettingsLlmPanelController.ts`、`tests/settings-llm-panel-coverage.test.tsx`にはplanning開始前の
+  user差分がある。accepted baselineまたは差分所有者の完了前はこのticketを開始しない。
+- Write set after baseline: 新規`src/modules/settings/llm-settings-query.ts`、
+  `src/modules/settings/SettingsScreen.tsx`、`src/modules/settings/useLlmSettings.ts`、上記3 conflict file、
+  `tests/settings-screen-coverage.test.tsx`、`tests/settings-llm-panel.test.tsx`
+- Query contract: `llmSettingsQueryKeys`と`llmSettingsQueryOptions`を一つだけ定義し、SettingsScreenと
+  `useLlmSettings`で共有する。model options keyはproviderを含める。non-2xx/parse failureは共通decoderでtyped errorにする。
+- Draft contract: remote snapshot到着時にdraft未初期化なら一度だけcopyする。利用者入力後は`isDraftDirty=true`とし、
+  background refetchで上書きしない。保存成功時だけserver responseをcacheとdraftへ反映しdirtyをfalseにする。
+- Mutation: `saveLlmSettings`のresponse bodyが正規化済み`LlmSettings`であることをroute testで確認する。返さないcontractなら
+  request payloadをcacheへ仮置きせずinvalidate+refetch完了後にdraftを同期する。
+- Scope: general settings/Fxは別resourceとして独立queryにし、このticketで一つの巨大aggregate queryにしない。
+- Done: initial/load error/save error/retry/save success/refetch during dirty draft/server normalizationをDOM interactionで検証する。
+
+### D-T2: TaskConsoleを4状態表示+terminal-aware pollingにする
+
+- Findings: `M9`
+- Depends on: `B-T3` status contract、`E-T3a` decoder
+- Write set: `src/modules/nightworkers/components/TaskConsolePage.tsx`、
+  `src/modules/nightworkers/realtimeEvents.ts`（既存status helperをexport利用するだけなら変更不要）、
+  `tests/task-console-page-coverage.test.tsx`、新規`tests/task-console-page.behavior.test.tsx`
+- State order: `isPending`はspinner、`isError`は`role=alert`のCallout+retry、成功`data=null`はnot-found/empty、
+  dataありはpageを描画する。`!task`をloadingとみなさない。
+- Polling: task/runs queryは公開active statusの間だけ3秒、run detailsは
+  `isTerminalRunStatus(query.state.data?.status)`ならfalse、それ以外のenabled時だけ1.5秒。terminal snapshot受理後に
+  older in-flight responseが返ってもquery key/resource identityを照合しtimerを復活させない。
+- Review mutation: raw `fetch`を既存API client/command wrapperへ移し、non-2xxは共通decoder、success時はtask/runs/run detailsを
+  canonical keyでinvalidateする。
+- Done: fake timerでterminal後request count不増、task/runs/run details各error、retry、focus/reconnect時1回refreshを検証する。
+
+### D-T3: Project Evaluation cursorをrun identityごとのrefにする
+
+- Findings: `m7`
+- Write set: `src/modules/project-evaluation/hooks/useProjectEvaluationController.ts`、
+  `tests/project-evaluation-controller-extra-coverage.test.ts`、
+  `tests/project-evaluation-controller-cache.test.ts`
+- New state: `activityCursorRef: {evaluationId:string|null; afterSeq:number}`と`pollGenerationRef:number`。
+  evaluation選択/start時にdetailのmax seqから初期化し、event merge時はrefだけを単調増加させる。
+- Effect dependency: `repositoryId`、`runningEvaluationId`、安定したAPI callbackだけ。`detail?.activityEvents`を外す。
+  cleanupでgenerationを増やし、古いresponseはrepository/evaluation/generation一致時だけapplyする。
+- Terminal: completed/failed受理時にintervalをclearし、detail/historyを一度再取得してrunning IDをnullにする。
+- Done: event追加で`setInterval`再生成なし、Strict Modeでactive timer 1個、run切替でcursor reset、旧run response破棄。
+
+### D-T4: Overview snapshotをTanStack Queryへ移す
+
+- Findings: `m1`
+- Write set: 新規`src/modules/overview/overview-queries.ts`、
+  `src/modules/overview/useOverviewDashboard.ts`、`tests/overview-coverage.test.ts`、
+  `tests/overview-components.test.tsx`
+- Query key: `['overview', {range, repositoryId}]`をfactory化し、`overviewDashboardSchema` parseとEのerror decoderを
+  query functionへ置く。`refetchInterval: 15_000`、AbortSignal、scope identityを使用する。
+- UI state: startup preflightは補助resourceのため別queryにし、失敗でdashboardを隠さない。dashboard error/refetch、
+  manual refreshの公開return shapeを維持する。
+- Remove: `mountedRef`、`requestSequenceRef`、manual intervalはQueryのcancellation/cacheへ置換する。
+- Done: range/repository切替の遅延response非混入、dashboard error表示、preflight failure独立、manual refreshを検証する。
+
+### D-T5: Security ScanはsnapshotだけQuery化しaction stateを残す
+
+- Findings: `m1`
+- Depends on: `E-T3e`
+- Write set: 新規`src/modules/securityScan/security-scan-queries.ts`、
+  `src/modules/securityScan/useSecurityScanController.ts`、
+  `tests/security-scan-controllers-coverage.test.ts`、`tests/security-scan-components-coverage.test.tsx`
+- Query targets: provider settings、capabilities(repository)、history(repository)、run detail(scanRunRef)、
+  findings pages、reportsをkey factoryへ分ける。terminal run/reportでpolling false、実行中だけ既存interval相当を使う。
+- Keep local: selection、target、preview input、dialog/action busyはclient stateとして残す。start/cancel/report mutation成功時に
+  対象snapshotをset/invalidateし、repository/scanRunRefが違うresponseをapplyしない。
+- Paging: findingsのcursor cycle、1,000件cap、重複ref除去をquery functionへそのまま移し、無限query化で意味を変えない。
+- Remove: module内`readResponse`をE decoderへ置換する。error message keyword分類を追加しない。
+- Done: initial partial failure、scan start/cancel、terminal polling stop、repository switch、paging cycleをbehavior testする。
+
+### D-T6: 変更3画面の利用者文言/i18n/accessibilityを完了する
+
+- Findings: `m6`
+- Depends on: `D-T0`, `D-T2`
+- Write set: `src/routes/repositories.tsx`、`TaskConsolePage.tsx`、
+  `src/modules/nightworkers/components/NightWorkersShell.tsx`、新規/既存の英日dictionary module、locale test
+- Keys: repositoriesのheading/form/delete confirm/error/empty、TaskConsoleのloading/error/retry/status/action、
+  NightWorkersShellの既存`window.confirm`文言を英日両方へ追加する。API/terminal raw contentは翻訳しない。
+- Accessibility: error `role=alert`、loading container `aria-busy=true`、retry/delete/review buttonにlocale別accessible nameを付ける。
+- Tests: translated textそのものだけをselectorにせずrole/nameでinteractionし、英日辞書key set一致を検証する。
+- Done: 対象3fileの利用者向け直書き文字列をinventoryし、意図的な技術label以外は辞書経由になる。
+
+## 8. 領域間依存
 
 - [Run and Queue State Integrity](./run-queue-state-integrity-implementation-plan.md): terminal state と cancel/resume の公開 contract を D2 が使用する。
 - [API Contract and Verification Quality](./api-contract-and-verification-quality-implementation-plan.md): 共通 error schema/decoder を D1、D2、D4 が使用する。
 - API error contract の全 route 移行を待たず、decoder が移行期間の旧形式を扱える時点から Frontend 移行を開始できる。
 
-## 8. 検証計画
+## 9. 検証計画
 
-### 8.1 自動テスト
+### 9.1 自動テスト
 
 - query key factory の equality と invalidation 対象。
 - Settings の取得失敗、保存失敗、保存成功、未保存 draft 保護。
@@ -180,7 +292,7 @@ node scripts/run-vitest.mjs run \
   tests/project-evaluation-activity-panel.test.tsx
 ```
 
-### 8.2 静的検証
+### 9.2 静的検証
 
 ```bash
 bun run typecheck
@@ -190,7 +302,7 @@ bun run check:architecture
 
 既存の `check:architecture` が query key や i18n の整合性を検査しない場合は、再発しやすい不変条件だけを既存 architecture check の責務に沿って追加する。画面固有の挙動は architecture check へ押し込まず、component/integration test で検証する。
 
-### 8.3 手動確認
+### 9.3 手動確認
 
 - repository 作成・削除後に関連画面が同じ一覧を表示する。
 - Settings 取得失敗と保存失敗が区別され、再試行可能である。
@@ -198,14 +310,14 @@ bun run check:architecture
 - Evaluation 画面を切り替えても旧 project の結果が混入しない。
 - 日本語 locale で新規 error/confirm 文言が欠落しない。
 
-## 9. Rollout と rollback
+## 10. Rollout と rollback
 
 - feature 単位で移行し、query key の全 consumer と mutation を同一 change set で揃える。
 - 旧 key と新 key を長期間二重運用しない。必要な移行期間は明示的な bridge invalidation を限定配置し、後続 change で除去する。
 - polling 変更は terminal 判定の telemetry/log を確認してから全画面へ展開する。
 - 回帰時は feature 単位で旧取得実装へ戻せる粒度を保つが、error の不可視化や stale cache を rollback の恒久状態にしない。
 
-## 10. リスクと対策
+## 11. リスクと対策
 
 - **draft 消失**: remote snapshot と編集中 draft を分離し、cache refresh が draft を初期化する条件を明示する。
 - **key 統合時の stale 表示**: query consumer だけでなく mutation invalidation を同時に検索・更新する。
@@ -213,7 +325,7 @@ bun run check:architecture
 - **Query 化の過剰適用**: stream/event transport は resource snapshot と分け、適用理由を inventory に残す。
 - **error contract 移行差**: Frontend decoder は移行期間だけ旧・新を扱い、API 全移行後に旧形式 branch を削除する。
 
-## 11. 完了条件
+## 12. 完了条件
 
 - `M7`, `M8`, `M9`, `m1`, `m6`, `m7` の各 finding に実装 diff、test、または明示的な対象外根拠が紐づいている。
 - 同一 repository resource の query key が一意である。

@@ -142,7 +142,7 @@ describe("frontend controller hook coverage", () => {
 			useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
 				const key = queryKey[0];
 				const dataByKey: Record<string, unknown> = {
-					projects: [project],
+					repositories: [project],
 					sessions: [task],
 					implementationQueue: {
 						queued: [],

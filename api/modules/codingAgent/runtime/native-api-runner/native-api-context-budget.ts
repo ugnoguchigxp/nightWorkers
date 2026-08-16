@@ -5,7 +5,17 @@ import type {
 } from "../../../../services/structured-llm/tool-calls";
 import type { NativeApiProviderRequest } from "./native-api-request-adapter";
 
+export const NATIVE_API_CONTEXT_GATE_ALGORITHM_VERSION = "characters_div_3_v1";
+
 export type NativeApiContextBudget = {
+	estimator: {
+		purpose: "context_gate";
+		algorithmVersion: typeof NATIVE_API_CONTEXT_GATE_ALGORITHM_VERSION;
+	};
+	capability: {
+		providerEndpointId: string | null;
+		model: string | null;
+	};
 	estimatedPromptTokens: number;
 	modelContextWindowTokens: number;
 	safePromptBudgetTokens: number;
@@ -55,6 +65,14 @@ export function estimateNativeApiContextBudget(
 	);
 	const remainingTokens = modelContextWindowTokens - estimatedPromptTokens;
 	return {
+		estimator: {
+			purpose: "context_gate",
+			algorithmVersion: NATIVE_API_CONTEXT_GATE_ALGORITHM_VERSION,
+		},
+		capability: {
+			providerEndpointId: capability.providerEndpointId,
+			model: capability.model,
+		},
 		estimatedPromptTokens,
 		modelContextWindowTokens,
 		safePromptBudgetTokens,
@@ -102,12 +120,12 @@ function estimateProviderMessageTokens(
 			charCount += message.toolCallId.length;
 		}
 	}
-	return estimateConservativeTokens(charCount);
+	return estimateNativeApiContextGateTokens(charCount);
 }
 
 function estimateProviderToolTokens(tools: readonly ProviderToolDefinition[]) {
 	if (tools.length === 0) return 0;
-	return estimateConservativeTokens(JSON.stringify(tools).length);
+	return estimateNativeApiContextGateTokens(JSON.stringify(tools).length);
 }
 
 function summarizeProviderMessageShape(
@@ -138,6 +156,6 @@ function summarizeProviderMessageShape(
 	return { largestChars, largestRole, compactedToolResultCount };
 }
 
-function estimateConservativeTokens(charCount: number) {
+function estimateNativeApiContextGateTokens(charCount: number) {
 	return Math.ceil(charCount / 3);
 }

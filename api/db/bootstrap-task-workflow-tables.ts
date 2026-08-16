@@ -511,6 +511,9 @@ export async function ensureTaskWorkflowTables() {
 		"CREATE INDEX IF NOT EXISTS implementation_queue_entries_sequence_idx ON implementation_queue_entries (sequence_group_id, sequence_order)",
 	);
 	await client.execute(
+		"CREATE UNIQUE INDEX IF NOT EXISTS implementation_queue_entries_active_task_uidx ON implementation_queue_entries (task_id) WHERE status <> 'execution_archived'",
+	);
+	await client.execute(
 		"CREATE UNIQUE INDEX IF NOT EXISTS implementation_queue_entries_mission_pilot_admission_uidx ON implementation_queue_entries (mission_pilot_admission_key)",
 	);
 

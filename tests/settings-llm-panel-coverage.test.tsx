@@ -296,7 +296,13 @@ describe("settings LLM panel coverage", () => {
 	it("records provider health failures from Error and string values", async () => {
 		let commands = setup([null, false, null, {}], {
 			testLlmProviderHealth: vi.fn(
-				async () => new Response("unhealthy", { status: 500 }),
+				async () =>
+					new Response(
+						JSON.stringify({
+							error: { code: "PROVIDER_UNHEALTHY", message: "unhealthy" },
+						}),
+						{ status: 500, headers: { "content-type": "application/json" } },
+					),
 			),
 		});
 		let { SettingsLlmPanel } = await import(

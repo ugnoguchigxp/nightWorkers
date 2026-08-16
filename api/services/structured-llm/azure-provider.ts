@@ -1,17 +1,18 @@
 import { normalizeProviderUsage } from "../llm-usage";
 import { rejectProviderActivity } from "./events";
 import {
+	getResolvedProviderEndpoint,
+	toOpenAIReasoningEffort,
+} from "./openai-compatible-provider-support";
+import {
 	providerHttpError,
 	providerInvalidResponseError,
+	readBoundedProviderResponseText,
 	StructuredProviderError,
 } from "./provider-failure";
 import type {
 	OpenAIChatCompletionResponse,
 	RawLlmCallOptions,
-} from "./providers";
-import {
-	getResolvedProviderEndpoint,
-	toOpenAIReasoningEffort,
 } from "./providers";
 import {
 	type getStructuredLlmBoolSetting,
@@ -101,7 +102,7 @@ export async function callAzureProvider(
 	});
 
 	if (!response.ok) {
-		const errorText = await response.text();
+		const errorText = await readBoundedProviderResponseText(response);
 		throw providerHttpError({
 			provider: "Azure OpenAI",
 			status: response.status,
@@ -150,7 +151,7 @@ export async function callAzureProvider(
 async function readAzureProviderJson(
 	response: Response,
 ): Promise<OpenAIChatCompletionResponse> {
-	const body = await response.text();
+	const body = await readBoundedProviderResponseText(response);
 	try {
 		return JSON.parse(body) as OpenAIChatCompletionResponse;
 	} catch (error) {

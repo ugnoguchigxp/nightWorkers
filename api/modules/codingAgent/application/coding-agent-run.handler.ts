@@ -9,11 +9,8 @@ import {
 	registerCodingAgentRunHandlers,
 	registerTaskRunAssociationHandler,
 } from "../../agentsShare";
-import * as repo from "../../nightworkers/nightworkers.repository";
-import { resumeTaskRunTodo } from "../../nightworkers/run-orchestration/resume-task-run";
-import { startTaskRun } from "../../nightworkers/run-orchestration/start-task-run-entry";
-import { readArtifactOperatorContent } from "../../specification";
 import { readCodingAgentPlanModeRequested } from "../context";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import { findInterruptedCodingAgentRunCandidate } from "./runtime-execution-ownership.service";
 
 export const CODING_AGENT_REQUEST_ASSOCIATION_KIND = "coding_agent_request";
@@ -42,12 +39,13 @@ export function initializeCodingAgentRunHandlers() {
 export async function handleStartCodingAgentRun(
 	command: StartCodingAgentRunCommand,
 ) {
+	const host = requireCodingAgentHost();
 	const [task, repository, artifacts] = await Promise.all([
-		repo.getTask(command.taskId),
-		repo.getRepository(command.repositoryRef.id),
+		host.taskReader.getTask(command.taskId),
+		host.taskReader.getRepository(command.repositoryRef.id),
 		Promise.all(
 			command.artifactRefs.map((ref) =>
-				readArtifactOperatorContent({
+				host.taskReader.readArtifactContent({
 					taskId: command.taskId,
 					artifactId: ref.id,
 				}),
@@ -90,11 +88,11 @@ export async function handleStartCodingAgentRun(
 			);
 		}
 	}
-	const run = await startTaskRun(command.taskId, {
+	const run = await host.runLifecycle.startRun({
+		taskId: command.taskId,
 		executionMode: "implementation",
-		executionModeSource: "explicit",
 		planModeRequested: command.planModeRequested === true,
-		latestUserMessageOverride: command.instruction,
+		instruction: command.instruction,
 		runAssociation: command.requestProvenance.orchestrationRef
 			? {
 					kind: CODING_AGENT_REQUEST_ASSOCIATION_KIND,
@@ -112,7 +110,8 @@ export async function handleStartCodingAgentRun(
 export async function handleResumeCodingAgentRunTodo(
 	command: ResumeCodingAgentRunTodoCommand,
 ) {
-	const run = await resumeTaskRunTodo(command);
+	const run =
+		await requireCodingAgentHost().runLifecycle.resumeRunTodo(command);
 	await recordRequestProvenance(run.id, command.requestProvenance);
 	return { runId: run.id, taskId: run.taskId, status: run.status };
 }
@@ -122,9 +121,10 @@ export async function handleResumeInterruptedCodingAgentRun(
 ) {
 	const candidate =
 		await findInterruptedCodingAgentRunCandidateForCommand(command);
-	const existingRun = await repo.getTaskRun(candidate.runId);
+	const host = requireCodingAgentHost();
+	const existingRun = await host.runReader.getRun(candidate.runId);
 	if (!existingRun) throw new NotFoundError("Run not found");
-	await repo.createRunEvent({
+	await host.runJournal.appendRunEvent({
 		version: 1,
 		runId: existingRun.id,
 		taskId: existingRun.taskId,
@@ -139,21 +139,16 @@ export async function handleResumeInterruptedCodingAgentRun(
 			requestProvenance: command.requestProvenance,
 		},
 	});
-	const run = await startTaskRun(existingRun.taskId, {
-		executionMode: "implementation",
-		executionModeSource: "explicit",
+	const run = await host.runLifecycle.resumeInterruptedRun({
+		taskId: existingRun.taskId,
+		runId: existingRun.id,
 		planModeRequested: readCodingAgentPlanModeRequested(
 			existingRun.contextSnapshot,
 		),
-		resumeRunId: existingRun.id,
-		latestUserMessageOverride: command.userContext,
-		resumeCommand: {
-			kind: "process_interruption",
-			expectedInterruptionRevision: command.expectedInterruptionRevision,
-			todoId: command.todoId,
-			expectedTodoRevision: command.expectedTodoRevision,
-			userContext: command.userContext,
-		},
+		expectedInterruptionRevision: command.expectedInterruptionRevision,
+		todoId: command.todoId,
+		expectedTodoRevision: command.expectedTodoRevision,
+		userContext: command.userContext,
 	});
 	await recordRequestProvenance(run.id, command.requestProvenance);
 	return { runId: run.id, taskId: run.taskId, status: run.status };
@@ -162,7 +157,7 @@ export async function handleResumeInterruptedCodingAgentRun(
 async function findInterruptedCodingAgentRunCandidateForCommand(
 	command: ResumeInterruptedCodingAgentRunCommand,
 ) {
-	const run = await repo.getTaskRun(command.runId);
+	const run = await requireCodingAgentHost().runReader.getRun(command.runId);
 	if (!run) throw new NotFoundError("Run not found");
 	const candidate = await findInterruptedCodingAgentRunCandidate(run.taskId);
 	if (
@@ -189,9 +184,10 @@ async function recordRequestProvenance(
 		| ResumeCodingAgentRunTodoCommand["requestProvenance"]
 		| ResumeInterruptedCodingAgentRunCommand["requestProvenance"],
 ) {
-	const run = await repo.getTaskRun(runId);
+	const host = requireCodingAgentHost();
+	const run = await host.runReader.getRun(runId);
 	if (!run) return;
-	await repo.createRunEvent({
+	await host.runJournal.appendRunEvent({
 		version: 1,
 		runId,
 		taskId: run.taskId,
@@ -217,7 +213,7 @@ async function handleCodingAgentRequestAssociation(input: {
 			"CODING_AGENT_REQUEST_PROVENANCE_INVALID",
 			"Coding Agent request provenance is invalid.",
 		);
-	const run = await repo.getTaskRun(input.runId);
+	const run = await requireCodingAgentHost().runReader.getRun(input.runId);
 	if (!run || run.taskId !== input.taskId)
 		throw new NotFoundError("Run not found for Task");
 	await recordRequestProvenance(input.runId, requestProvenance);

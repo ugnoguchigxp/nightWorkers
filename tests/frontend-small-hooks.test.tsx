@@ -24,7 +24,7 @@ describe("frontend small hooks coverage", () => {
 	});
 
 	it("runs LLM settings hook actions", async () => {
-		const queryClient = { invalidateQueries: vi.fn() };
+		const queryClient = { invalidateQueries: vi.fn(), setQueryData: vi.fn() };
 		const llmSettings = {
 			ACTIVE_LLM_PROVIDER: "openai",
 			OPENAI_ENABLED: true,
@@ -38,6 +38,7 @@ describe("frontend small hooks coverage", () => {
 		};
 		vi.resetModules();
 		vi.doMock("@tanstack/react-query", () => ({
+			queryOptions: <T,>(options: T) => options,
 			useQueryClient: () => queryClient,
 			useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
 				data:

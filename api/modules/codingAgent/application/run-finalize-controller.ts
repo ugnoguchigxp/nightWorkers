@@ -1,5 +1,6 @@
 import { humanBlockerSchema } from "../../../../shared/modules/codingAgent";
-import * as repo from "../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../ports/coding-agent-host.port";
 import {
 	type CodingAgentCompletionReadiness,
 	evaluateCodingAgentCompletionReadiness,
@@ -35,14 +36,15 @@ export type FinalizeGuardResult = {
 };
 
 export type RunFinalizeControllerDependencies = {
-	getTaskRun: typeof repo.getTaskRun;
-	listTaskRunTodosForRun: typeof repo.listTaskRunTodosForRun;
+	getTaskRun: CodingAgentHostPorts["runReader"]["getRun"];
+	listTaskRunTodosForRun: CodingAgentHostPorts["runReader"]["listRunTodos"];
 	evaluateReadiness: typeof evaluateCodingAgentCompletionReadiness;
 };
 
 const defaultDependencies: RunFinalizeControllerDependencies = {
-	getTaskRun: (...args) => repo.getTaskRun(...args),
-	listTaskRunTodosForRun: (...args) => repo.listTaskRunTodosForRun(...args),
+	getTaskRun: (runId) => requireCodingAgentHost().runReader.getRun(runId),
+	listTaskRunTodosForRun: (runId) =>
+		requireCodingAgentHost().runReader.listRunTodos(runId),
 	evaluateReadiness: (...args) =>
 		evaluateCodingAgentCompletionReadiness(...args),
 };
@@ -74,7 +76,7 @@ export class RunFinalizeController {
 				revision: todo.revision,
 				status: todo.status,
 				title: todo.title,
-				humanBlocker: todo.humanBlockerJson,
+				humanBlocker: todo.humanBlocker,
 			})),
 		};
 		if (
@@ -127,7 +129,7 @@ export class RunFinalizeController {
 		}
 		const needsHuman = todos.filter((todo) => todo.status === "needs_human");
 		const invalidHumanBlockers = needsHuman.filter(
-			(todo) => !humanBlockerSchema.safeParse(todo.humanBlockerJson).success,
+			(todo) => !humanBlockerSchema.safeParse(todo.humanBlocker).success,
 		);
 		if (invalidHumanBlockers.length > 0) {
 			return blocked(

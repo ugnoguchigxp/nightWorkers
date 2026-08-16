@@ -33,6 +33,12 @@
 	    "api/modules/planMode",
 	    "src/modules/planMode"
 	],
+	"forbiddenRoleImportEdges": [
+		{
+			"source": "api/modules/codingAgent",
+			"target": "api/modules/nightworkers"
+		}
+	],
 	"deepImportExemptions": [
 		{
 			"source": "api/db/bootstrap.ts",
@@ -49,6 +55,26 @@
 		{
 			"source": "api/services/supervisor/prompt-tool-registry.ts",
 			"specifier": "../../modules/codingAgent/mcp/nightworkers-tool-manifest"
+		},
+		{
+			"source": "api/composition/coding-agent/coding-agent-host-adapter.ts",
+			"specifier": "../../modules/codingAgent/application/completion-check.service"
+		},
+		{
+			"source": "api/composition/coding-agent/coding-agent-host-adapter.ts",
+			"specifier": "../../modules/codingAgent/ports/coding-agent-host.port"
+		},
+		{
+			"source": "api/composition/coding-agent/coding-agent-host-adapter.ts",
+			"specifier": "../../modules/codingAgent/ports/coding-agent-host.types"
+		},
+		{
+			"source": "api/composition/coding-agent/index.ts",
+			"specifier": "../../modules/codingAgent/ports/coding-agent-host.binding"
+		},
+		{
+			"source": "api/composition/coding-agent/index.ts",
+			"specifier": "../../modules/codingAgent/ports/coding-agent-host.port"
 		}
 	],
 	"roleOwnedPathRules": [
@@ -76,7 +102,9 @@
 			],
 			"exemptPrefixes": [
 				"api/modules/agentsShare/contracts/coding-agent-run.ts",
-				"api/modules/agentsShare/ports/coding-agent-run.ts"
+				"api/modules/agentsShare/ports/coding-agent-run.ts",
+				"api/composition/coding-agent/",
+				"src/composition/coding-agent/"
 			]
 		}
 	],

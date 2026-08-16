@@ -1,39 +1,30 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { readJsonResponse } from "../../lib/api-error";
 import type { LlmProvider, LlmSettings } from "../nightworkers/types";
 import {
-	fetchLlmModelOptions,
-	fetchLlmSettings,
-	runLlmSmokeTest,
-	saveLlmSettings,
-} from "./settingsCommands";
+	llmProviderModelOptionsQueryOptions,
+	llmSettingsQueryKeys,
+	llmSettingsQueryOptions,
+	saveNormalizedLlmSettings,
+} from "./llm-settings-query";
+import { runLlmSmokeTest } from "./settingsCommands";
 
 export function useLlmSettings() {
 	const queryClient = useQueryClient();
-	const { data: llmSettings = null } = useQuery({
-		queryKey: ["llmSettings"],
-		queryFn: async () => {
-			const res = await fetchLlmSettings();
-			if (!res.ok) throw new Error("Failed to fetch llm settings");
-			return (await res.json()) as LlmSettings;
-		},
-		refetchOnWindowFocus: true,
-		refetchOnReconnect: true,
-	});
+	const { data: llmSettings = null } = useQuery(llmSettingsQueryOptions());
 	const activeProvider = (llmSettings?.ACTIVE_LLM_PROVIDER ||
 		"azure") as LlmProvider;
-	const { data: providerModelOptions = [] } = useQuery({
-		queryKey: ["llmModelOptions", activeProvider],
-		queryFn: async () => {
-			const res = await fetchLlmModelOptions();
-			if (!res.ok) throw new Error("Failed to fetch model options");
-			const data = (await res.json()) as {
-				options: Array<{ value: string; label: string }>;
-			};
-			return data.options;
-		},
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-	});
+	const { data: providerModelOptions = [] } = useQuery(
+		llmProviderModelOptionsQueryOptions(activeProvider),
+	);
+	const save = async (settings: LlmSettings) => {
+		const saved = await saveNormalizedLlmSettings(settings);
+		queryClient.setQueryData(llmSettingsQueryKeys.settings, saved);
+		queryClient.invalidateQueries({
+			queryKey: ["llmSettings", "modelOptions"],
+		});
+		return saved;
+	};
 
 	return {
 		llmSettings,
@@ -44,10 +35,7 @@ export function useLlmSettings() {
 				...(llmSettings || {}),
 				ACTIVE_LLM_PROVIDER: provider,
 			} as LlmSettings;
-			const res = await saveLlmSettings(merged);
-			if (!res.ok) throw new Error("Failed to save llm settings");
-			queryClient.invalidateQueries({ queryKey: ["llmSettings"] });
-			queryClient.invalidateQueries({ queryKey: ["llmModelOptions"] });
+			await save(merged);
 		},
 		toggleProviderEnabled: async (provider: LlmProvider, enabled: boolean) => {
 			if (!llmSettings) return;
@@ -58,9 +46,7 @@ export function useLlmSettings() {
 				codex: "CODEX_ENABLED",
 			};
 			const merged = { ...llmSettings, [flagKey[provider]]: enabled };
-			const res = await saveLlmSettings(merged);
-			if (!res.ok) throw new Error("Failed to save llm settings");
-			queryClient.invalidateQueries({ queryKey: ["llmSettings"] });
+			await save(merged);
 		},
 		updateProviderModel: async (model: string) => {
 			if (!llmSettings) return;
@@ -71,19 +57,14 @@ export function useLlmSettings() {
 				codex: "CODEX_MODEL",
 			};
 			const merged = { ...llmSettings, [modelKey[activeProvider]]: model };
-			const res = await saveLlmSettings(merged);
-			if (!res.ok) throw new Error("Failed to save model settings");
-			queryClient.invalidateQueries({ queryKey: ["llmSettings"] });
-			queryClient.invalidateQueries({ queryKey: ["llmModelOptions"] });
+			await save(merged);
 		},
 		runLlmSmokeTest: async () => {
-			const res = await runLlmSmokeTest();
-			if (!res.ok) throw new Error("Failed to run smoke");
-			return (await res.json()) as {
+			return readJsonResponse<{
 				ok: boolean;
 				provider: string;
 				message: string;
-			};
+			}>(await runLlmSmokeTest());
 		},
 	};
 }

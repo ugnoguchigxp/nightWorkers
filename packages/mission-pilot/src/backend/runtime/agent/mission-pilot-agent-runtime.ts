@@ -8,8 +8,6 @@ import {
 import { applyCurrentMissionPilotSystemContext } from "../prompts/mission-pilot-system-context";
 import {
 	MISSION_PILOT_AGENT_LEASE_MS,
-	MISSION_PILOT_CONTEXT_HARD_TOKENS,
-	MISSION_PILOT_CONTEXT_SOFT_TOKENS,
 	MISSION_PILOT_MAX_ELAPSED_MS_PER_WAKE,
 	MISSION_PILOT_MAX_PROVIDER_CALLS_PER_WAKE,
 	MISSION_PILOT_MAX_TOOL_CALLS_PER_WAKE,
@@ -25,6 +23,7 @@ import {
 	readMissionPilotRuntimeSystemContext,
 } from "./mission-pilot-agent-runtime-failures";
 import { missionPilotDigest } from "./mission-pilot-content-page";
+import { resolveMissionPilotContextBudgets } from "./mission-pilot-context-budget";
 import {
 	buildMissionPilotCompactionRequest,
 	getMissionPilotCompactionSystemContext,
@@ -85,6 +84,10 @@ async function runMissionPilotAgentWakeInScope(
 	dependencies: MissionPilotAgentRuntimeDependencies,
 	systemContextBinding: SystemContextBindingSnapshot,
 ) {
+	const contextBudgets = resolveMissionPilotContextBudgets({
+		softTokenBudget: dependencies.compactionTokenBudget,
+		hardTokenBudget: dependencies.contextHardTokenBudget,
+	});
 	if (activeControllers.has(input.sessionId))
 		return { kind: "already_running" } as const;
 	const controller = new AbortController();
@@ -213,9 +216,7 @@ async function runMissionPilotAgentWakeInScope(
 					systemContext,
 					messages,
 					tools,
-					softTokenBudget:
-						dependencies.compactionTokenBudget ??
-						MISSION_PILOT_CONTEXT_SOFT_TOKENS,
+					softTokenBudget: contextBudgets.softTokenBudget,
 				})
 			) {
 				if (providerCalls >= providerLimit) {
@@ -301,9 +302,7 @@ async function runMissionPilotAgentWakeInScope(
 				});
 				continue;
 			}
-			const tokenBudget =
-				dependencies.contextHardTokenBudget ??
-				MISSION_PILOT_CONTEXT_HARD_TOKENS;
+			const tokenBudget = contextBudgets.hardTokenBudget;
 			if (
 				estimateMissionPilotProviderRequestTokens({
 					systemContext,

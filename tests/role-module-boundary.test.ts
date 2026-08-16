@@ -34,6 +34,27 @@ describe("Mission Pilot and Coding Agent role boundaries", () => {
 		);
 	});
 
+	it("forbids Coding Agent imports of NightWorkers private host modules", () => {
+		const root = createFixture();
+		write(
+			root,
+			"api/modules/codingAgent/runtime.ts",
+			'import { getTaskRun } from "../nightworkers/nightworkers.repository";\nexport const runtime = getTaskRun;\n',
+		);
+		write(
+			root,
+			"api/modules/nightworkers/nightworkers.repository.ts",
+			"export const getTaskRun = true;\n",
+		);
+
+		const result = evaluateModuleBoundaries(root);
+
+		expect(result.ok).toBe(false);
+		expect(result.errors).toContain(
+			"api/modules/codingAgent/runtime.ts: direct host-private import is forbidden (api/modules/codingAgent -> api/modules/nightworkers: ../nightworkers/nightworkers.repository)",
+		);
+	});
+
 	it("allows both roles to depend on a neutral shared module", () => {
 		const root = createFixture();
 		write(
@@ -159,6 +180,12 @@ function createFixture() {
 			version: 1,
 			enforcedPublicApiRoots: [],
 			roleModuleRoots: ["api/modules/missionPilot", "api/modules/codingAgent"],
+			forbiddenRoleImportEdges: [
+				{
+					source: "api/modules/codingAgent",
+					target: "api/modules/nightworkers",
+				},
+			],
 			agentSharedModuleRoots: ["api/modules/agentsShare"],
 			agentIndependentModuleRoots: ["api/modules/planMode"],
 			roleOwnedPathRules: [

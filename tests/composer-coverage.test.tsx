@@ -140,13 +140,17 @@ function elements(node: ReactNode): ReactElement[] {
 }
 
 function textarea(root: ReactElement) {
-	return elements(root).find((element) => element.type === "textarea")!;
+	const element = elements(root).find((element) => element.type === "textarea");
+	if (!element) throw new Error("Textarea was not rendered.");
+	return element;
 }
 
 function submitButton(root: ReactElement) {
-	return elements(root)
+	const element = elements(root)
 		.filter((element) => element.type === "button")
-		.at(-1)!;
+		.at(-1);
+	if (!element) throw new Error("Submit button was not rendered.");
+	return element;
 }
 
 async function flushPromises() {

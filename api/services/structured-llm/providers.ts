@@ -1,5 +1,6 @@
 import { normalizeProviderUsage } from "../llm-usage";
 import { callAzureProvider } from "./azure-provider";
+import { callAzureProviderToolTurn } from "./azure-provider-tool-turn";
 import {
 	callBedrockProvider,
 	callBedrockProviderToolTurn,
@@ -15,11 +16,16 @@ import { callOpenAIProvider } from "./openai-provider";
 import {
 	type OpenAIChatCompletionResponse,
 	toOpenAIToolDefinition,
-	toProviderToolCall,
+	toProviderToolCalls,
 } from "./openai-tool-call-codec";
 
 export type { OpenAIChatCompletionResponse } from "./openai-tool-call-codec";
 
+import {
+	buildOpenAICompatibleHeaders,
+	getResolvedProviderEndpoint,
+	toOpenAIReasoningEffort,
+} from "./openai-compatible-provider-support";
 import { toOpenAIToolMessages } from "./openai-tool-messages";
 import { authorizeStructuredProviderCall } from "./provider-call-authorization";
 import { dispatchStructuredLlmProvider } from "./provider-dispatch";
@@ -27,6 +33,7 @@ import {
 	normalizeStructuredProviderError,
 	providerHttpError,
 	providerInvalidResponseError,
+	readBoundedProviderResponseText,
 	StructuredProviderError,
 } from "./provider-failure";
 import { providerAdapterKey } from "./request";
@@ -34,7 +41,6 @@ import {
 	getStructuredLlmBoolSetting,
 	getStructuredLlmSetting,
 	readStructuredLlmProviderSettings,
-	type StructuredLlmProviderEndpoint,
 } from "./settings";
 import type {
 	ProviderToolDefinition,
@@ -47,6 +53,14 @@ import type {
 	NormalizedSupervisorLlmRequest,
 	ProviderCallResult,
 } from "./types";
+
+export {
+	buildOpenAICompatibleHeaders,
+	getResolvedProviderEndpoint,
+	readProviderUsage,
+	toCodexReasoningEffort,
+	toOpenAIReasoningEffort,
+} from "./openai-compatible-provider-support";
 
 export type OpenAIResponseFormat = "json_schema" | "json_object";
 
@@ -180,119 +194,6 @@ export async function callProviderToolTurn(input: {
 	}
 }
 
-async function callAzureProviderToolTurn(
-	input: Parameters<typeof callProviderToolTurn>[0],
-	isEnabled: (
-		key: Parameters<typeof getStructuredLlmBoolSetting>[1],
-		fallback: boolean,
-	) => boolean,
-	settings: ReturnType<typeof readStructuredLlmProviderSettings>,
-): Promise<ProviderToolTurnResult> {
-	const endpointConfig = getResolvedProviderEndpoint(input, settings);
-	if (!endpointConfig?.enabled && !isEnabled("AZURE_OPENAI_ENABLED", false)) {
-		throw new StructuredProviderError({
-			kind: "permission",
-			retryable: false,
-			message: "Azure provider is inactive. Enable AZURE_OPENAI_ENABLED first.",
-		});
-	}
-	const apiKey =
-		endpointConfig?.apiKey ||
-		getStructuredLlmSetting(settings, "AZURE_OPENAI_API_KEY");
-	const endpoint =
-		input.options.normalizedRequest.endpoint ||
-		endpointConfig?.endpoint ||
-		getStructuredLlmSetting(settings, "AZURE_OPENAI_ENDPOINT");
-	const deploymentName =
-		input.options.normalizedRequest.modelOrDeployment ||
-		endpointConfig?.models[0] ||
-		getStructuredLlmSetting(
-			settings,
-			"AZURE_OPENAI_DEPLOYMENT_NAME",
-			"gpt-5-mini",
-		);
-	const apiVersion =
-		input.options.normalizedRequest.apiVersion ||
-		endpointConfig?.apiVersion ||
-		getStructuredLlmSetting(
-			settings,
-			"AZURE_OPENAI_API_VERSION",
-			"2024-05-01-preview",
-		);
-	if (!apiKey || !endpoint) {
-		throw new StructuredProviderError({
-			kind: "authentication",
-			retryable: false,
-			message:
-				"Azure OpenAI credentials are not configured in environment variables.",
-		});
-	}
-	const reasoningEffort = toOpenAIReasoningEffort(
-		input.options.normalizedRequest.thinkingDepth,
-	);
-	const cleanEndpoint = endpoint.replace(/\/+$/, "");
-	const url = `${cleanEndpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
-	const response = await fetch(url, {
-		method: "POST",
-		signal: input.signal,
-		headers: { "Content-Type": "application/json", "api-key": apiKey },
-		body: JSON.stringify({
-			messages: toOpenAIToolMessages(input.messages),
-			tools: input.tools.map(toOpenAIToolDefinition),
-			tool_choice: input.options.toolChoice ?? "auto",
-			...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
-		}),
-	});
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		throw providerHttpError({
-			provider: "Azure OpenAI",
-			status: response.status,
-			body: errorText,
-			retryAfter: response.headers.get("retry-after"),
-		});
-	}
-
-	const responseData = await readOpenAIToolTurnResponseJson(
-		response,
-		"Azure OpenAI",
-	);
-	const message = responseData.choices?.[0]?.message;
-	const content = typeof message?.content === "string" ? message.content : "";
-	const toolCalls = (message?.tool_calls ?? []).flatMap(toProviderToolCall);
-	const providerDebug = {
-		provider: "azure-openai",
-		providerEndpointId: endpointConfig?.id ?? null,
-		mode: "provider_native_tools",
-		status: response.status,
-		deploymentName,
-		apiVersion,
-		reasoningEffort,
-		hasChoices: Boolean(responseData.choices),
-		hasUsage: Boolean(responseData.usage),
-		toolCallCount: toolCalls.length,
-	};
-	input.setProviderDebug(providerDebug);
-
-	return {
-		type: "supported",
-		content,
-		toolCalls,
-		usage: normalizeProviderUsage({
-			provider: "azure-openai",
-			rawUsage: responseData.usage,
-			fallback: {
-				systemPrompt: input.systemPrompt,
-				userPrompt: input.userPrompt,
-				responseText: content,
-			},
-		}),
-		model: deploymentName,
-		providerDebug,
-	};
-}
-
 async function callOpenAIProviderToolTurn(
 	input: Parameters<typeof callProviderToolTurn>[0],
 	isEnabled: (
@@ -353,7 +254,7 @@ async function callOpenAIProviderToolTurn(
 	const response = await fetch(url, requestInit);
 
 	if (!response.ok) {
-		const errorText = await response.text();
+		const errorText = await readBoundedProviderResponseText(response);
 		throw providerHttpError({
 			provider: "OpenAI",
 			status: response.status,
@@ -365,7 +266,13 @@ async function callOpenAIProviderToolTurn(
 	const responseData = await readOpenAIToolTurnResponseJson(response, "OpenAI");
 	const message = responseData.choices?.[0]?.message;
 	const content = typeof message?.content === "string" ? message.content : "";
-	const toolCalls = (message?.tool_calls ?? []).flatMap(toProviderToolCall);
+	const toolCalls = toProviderToolCalls({
+		calls: message?.tool_calls ?? [],
+		tools: input.tools,
+		provider: "OpenAI",
+		content,
+		responseBody: JSON.stringify(responseData),
+	});
 	const providerDebug = {
 		provider: "openai",
 		providerEndpointId: endpointConfig?.id ?? null,
@@ -408,7 +315,7 @@ export async function retryOpenAITransientUnavailableOnce(input: {
 	responseFormat: OpenAIResponseFormat;
 	stream: boolean;
 }): Promise<Response> {
-	const errorText = await input.response.text();
+	const errorText = await readBoundedProviderResponseText(input.response);
 	if (!isOpenAITransientUnavailable(input.response.status)) {
 		return new Response(errorText, {
 			status: input.response.status,
@@ -438,63 +345,12 @@ async function readOpenAIToolTurnResponseJson(
 	response: Response,
 	provider: string,
 ): Promise<OpenAIChatCompletionResponse> {
-	const body = await response.text();
+	const body = await readBoundedProviderResponseText(response);
 	try {
 		return JSON.parse(body) as OpenAIChatCompletionResponse;
 	} catch (error) {
 		throw providerInvalidResponseError({ provider, body, cause: error });
 	}
-}
-
-export function buildOpenAICompatibleHeaders(
-	apiKey: string,
-): Record<string, string> {
-	return {
-		"Content-Type": "application/json",
-		...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-	};
-}
-
-export function getResolvedProviderEndpoint(
-	input: { options: { normalizedRequest?: NormalizedSupervisorLlmRequest } },
-	settings: ReturnType<typeof readStructuredLlmProviderSettings>,
-): StructuredLlmProviderEndpoint | null {
-	const endpointId = input.options.normalizedRequest?.providerEndpointId;
-	if (!endpointId) return null;
-	return (
-		settings.providerEndpoints?.find(
-			(endpoint) => endpoint.id === endpointId,
-		) || null
-	);
-}
-
-export function toCodexReasoningEffort(
-	value: string | null | undefined,
-): "minimal" | "low" | "medium" | "high" | "xhigh" {
-	if (
-		value === "minimal" ||
-		value === "low" ||
-		value === "medium" ||
-		value === "high"
-	) {
-		return value;
-	}
-	if (value === "very_high" || value === "xhigh") return "xhigh";
-	return "low";
-}
-
-export function toOpenAIReasoningEffort(
-	value: string | null | undefined,
-): "low" | "medium" | "high" | undefined {
-	if (value === "low" || value === "medium" || value === "high") return value;
-	if (value === "very_high") return "high";
-	return undefined;
-}
-
-export function readProviderUsage(value: unknown): unknown {
-	return value && typeof value === "object" && "usage" in value
-		? (value as { usage?: unknown }).usage
-		: null;
 }
 
 function isOpenAITransientUnavailable(status: number) {

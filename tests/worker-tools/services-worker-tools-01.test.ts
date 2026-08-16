@@ -1461,10 +1461,13 @@ describe("Command safety Policy", () => {
 		expect(result.classification).toBe("background");
 	});
 
-	it("allows log-follow pipelines as background commands", () => {
+	it("rejects log-follow pipelines as shell syntax", () => {
 		const result = analyzeCommand("tail -f logs/api.log | rg error");
-		expect(result.allowed).toBe(true);
-		expect(result.classification).toBe("background");
+		expect(result).toMatchObject({
+			allowed: false,
+			classification: "destructive",
+			rejectionKind: "shell_control",
+		});
 	});
 
 	it("handles custom blocklist entries with regex characters literally", () => {

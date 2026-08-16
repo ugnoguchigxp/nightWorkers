@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { MutableRefObject } from "react";
 import type { PromptImageInput } from "../../../../shared/prompt-image";
+import { readJsonResponse } from "../../../lib/api-error";
 import { appendWorkbenchMessage } from "../nightWorkersCommands";
 import type {
 	Task,
@@ -182,8 +183,7 @@ export function createNightWorkersChatActions(input: ChatActionsInput) {
 					},
 					{ signal: abortController.signal },
 				);
-				if (!res.ok) throw new Error(await res.text());
-				const result = (await res.json()) as WorkbenchMessageResult;
+				const result = await readJsonResponse<WorkbenchMessageResult>(res);
 				if (result.messages)
 					queryClient.setQueryData(
 						["taskMessages", sessionId],

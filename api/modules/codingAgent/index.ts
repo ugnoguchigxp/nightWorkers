@@ -88,6 +88,26 @@ export {
 	renderProcessInterruptionRecoveryGuidance,
 } from "./context/process-interruption-snapshot";
 export * from "./intake";
+export {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+	requireCodingAgentHost,
+} from "./ports/coding-agent-host.binding";
+export type { CodingAgentHostPorts } from "./ports/coding-agent-host.port";
+export type {
+	CodingAgentCompletionCheckSnapshot,
+	CodingAgentRepositorySnapshot,
+	CodingAgentRunContextCasInput,
+	CodingAgentRunContextCasResult,
+	CodingAgentRunEventInput,
+	CodingAgentRunSnapshot,
+	CodingAgentRunStatus,
+	CodingAgentRunTodoSnapshot,
+	CodingAgentTaskMessageInput,
+	CodingAgentTaskSnapshot,
+	CodingAgentTaskStatus,
+	CodingAgentVerificationDocumentSnapshot,
+} from "./ports/coding-agent-host.types";
 export * from "./runtime";
 export * from "./todo";
 export { codingAgentForbiddenPlanTools, todoListTool } from "./tools";

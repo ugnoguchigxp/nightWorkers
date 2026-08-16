@@ -23,6 +23,12 @@ const FALLBACK_PATTERNS: Array<[RegExp, string]> = [
 	[/\b(npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})\b/g, "[REDACTED]"],
 ];
 
+const RUNTIME_SECRET_ENVIRONMENT_KEY_PATTERN =
+	/^(?:AWS_ACCESS_KEY_ID|AWS_SESSION_TOKEN)$/i;
+const runtimeSecretValuesBySource = new Map<string, string[]>();
+
+type SecretRedactionOptions = { secretValues?: Iterable<string> };
+
 export function isSecretEnvironmentKey(key: string) {
 	return SECRET_KEY_PATTERN.test(key);
 }
@@ -44,6 +50,47 @@ export function isRegistryCredentialEnvironmentKey(
 		(isRegistryUrlEnvironmentKey(key) &&
 			typeof value === "string" &&
 			hasEmbeddedUrlCredential(value))
+	);
+}
+
+/**
+ * Replace secret values known by one runtime configuration source.  The logger
+ * reads this registry at write time, so updating a setting cannot leave its
+ * previous value protected indefinitely or its new value unprotected.
+ */
+export function replaceRuntimeSecretValues(
+	source: string,
+	secretValues: Iterable<string>,
+) {
+	const values = [...secretValues]
+		.filter((value): value is string => typeof value === "string")
+		.map((value) => value.trim())
+		.filter(Boolean)
+		.filter((value, index, all) => all.indexOf(value) === index);
+	if (values.length === 0) {
+		runtimeSecretValuesBySource.delete(source);
+		return;
+	}
+	runtimeSecretValuesBySource.set(source, values);
+}
+
+export function redactRuntimeSecretText(value: string) {
+	return redactSecretText(value, {
+		secretValues: collectRuntimeSecretValues(),
+	});
+}
+
+export function redactRuntimeSecretRecord(value: Record<string, unknown>) {
+	return redactSecretRecord(value, {
+		secretValues: collectRuntimeSecretValues(),
+	});
+}
+
+export function redactRuntimeSecretValue(value: unknown): unknown {
+	return redactSecretValue(
+		value,
+		{ secretValues: collectRuntimeSecretValues() },
+		new WeakSet(),
 	);
 }
 
@@ -72,7 +119,7 @@ function hasEmbeddedUrlCredential(value: string) {
 
 export function redactSecretText(
 	value: string,
-	options: { secretValues?: Iterable<string> } = {},
+	options: SecretRedactionOptions = {},
 ) {
 	let redacted = value;
 	const secrets = [...(options.secretValues ?? [])]
@@ -98,7 +145,7 @@ export function redactSecretText(
 
 export function redactSecretRecord(
 	value: Record<string, unknown>,
-	options: { secretValues?: Iterable<string> } = {},
+	options: SecretRedactionOptions = {},
 ): Record<string, unknown> {
 	return redactSecretValue(value, options, new WeakSet()) as Record<
 		string,
@@ -108,13 +155,37 @@ export function redactSecretRecord(
 
 function redactSecretValue(
 	value: unknown,
-	options: { secretValues?: Iterable<string> },
+	options: SecretRedactionOptions,
 	seen: WeakSet<object>,
 ): unknown {
 	if (typeof value === "string") return redactSecretText(value, options);
 	if (!value || typeof value !== "object") return value;
 	if (seen.has(value)) return "[REDACTED]";
 	seen.add(value);
+	if (value instanceof Error) {
+		return {
+			...Object.fromEntries(
+				Object.entries(value).map(([key, item]) => [
+					key,
+					SECRET_RECORD_KEY_PATTERN.test(key)
+						? "[REDACTED]"
+						: redactSecretValue(item, options, seen),
+				]),
+			),
+			type: redactSecretText(value.name, options),
+			message: redactSecretText(value.message, options),
+			...(value.stack ? { stack: redactSecretText(value.stack, options) } : {}),
+			...("cause" in value
+				? {
+						cause: redactSecretValue(
+							(value as Error & { cause?: unknown }).cause,
+							options,
+							seen,
+						),
+					}
+				: {}),
+		};
+	}
 	if (Array.isArray(value)) {
 		return value.map((entry) => redactSecretValue(entry, options, seen));
 	}
@@ -126,4 +197,20 @@ function redactSecretValue(
 				: redactSecretValue(item, options, seen),
 		]),
 	);
+}
+
+function collectRuntimeSecretValues(): string[] {
+	const environmentValues = Object.entries(process.env).flatMap(
+		([key, value]) => {
+			if (
+				typeof value !== "string" ||
+				(!isSecretEnvironmentKey(key) &&
+					!isRegistryCredentialEnvironmentKey(key, value) &&
+					!RUNTIME_SECRET_ENVIRONMENT_KEY_PATTERN.test(key))
+			)
+				return [];
+			return [value];
+		},
+	);
+	return [...environmentValues, ...runtimeSecretValuesBySource.values()].flat();
 }

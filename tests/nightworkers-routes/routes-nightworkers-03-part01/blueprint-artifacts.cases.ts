@@ -416,7 +416,7 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 				},
 			);
 			expect(unknownOptionRes.status).toBe(422);
-			expect((await unknownOptionRes.json()).code).toBe("UNKNOWN_OPTION");
+			expect((await unknownOptionRes.json()).error.code).toBe("UNKNOWN_OPTION");
 
 			const multipleRadioRes = await app.request(
 				`http://localhost/api/tasks/${task.id}/design-questionnaire/${session.id}/answers`,
@@ -436,7 +436,7 @@ describe("NightWorkers task routes blueprint artifacts", () => {
 				},
 			);
 			expect(multipleRadioRes.status).toBe(422);
-			expect((await multipleRadioRes.json()).code).toBe(
+			expect((await multipleRadioRes.json()).error.code).toBe(
 				"MULTIPLE_OPTIONS_FOR_SINGLE_CHOICE",
 			);
 

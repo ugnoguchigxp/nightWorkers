@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { MissionPilotActionFailure } from "@nightworkers/mission-pilot/contracts";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../../../db/client";
+import { sanitizePersistenceValue } from "../../../../services/security/secret-persistence-firewall";
 import {
 	missionPilotAgentSessions,
 	missionPilotConversationItems,
@@ -86,7 +87,7 @@ export async function appendMissionPilotRuntimeFailure(input: {
 	return appendMissionPilotConversationItem({
 		sessionId: input.sessionId,
 		kind: "runtime_failure",
-		body: { failure: input.failure },
+		body: sanitizePersistenceValue({ failure: input.failure }),
 		sourceKind: "runtime_failure",
 		sourceId: input.failure.actionId,
 		leaseOwner: input.leaseOwner,

@@ -465,7 +465,7 @@ describe("NightWorkers task routes questionnaire core", () => {
 				},
 			);
 			expect(answersRes.status).toBe(409);
-			expect((await answersRes.json()).code).toBe("PLAN_MODE_READ_ONLY");
+			expect((await answersRes.json()).error.code).toBe("PLAN_MODE_READ_ONLY");
 		} finally {
 			if (originalProvider === undefined)
 				delete process.env.ACTIVE_LLM_PROVIDER;

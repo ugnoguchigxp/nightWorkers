@@ -5,32 +5,12 @@ import {
 	type GenerateSecurityScanTaskCandidatesResponse,
 	generateSecurityScanTaskCandidatesResponseSchema,
 } from "../../../shared/schemas/security-task-generation.schema";
+import { readJsonResponse } from "../../lib/api-error";
 import type { Task } from "../nightworkers/types";
 import {
 	createTasksFromMissionCandidates,
 	generateSecurityScanTaskCandidates,
 } from "../taskGeneration";
-
-async function readJsonResponse<T>(
-	responseInput: Response | Promise<Response>,
-) {
-	const response = await responseInput;
-	const payload = (await response.json().catch(() => null)) as
-		| T
-		| { error?: { message?: string } }
-		| null;
-	if (!response.ok) {
-		throw new Error(
-			payload &&
-				typeof payload === "object" &&
-				"error" in payload &&
-				payload.error?.message
-				? payload.error.message
-				: `Request failed (${response.status})`,
-		);
-	}
-	return payload as T;
-}
 
 export function useSecurityTaskCandidateController(input: {
 	repositoryId: string;
@@ -82,7 +62,7 @@ export function useSecurityTaskCandidateController(input: {
 		setError("");
 		try {
 			const resultPayload = await readJsonResponse<unknown>(
-				generateSecurityScanTaskCandidates(input.repositoryId, {
+				await generateSecurityScanTaskCandidates(input.repositoryId, {
 					scanRunRef: input.scanRunRef,
 					findingRefs: selectedFindingRefs,
 				}),
@@ -130,17 +110,7 @@ export function useSecurityTaskCandidateController(input: {
 					mode: "draft",
 				},
 			);
-			const payload = (await response.json().catch(() => null)) as
-				| { tasks?: unknown }
-				| { error?: { message?: string } }
-				| null;
-			if (!response.ok) {
-				const responseMessage =
-					payload && "error" in payload ? payload.error?.message : undefined;
-				throw new Error(
-					responseMessage ?? `Request failed (${response.status})`,
-				);
-			}
+			const payload = await readJsonResponse<{ tasks?: unknown }>(response);
 			if (
 				operationIdRef.current === operationId &&
 				previousScopeKey.current === requestScopeKey

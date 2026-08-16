@@ -1,0 +1,33 @@
+{
+	"version": 1,
+	"measuredAt": "2026-08-16T05:12:44Z",
+	"matrix": {
+		"sdkVersion": "0.144.4",
+		"cliVersion": "0.144.4",
+		"platform": "darwin",
+		"arch": "arm64",
+		"sandboxMode": "workspace-write",
+		"approvalPolicy": "never",
+		"networkAccessEnabled": false,
+		"additionalDirectories": []
+	},
+	"results": {
+		"normalFileRead": true,
+		"projectEnvRead": true,
+		"projectEnvLocalRead": true,
+		"projectPemRead": true,
+		"registryCredentialRead": true,
+		"workspaceWrite": true,
+		"outsideFileRead": true,
+		"symlinkOutsideRead": true,
+		"outsideFileWrite": true,
+		"childProcess": true,
+		"networkAccess": false,
+		"mcpApprovalMode": "not_measured",
+		"serverAuthorizationRejection": "not_measured"
+	},
+	"assessment": {
+		"securityEquivalentToNativeWorkerTools": false,
+		"reason": "Synthetic project secrets and paths outside the fixture workspace were readable and writable under the measured workspace-write sandbox."
+	}
+}

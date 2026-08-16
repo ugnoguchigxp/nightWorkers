@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createCodingAgentHostAdapter } from "../api/composition/coding-agent";
 import { CODING_AGENT_SYSTEM_CONTEXT_VERSION } from "../api/modules/codingAgent/context";
 import {
 	handleNightWorkersCodexMcpRequest,
@@ -7,12 +8,24 @@ import {
 	resolveRequestScopedIdentity,
 } from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-support";
 import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
+import {
 	createRepository,
 	createTask,
 	createTaskRun,
 	deleteRepository,
 	listTaskRunTodosForRun,
 } from "../api/modules/nightworkers/nightworkers.repository";
+
+beforeEach(() => {
+	configureCodingAgentHost(createCodingAgentHostAdapter());
+});
+
+afterEach(() => {
+	clearCodingAgentHostForTest();
+});
 
 describe("NightWorkers Codex MCP request authority", () => {
 	it("advertises the minimal request-scoped Todo guidance during MCP initialization", async () => {

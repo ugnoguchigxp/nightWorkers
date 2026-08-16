@@ -136,6 +136,30 @@ describe("background-processes service unit tests", () => {
 	});
 
 	describe("startBackgroundCommand validations", () => {
+		it("marks the record failed when setup fails after it has been persisted", async () => {
+			await expect(
+				startBackgroundCommand({
+					repositoryId: project.id,
+					command: "tail -f server.log",
+					repoRoot: dummyRepoDir,
+					confinementRequired: true,
+				}),
+			).rejects.toThrow();
+
+			const records = await listBackgroundProcesses({
+				repositoryId: project.id,
+			});
+			expect(records).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						command: "tail -f server.log",
+						status: "failed",
+						stopReason: "background_process_start_failed",
+					}),
+				]),
+			);
+		});
+
 		it("throws when path policy blocks the cwd", async () => {
 			await expect(
 				startBackgroundCommand({
@@ -157,6 +181,47 @@ describe("background-processes service unit tests", () => {
 					blockedCommands: ["tail"],
 				}),
 			).rejects.toThrow("blocklist");
+		});
+
+		it("rejects shell syntax before a background process is created", async () => {
+			const escapedFile = path.join(dummyRepoDir, "escaped.txt");
+			await expect(
+				startBackgroundCommand({
+					repositoryId: project.id,
+					command: "tail -f server.log | touch escaped.txt",
+					repoRoot: dummyRepoDir,
+				}),
+			).rejects.toThrow("Chained or shell control syntax");
+			await expect(fs.stat(escapedFile)).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+			expect(
+				await listBackgroundProcesses({ repositoryId: project.id }),
+			).toEqual(
+				expect.not.arrayContaining([
+					expect.objectContaining({
+						command: "tail -f server.log | touch escaped.txt",
+					}),
+				]),
+			);
+		});
+
+		it("rejects project secret paths before a background process is created", async () => {
+			await fs.writeFile(path.join(dummyRepoDir, ".env"), "fixture-content\n");
+			await expect(
+				startBackgroundCommand({
+					repositoryId: project.id,
+					command: "tail -f .env",
+					repoRoot: dummyRepoDir,
+				}),
+			).rejects.toThrow("PROJECT_SECRET_PATH_DENIED");
+			expect(
+				await listBackgroundProcesses({ repositoryId: project.id }),
+			).toEqual(
+				expect.not.arrayContaining([
+					expect.objectContaining({ command: "tail -f .env" }),
+				]),
+			);
 		});
 
 		it("throws when command classification is not background-safe", async () => {
@@ -222,6 +287,24 @@ describe("background-processes service unit tests", () => {
 			expect(current?.latestOutput).not.toContain("project-secret-value");
 
 			await stopBackgroundProcess(processRecord.id);
+		});
+
+		it("flushes unterminated output before a managed process is marked stopped", async () => {
+			await fs.writeFile(
+				path.join(dummyRepoDir, "server.log"),
+				"unterminated output",
+				"utf-8",
+			);
+			const processRecord = await startBackgroundCommand({
+				runId: run.id,
+				command: "tail -f server.log",
+				repoRoot: dummyRepoDir,
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			const stopped = await stopBackgroundProcess(processRecord.id);
+			expect(stopped?.status).toBe("stopped");
+			expect(stopped?.latestOutput).toContain("unterminated output");
 		});
 	});
 

@@ -17,6 +17,8 @@ vi.mock(
 	() => ({ createRunEvent: mocks.createRunEvent }),
 );
 
+import { configureCodingAgentHost } from "../api/modules/codingAgent/ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../api/modules/codingAgent/ports/coding-agent-host.port";
 import { NativeAgentRuntime } from "../api/modules/codingAgent/runtime/NativeAgentRuntime";
 
 function context(overrides: Record<string, unknown> = {}) {
@@ -46,9 +48,60 @@ function runner(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function hostFake(): CodingAgentHostPorts {
+	return {
+		taskReader: {
+			getTask: async () => null,
+			getRepository: async () => null,
+			readArtifactContent: async () => null,
+		},
+		runReader: {
+			getRun: async () => null,
+			listRunTodos: mocks.listTodos,
+		},
+		runLifecycle: {
+			startRun: async () => {
+				throw new Error("not used");
+			},
+			resumeRunTodo: async () => {
+				throw new Error("not used");
+			},
+			resumeInterruptedRun: async () => {
+				throw new Error("not used");
+			},
+			updateRunContext: async () => ({ kind: "not_found" }),
+		},
+		runJournal: {
+			appendRunEvent: mocks.createRunEvent,
+			appendTaskMessage: async () => {},
+			publishRun: async () => {},
+			appendTaskEvent: async () => {},
+		},
+		verificationReader: {
+			getLatestActiveDocument: async () => null,
+			runCompletionCheck: async () => ({
+				ok: false,
+				reason: null,
+				suggestedAction: null,
+				sourceStateHash: null,
+				verify: { status: "not_run" },
+				confirmation: { status: "not_required" },
+			}),
+		},
+	};
+}
+
+function nativeRuntime(testRunner: ReturnType<typeof runner>) {
+	return new NativeAgentRuntime({
+		runner: testRunner,
+		runHooks: mocks.runHooks,
+	});
+}
+
 describe("NativeAgentRuntime coverage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		configureCodingAgentHost(hostFake());
 		mocks.listTodos.mockResolvedValue([]);
 		mocks.createRunEvent.mockResolvedValue(undefined);
 		mocks.runHooks.mockResolvedValue({ decision: "allow" });
@@ -57,7 +110,7 @@ describe("NativeAgentRuntime coverage", () => {
 	it("returns cancellation without opening hooks when already aborted", async () => {
 		const controller = new AbortController();
 		controller.abort();
-		const runtime = new NativeAgentRuntime({ runner: runner() });
+		const runtime = nativeRuntime(runner());
 		await expect(
 			runtime.start(context(), { emit: vi.fn() }, controller.signal),
 		).resolves.toMatchObject({
@@ -109,10 +162,7 @@ describe("NativeAgentRuntime coverage", () => {
 			};
 		});
 		const sink = { emit: vi.fn(async () => undefined) };
-		const result = await new NativeAgentRuntime({ runner: testRunner }).start(
-			context(),
-			sink,
-		);
+		const result = await nativeRuntime(testRunner).start(context(), sink);
 		expect(result).toMatchObject({
 			terminalState: "completed",
 			logContent: expect.stringContaining("primitive"),
@@ -143,7 +193,7 @@ describe("NativeAgentRuntime coverage", () => {
 					: { decision: "allow" },
 			);
 			const testRunner = runner();
-			const result = await new NativeAgentRuntime({ runner: testRunner }).start(
+			const result = await nativeRuntime(testRunner).start(
 				context({ latestUserMessage: "" }),
 				{ emit: vi.fn() },
 			);
@@ -169,10 +219,7 @@ describe("NativeAgentRuntime coverage", () => {
 			}),
 		});
 		const sink = { emit: vi.fn(async () => undefined) };
-		const result = await new NativeAgentRuntime({ runner: testRunner }).start(
-			context(),
-			sink,
-		);
+		const result = await nativeRuntime(testRunner).start(context(), sink);
 		expect(result).toMatchObject({
 			terminalState: "failed",
 			summary: "Runtime failed: runner failed",
@@ -197,17 +244,16 @@ describe("NativeAgentRuntime coverage", () => {
 				throw { message: "object failure" };
 			}),
 		});
-		const result = await new NativeAgentRuntime({ runner: testRunner }).start(
-			context(),
-			{ emit: vi.fn() },
-		);
+		const result = await nativeRuntime(testRunner).start(context(), {
+			emit: vi.fn(),
+		});
 		expect(result.summary).toBe("Runtime failed: object failure");
 		expect(result.logContent).toContain("hook object");
 	});
 
 	it("delegates stop and host shutdown suspension", async () => {
 		const testRunner = runner();
-		const runtime = new NativeAgentRuntime({ runner: testRunner });
+		const runtime = nativeRuntime(testRunner);
 		await runtime.stop("run-1");
 		await runtime.suspendForHostShutdown("run-2");
 		expect(testRunner.stop).toHaveBeenCalledWith("run-1");

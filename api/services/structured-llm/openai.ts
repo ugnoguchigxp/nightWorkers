@@ -5,6 +5,11 @@ import {
 	createSupervisorResponseDeltaEmitter,
 	rejectProviderActivity,
 } from "./events";
+import {
+	MAX_PROVIDER_RESPONSE_BYTES,
+	providerInvalidResponseError,
+	providerResponseTooLargeError,
+} from "./provider-failure";
 import type {
 	CallSupervisorOptions,
 	NormalizedSupervisorLlmRequest,
@@ -68,60 +73,70 @@ export async function readOpenAIChatCompletionStream(input: {
 	let buffer = "";
 	let content = "";
 	let usage: unknown | null = null;
+	let responseBytes = 0;
 
 	const processStreamRecord = async (record: string) => {
-		const lines = record
+		const dataLines = record
 			.split(/\r?\n/)
-			.map((line) => line.trim())
 			.filter((line) => line.startsWith("data:"));
-		for (const line of lines) {
-			const payload = line.slice("data:".length).trim();
-			if (!payload || payload === "[DONE]") continue;
-			let parsed: unknown;
-			try {
-				parsed = JSON.parse(payload);
-			} catch {
-				logger.warn(
-					{ payloadPreview: payload.slice(0, 200) },
-					"OpenAI stream chunk parse failed",
-				);
-				continue;
-			}
-			const parsedRecord = toDeepRecord(parsed);
-			if (parsedRecord.usage) usage = parsedRecord.usage;
-			const firstChoice = Array.isArray(parsedRecord.choices)
-				? toDeepRecord(parsedRecord.choices[0])
+		if (dataLines.length === 0) return;
+		const payload = dataLines
+			.map((line) => line.slice("data:".length).replace(/^ /, ""))
+			.join("\n");
+		if (!payload || payload === "[DONE]") return;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(payload);
+		} catch (cause) {
+			logger.warn(
+				{ payloadPreview: payload.slice(0, 200) },
+				"OpenAI stream chunk parse failed",
+			);
+			throw providerInvalidResponseError({
+				provider: input.provider,
+				body: payload,
+				cause,
+			});
+		}
+		const parsedRecord = toDeepRecord(parsed);
+		if (parsedRecord.usage) usage = parsedRecord.usage;
+		const firstChoice = Array.isArray(parsedRecord.choices)
+			? toDeepRecord(parsedRecord.choices[0])
+			: toDeepRecord(null);
+		const deltaRecord = toDeepRecord(firstChoice.delta);
+		const toolCalls = deltaRecord.tool_calls;
+		if (toolCalls && input.normalizedRequest) {
+			const firstToolCall = Array.isArray(toolCalls)
+				? toDeepRecord(toolCalls[0])
 				: toDeepRecord(null);
-			const deltaRecord = toDeepRecord(firstChoice.delta);
-			const toolCalls = deltaRecord.tool_calls;
-			if (toolCalls && input.normalizedRequest) {
-				const firstToolCall = Array.isArray(toolCalls)
-					? toDeepRecord(toolCalls[0])
-					: toDeepRecord(null);
-				const toolFunction = toDeepRecord(firstToolCall.function);
-				const toolName =
-					typeof (toolFunction.name as unknown) === "string"
-						? String(toolFunction.name)
-						: null;
-				await rejectProviderActivity({
-					options: input.options,
-					request: input.normalizedRequest,
-					activityType: "tool_call",
-					toolName,
-					preview: JSON.stringify(toolCalls),
-				});
-			}
-			const delta = deltaRecord.content;
-			if (typeof delta === "string" && delta) {
-				content += delta;
-				await deltaEmitter.push(delta);
-			}
+			const toolFunction = toDeepRecord(firstToolCall.function);
+			const toolName =
+				typeof (toolFunction.name as unknown) === "string"
+					? String(toolFunction.name)
+					: null;
+			await rejectProviderActivity({
+				options: input.options,
+				request: input.normalizedRequest,
+				activityType: "tool_call",
+				toolName,
+				preview: JSON.stringify(toolCalls),
+			});
+		}
+		const delta = deltaRecord.content;
+		if (typeof delta === "string" && delta) {
+			content += delta;
+			await deltaEmitter.push(delta);
 		}
 	};
 
 	while (true) {
 		const { done, value } = await reader.read();
 		if (done) break;
+		responseBytes += value.byteLength;
+		if (responseBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+			await reader.cancel().catch(() => undefined);
+			throw providerResponseTooLargeError();
+		}
 		buffer += decoder.decode(value, { stream: true });
 
 		const records = buffer.split(/\r?\n\r?\n/);

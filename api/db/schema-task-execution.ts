@@ -105,6 +105,9 @@ export const implementationQueueEntries = sqliteTable(
 			table.sequenceGroupId,
 			table.sequenceOrder,
 		),
+		activeTaskUidx: uniqueIndex("implementation_queue_entries_active_task_uidx")
+			.on(table.taskId)
+			.where(sql`${table.status} <> 'execution_archived'`),
 		sourceCommandKeyUidx: uniqueIndex(
 			"implementation_queue_entries_mission_pilot_admission_uidx",
 		).on(table.sourceCommandKey),

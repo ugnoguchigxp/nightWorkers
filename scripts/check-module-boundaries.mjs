@@ -73,6 +73,29 @@ function startsWithConfiguredPrefix(relativePath, prefixes) {
 	);
 }
 
+function dynamicImportSpecifiers(source, relativePath) {
+	const parsed = ts.createSourceFile(
+		relativePath,
+		source,
+		ts.ScriptTarget.Latest,
+		false,
+	);
+	const specifiers = [];
+	const visit = (node) => {
+		if (
+			ts.isCallExpression(node) &&
+			node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+			node.arguments.length === 1 &&
+			ts.isStringLiteral(node.arguments[0])
+		) {
+			specifiers.push(node.arguments[0].text);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(parsed);
+	return specifiers;
+}
+
 export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
   const policyPath = path.join(repoRoot, '.agent-ontology/boundary-policy.json');
   const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
@@ -86,6 +109,7 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
 		policy.agentIndependentModuleRoots ?? [],
 	);
 	const deepImportExemptions = policy.deepImportExemptions ?? [];
+	const forbiddenRoleImportEdges = policy.forbiddenRoleImportEdges ?? [];
   const roleOwnedPathRules = policy.roleOwnedPathRules ?? [];
   const forbiddenProductionPathPrefixes =
 		policy.forbiddenProductionPathPrefixes ?? [];
@@ -102,9 +126,14 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
   for (const absolutePath of files) {
     const relativePath = path.relative(repoRoot, absolutePath).replaceAll(path.sep, '/');
     const source = fs.readFileSync(absolutePath, 'utf8');
-    const imports = ts.preProcessFile(source, true, true).importedFiles.map(
-      (entry) => entry.fileName,
-    );
+		const imports = [
+			...new Set([
+				...ts
+					.preProcessFile(source, true, true)
+					.importedFiles.map((entry) => entry.fileName),
+				...dynamicImportSpecifiers(source, relativePath),
+			]),
+		];
 
 		if (
 			startsWithConfiguredPrefix(
@@ -171,6 +200,16 @@ export function evaluateModuleBoundaries(repoRoot = process.cwd()) {
 				relativePath,
 				agentIndependentModuleRoots,
 			);
+			for (const edge of forbiddenRoleImportEdges) {
+				if (
+					sourceRoleRoot === edge.source &&
+					target?.root === edge.target
+				) {
+					errors.push(
+						`${relativePath}: direct host-private import is forbidden (${edge.source} -> ${edge.target}: ${specifier})`,
+					);
+				}
+			}
 			if (
 				sourceRoleRoot &&
 				targetRoleRoot &&

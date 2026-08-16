@@ -3,6 +3,8 @@ import type {
 	EditablePlanModeRoutingView,
 	PlanModeRoutingSnapshot,
 } from "../../../shared/schemas/plan-mode-routing.schema";
+import { planModeRoutingSnapshotSchema } from "../../../shared/schemas/plan-mode-routing.schema";
+import { readJsonResponse } from "../../lib/api-error";
 import { updatePlanModeRouting } from "../specification";
 import type { PlanWorkspaceActionResult } from "./PlanModeWorkspace.controller";
 
@@ -26,7 +28,7 @@ export function usePlanModeRoutingEditor(input: {
 						changes: [{ view, decision }],
 					},
 				);
-				if (!response.ok) throw new Error(await response.text());
+				await readJsonResponse(response, planModeRoutingSnapshotSchema);
 				return undefined;
 			});
 		},

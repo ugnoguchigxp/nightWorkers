@@ -51,10 +51,12 @@ function _summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
 
 export function isActiveRunStatus(status: string | undefined): boolean {
 	return (
+		status === "queued" ||
 		status === "running" ||
 		status === "context_compiling" ||
 		status === "compiling_context" ||
-		status === "finalizing"
+		status === "finalizing" ||
+		status === "verifying"
 	);
 }
 
@@ -100,9 +102,11 @@ function _buildPriorityUpdates(sessionIds: string[], sessions: Task[]) {
 
 export function isActiveTaskStatus(status: string | undefined): boolean {
 	return (
+		status === "queued" ||
 		status === "running" ||
 		status === "context_compiling" ||
 		status === "compiling_context" ||
-		status === "finalizing"
+		status === "finalizing" ||
+		status === "verifying"
 	);
 }

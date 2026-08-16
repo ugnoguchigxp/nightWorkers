@@ -270,17 +270,27 @@ export async function runNativeApiProviderAttempts(input: {
 		providerDebug = { ...contextPreflightDebug };
 		const attemptTimeoutMs = providerRequest.options.attemptTimeoutMs;
 		let shouldFallbackToNextRoute = false;
+		let retryBackoffAborted = false;
 		for (
 			let sameRouteAttemptIndex = 0;
 			sameRouteAttemptIndex < MAX_SAME_ROUTE_PROVIDER_ATTEMPTS;
 			sameRouteAttemptIndex += 1
 		) {
+			if (input.signal.aborted) {
+				providerResult = null;
+				break;
+			}
 			startedAt = Date.now();
 			const requestId = `${input.context.runId}:${input.turnId}:${attemptIndex}:${sameRouteAttemptIndex}`;
 			const attemptSignal = createNativeApiAttemptTimeoutSignal(
 				input.signal,
 				attemptTimeoutMs,
 			);
+			if (input.signal.aborted) {
+				attemptSignal.dispose();
+				providerResult = null;
+				break;
+			}
 			await input.sink.emit({
 				type: "model_response_started",
 				message: "[NativeApiRunner] Provider request started.",
@@ -298,6 +308,10 @@ export async function runNativeApiProviderAttempts(input: {
 				},
 			});
 			try {
+				if (input.signal.aborted) {
+					providerResult = null;
+					break;
+				}
 				providerResult = await input.providerTurn({
 					provider: providerRequest.provider,
 					messages: providerRequest.messages,
@@ -378,7 +392,14 @@ export async function runNativeApiProviderAttempts(input: {
 						},
 					});
 					providerResult = null;
-					await waitForProviderRetryBackoff(backoffMs, input.signal);
+					const backoffResult = await waitForProviderRetryBackoff(
+						backoffMs,
+						input.signal,
+					);
+					if (backoffResult === "aborted" || input.signal.aborted) {
+						retryBackoffAborted = true;
+						break;
+					}
 					continue;
 				}
 				if (
@@ -404,6 +425,7 @@ export async function runNativeApiProviderAttempts(input: {
 		}
 
 		if (!providerResult) {
+			if (retryBackoffAborted || input.signal.aborted) break;
 			if (shouldFallbackToNextRoute) continue;
 			break;
 		}
@@ -520,18 +542,20 @@ function importEstimateNativeApiContextBudget(
 	return estimateNativeApiContextBudget(request);
 }
 
-async function waitForProviderRetryBackoff(
+export async function waitForProviderRetryBackoff(
 	durationMs: number,
 	signal: AbortSignal,
-) {
-	if (durationMs <= 0 || signal.aborted) return;
-	await new Promise<void>((resolve) => {
-		const finish = () => {
+): Promise<"elapsed" | "aborted"> {
+	if (signal.aborted) return "aborted";
+	if (durationMs <= 0) return "elapsed";
+	return new Promise((resolve) => {
+		const finish = (result: "elapsed" | "aborted") => {
 			clearTimeout(timeoutId);
-			signal.removeEventListener("abort", finish);
-			resolve();
+			signal.removeEventListener("abort", onAbort);
+			resolve(result);
 		};
-		const timeoutId = setTimeout(finish, durationMs);
-		signal.addEventListener("abort", finish, { once: true });
+		const onAbort = () => finish("aborted");
+		const timeoutId = setTimeout(() => finish("elapsed"), durationMs);
+		signal.addEventListener("abort", onAbort, { once: true });
 	});
 }

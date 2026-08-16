@@ -1,3 +1,4 @@
+import { initializeComposedCodingAgent } from "../composition/coding-agent";
 import { suspendCodingAgentRunForHostShutdown } from "../modules/codingAgent";
 import { runImplementationQueueInProcess } from "../modules/nightworkers/run-orchestration/queues";
 import { consumeApplicationSettingsWorkerSnapshot } from "../services/settings/application-settings-store";
@@ -12,6 +13,7 @@ let activeRunIds: string[] = [];
 let shuttingDown = false;
 
 consumeApplicationSettingsWorkerSnapshot();
+initializeComposedCodingAgent();
 
 async function shutdown() {
 	if (shuttingDown) return;

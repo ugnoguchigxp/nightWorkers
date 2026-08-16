@@ -236,7 +236,13 @@ describe("general and LLM settings routes", () => {
 		});
 		expect(res.status).toBe(200);
 		const json = await res.json();
-		expect(json).toEqual({ success: true });
+		expect(json).toEqual(
+			expect.objectContaining({
+				ACTIVE_LLM_PROVIDER: "openai",
+				OPENAI_ENABLED: true,
+				OPENAI_API_KEY: "new-key",
+			}),
+		);
 		expect(runtimeSettingsMocks.writeRuntimeSettings).toHaveBeenCalled();
 		expect(runtimeSettingsMocks.writeRuntimeSettings).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -571,7 +577,12 @@ describe("general and LLM settings routes", () => {
 		});
 		expect(res.status).toBe(500);
 		const json = await res.json();
-		expect(json).toEqual({ error: "ECB Down" });
+		expect(json).toEqual({
+			error: {
+				code: "INTERNAL_SERVER_ERROR",
+				message: "An unexpected error occurred",
+			},
+		});
 	});
 
 	it("GET /api/settings/pricing lists pricing rows", async () => {

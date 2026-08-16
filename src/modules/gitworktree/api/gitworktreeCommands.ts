@@ -1,28 +1,12 @@
 import type { RemoveWorktreeRequest } from "../../../../shared/schemas/gitworktree.schema";
 import { apiFetch } from "../../../lib/api-base";
+import { readJsonResponse } from "../../../lib/api-error";
 import { jsonRequest } from "../../../lib/api-request";
 
 export async function readGitworktreeResponse<T>(
 	response: Response,
 ): Promise<T> {
-	const payload = (await response.json().catch(() => null)) as unknown;
-	if (!response.ok) {
-		const errorValue =
-			payload && typeof payload === "object" && "error" in payload
-				? payload.error
-				: null;
-		const message =
-			typeof errorValue === "string"
-				? errorValue
-				: errorValue &&
-						typeof errorValue === "object" &&
-						"message" in errorValue &&
-						typeof errorValue.message === "string"
-					? errorValue.message
-					: `Request failed: ${response.status}`;
-		throw new Error(message);
-	}
-	return payload as T;
+	return readJsonResponse<T>(response);
 }
 
 export function fetchRepositoryWorktrees(repositoryId: string) {

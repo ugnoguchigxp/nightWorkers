@@ -69,7 +69,7 @@ export const settingsRouter = createOpenApiRouter()
 		// Update in-memory environment variables instantly!
 		applySettingsToProcessEnv(settings);
 
-		return c.json({ success: true }, 200);
+		return c.json(maskLlmSettings(settings), 200);
 	})
 	.openapi(getLlmModelsRoute, (c) => {
 		const activeProvider = getCurrentSettings()
@@ -112,15 +112,7 @@ export const settingsRouter = createOpenApiRouter()
 		return c.json(readFxRateCache(), 200);
 	})
 	.openapi(refreshFxRatesRoute, async (c) => {
-		try {
-			const cache = await refreshEcbFxRates();
-			return c.json(cache, 200);
-		} catch (err) {
-			return c.json(
-				{ error: err instanceof Error ? err.message : String(err) },
-				500,
-			);
-		}
+		return c.json(await refreshEcbFxRates(), 200);
 	})
 	.openapi(getStartupPreflightRoute, (c) => {
 		return c.json(runStartupPreflight(), 200);
@@ -144,15 +136,7 @@ export const settingsRouter = createOpenApiRouter()
 		return c.json(rows, 200);
 	})
 	.openapi(importPublicPricingRoute, async (c) => {
-		try {
-			const result = await importPublicPricingRows();
-			return c.json(result, 200);
-		} catch (err) {
-			return c.json(
-				{ error: err instanceof Error ? err.message : String(err) },
-				500,
-			);
-		}
+		return c.json(await importPublicPricingRows(), 200);
 	})
 	.openapi(smokeLlmRoute, async (c) => {
 		const provider = getCurrentSettings().ACTIVE_LLM_PROVIDER || "azure";

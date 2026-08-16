@@ -1,6 +1,7 @@
 import { type QueryClient, useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import { client } from "../../../lib/api";
+import { readJsonResponse } from "../../../lib/api-error";
 import {
 	type CodingAgentCommandClient,
 	useCodingAgentCommandMutations,
@@ -15,6 +16,7 @@ import {
 	restoreWorkbenchSessionArchive,
 	stopBackgroundProcess,
 } from "../nightWorkersCommands";
+import { repositoryQueryKeys } from "../queries/repository-queries";
 import {
 	mergeRealtimeRunDetails,
 	mergeRealtimeRunList,
@@ -56,67 +58,73 @@ export function useNightWorkersMutations({
 }: UseNightWorkersMutationsInput) {
 	const createProjectMutation = useMutation({
 		mutationFn: async (data: CreateProjectInput) => {
-			const res = await client.repositories.$post({
-				json: { ...data, branch: data.branch || "main" },
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return res.json();
+			return readJsonResponse<Repository>(
+				await client.repositories.$post({
+					json: { ...data, branch: data.branch || "main" },
+				}),
+			);
 		},
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: repositoryQueryKeys.all }),
 	});
 
 	const deleteProjectMutation = useMutation({
 		mutationFn: async (id: string) => {
-			const res = await client.repositories[":id"].$delete({ param: { id } });
-			if (!res.ok) throw new Error("Failed to delete project");
-			return res.json();
+			return readJsonResponse(
+				await client.repositories[":id"].$delete({ param: { id } }),
+			);
 		},
 		onSuccess: () => {
 			setActiveSessionId(null);
-			queryClient.invalidateQueries({ queryKey: ["projects"] });
+			queryClient.invalidateQueries({ queryKey: repositoryQueryKeys.all });
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });
 		},
 	});
 
 	const updateProjectMutation = useMutation({
 		mutationFn: async (input: { id: string; data: UpdateProjectInput }) => {
-			const res = await client.repositories[":id"].$patch({
-				param: { id: input.id },
-				json: input.data,
-			});
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as Repository;
+			return readJsonResponse<Repository>(
+				await client.repositories[":id"].$patch({
+					param: { id: input.id },
+					json: input.data,
+				}),
+			);
 		},
 		onMutate: async (input) => {
-			await queryClient.cancelQueries({ queryKey: ["projects"] });
-			const previous = queryClient.getQueryData<Repository[]>(["projects"]);
-			queryClient.setQueryData<Repository[]>(["projects"], (prev = []) =>
-				prev.map((project) =>
-					project.id === input.id ? { ...project, ...input.data } : project,
-				),
+			await queryClient.cancelQueries({ queryKey: repositoryQueryKeys.all });
+			const previous = queryClient.getQueryData<Repository[]>(
+				repositoryQueryKeys.all,
+			);
+			queryClient.setQueryData<Repository[]>(
+				repositoryQueryKeys.all,
+				(prev = []) =>
+					prev.map((project) =>
+						project.id === input.id ? { ...project, ...input.data } : project,
+					),
 			);
 			return { previous };
 		},
 		onError: (_error, _input, context) => {
 			if (context?.previous)
-				queryClient.setQueryData(["projects"], context.previous);
+				queryClient.setQueryData(repositoryQueryKeys.all, context.previous);
 		},
 		onSuccess: (project) => {
-			queryClient.setQueryData<Repository[]>(["projects"], (prev = []) =>
-				prev.map((candidate) =>
-					candidate.id === project.id ? project : candidate,
-				),
+			queryClient.setQueryData<Repository[]>(
+				repositoryQueryKeys.all,
+				(prev = []) =>
+					prev.map((candidate) =>
+						candidate.id === project.id ? project : candidate,
+					),
 			);
 			queryClient.invalidateQueries({ queryKey: ["sessions"] });
 		},
-		onSettled: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+		onSettled: () =>
+			queryClient.invalidateQueries({ queryKey: repositoryQueryKeys.all }),
 	});
 
 	const createSessionMutation = useMutation({
 		mutationFn: async (data: CreateSessionInput) => {
-			const res = await createWorkbenchSession(data);
-			if (!res.ok) throw new Error("Failed to create session");
-			return (await res.json()) as Task;
+			return readJsonResponse<Task>(await createWorkbenchSession(data));
 		},
 		onSuccess: (newSession) => {
 			setActiveSessionId(newSession.id);
@@ -133,9 +141,7 @@ export function useNightWorkersMutations({
 
 	const deleteSessionMutation = useMutation({
 		mutationFn: async (id: string) => {
-			const res = await deleteTask(id);
-			if (!res.ok) throw new Error("Failed to delete session");
-			return res.json();
+			return readJsonResponse(await deleteTask(id));
 		},
 		onSuccess: (_, deletedId) => {
 			const remainingSessions = (
@@ -228,9 +234,9 @@ export function useNightWorkersMutations({
 
 	const stopBackgroundProcessMutation = useMutation({
 		mutationFn: async (processId: string) => {
-			const res = await stopBackgroundProcess(processId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as BackgroundProcess;
+			return readJsonResponse<BackgroundProcess>(
+				await stopBackgroundProcess(processId),
+			);
 		},
 		onSuccess: (processRecord) => {
 			queryClient.setQueryData<BackgroundProcess[]>(
@@ -251,9 +257,7 @@ export function useNightWorkersMutations({
 
 	const queueSessionMutation = useMutation({
 		mutationFn: async (sessionId: string) => {
-			const res = await queueWorkbenchSession(sessionId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as Task;
+			return readJsonResponse<Task>(await queueWorkbenchSession(sessionId));
 		},
 		onSuccess: (task) => {
 			queryClient.setQueryData<Task[]>(["sessions"], (prev = []) => {
@@ -269,9 +273,9 @@ export function useNightWorkersMutations({
 
 	const commitRunGitCloseoutMutation = useMutation({
 		mutationFn: async (runId: string) => {
-			const res = await commitRunGitCloseout(runId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as GitCloseoutState;
+			return readJsonResponse<GitCloseoutState>(
+				await commitRunGitCloseout(runId),
+			);
 		},
 		onSuccess: (state) => {
 			syncGitCloseoutMutationCache(queryClient, state, activeSessionId);
@@ -280,9 +284,9 @@ export function useNightWorkersMutations({
 
 	const pushRunGitCloseoutMutation = useMutation({
 		mutationFn: async (runId: string) => {
-			const res = await pushRunGitCloseout(runId);
-			if (!res.ok) throw new Error(await res.text());
-			return (await res.json()) as GitCloseoutState;
+			return readJsonResponse<GitCloseoutState>(
+				await pushRunGitCloseout(runId),
+			);
 		},
 		onSuccess: (state) => {
 			syncGitCloseoutMutationCache(queryClient, state);
@@ -329,11 +333,11 @@ export function useNightWorkersMutations({
 			sessionId: string;
 			discardPendingCloseouts?: boolean;
 		}) => {
-			const response = await archiveWorkbenchSession(input.sessionId, {
-				discardPendingCloseouts: input.discardPendingCloseouts,
-			});
-			if (!response.ok) throw new Error(await response.text());
-			return (await response.json()) as Task;
+			return readJsonResponse<Task>(
+				await archiveWorkbenchSession(input.sessionId, {
+					discardPendingCloseouts: input.discardPendingCloseouts,
+				}),
+			);
 		},
 		onSuccess: async (task) => {
 			syncTaskNavigationCaches(queryClient, task);
@@ -346,9 +350,9 @@ export function useNightWorkersMutations({
 
 	const restoreArchivedSessionMutation = useMutation({
 		mutationFn: async (sessionId: string) => {
-			const response = await restoreWorkbenchSessionArchive(sessionId);
-			if (!response.ok) throw new Error(await response.text());
-			return (await response.json()) as Task;
+			return readJsonResponse<Task>(
+				await restoreWorkbenchSessionArchive(sessionId),
+			);
 		},
 		onSuccess: async (task) => {
 			syncTaskNavigationCaches(queryClient, task);
@@ -366,9 +370,9 @@ export function useNightWorkersMutations({
 				queryClient.getQueryData<Task[]>(["sessions"]) ?? [],
 			);
 			const tasks = await Promise.all(
-				updates.map(async ({ sessionId, priority }) => {
-					return patchTask(sessionId, { priority });
-				}),
+				updates.map(({ sessionId, priority }) =>
+					patchTask(sessionId, { priority }),
+				),
 			);
 			return tasks;
 		},
@@ -415,11 +419,9 @@ export function useNightWorkersMutations({
 				input.sourceGroup === "processing" &&
 				input.targetGroup === "queue"
 			) {
-				const res = await queueWorkbenchSession(input.sessionId);
-				if (!res.ok) throw new Error(await res.text());
+				await readJsonResponse(await queueWorkbenchSession(input.sessionId));
 			} else if (input.targetGroup === "archive") {
-				const res = await archiveWorkbenchSession(input.sessionId);
-				if (!res.ok) throw new Error(await res.text());
+				await readJsonResponse(await archiveWorkbenchSession(input.sessionId));
 			}
 
 			const rankedIds = [...input.processingIds, ...input.queueIds];
@@ -428,9 +430,9 @@ export function useNightWorkersMutations({
 				queryClient.getQueryData<Task[]>(["sessions"]) ?? [],
 			);
 			await Promise.all(
-				updates.map(async ({ sessionId, priority }) => {
-					await patchTask(sessionId, { priority });
-				}),
+				updates.map(({ sessionId, priority }) =>
+					patchTask(sessionId, { priority }),
+				),
 			);
 		},
 		onMutate: async (input) => {

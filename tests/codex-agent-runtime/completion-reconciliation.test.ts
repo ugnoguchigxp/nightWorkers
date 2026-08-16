@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../../api/modules/codingAgent/ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../../api/modules/codingAgent/ports/coding-agent-host.port";
 import { CodexAgentRuntime } from "../../api/modules/codingAgent/runtime/CodexAgentRuntime";
 import { finishRun } from "../../api/modules/codingAgent/runtime/codex-runtime-closeout";
 import type {
@@ -7,6 +12,19 @@ import type {
 } from "../../api/modules/codingAgent/runtime/types";
 
 describe("Codex completion reconciliation", () => {
+	beforeEach(() => {
+		configureCodingAgentHost({
+			runReader: {
+				getRun: vi.fn(async () => null),
+				listRunTodos: vi.fn(async () => []),
+			},
+		} as CodingAgentHostPorts);
+	});
+
+	afterEach(() => {
+		clearCodingAgentHostForTest();
+	});
+
 	it("does not infer human action from terminal labels alone", async () => {
 		const result = await finishRun(
 			{

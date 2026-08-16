@@ -11,12 +11,18 @@ export async function persistPreparedRuntimePrompt(input: {
 	runtimeContextSnapshot: unknown;
 }) {
 	if (!input.resuming) {
-		await repo.updateTaskCompiledPrompt(input.taskId, input.compiledPromptText);
-		return (
-			(await repo.updateTaskRun(input.run.id, {
-				status: "running",
-				contextSnapshot: input.runtimeContextSnapshot,
-			})) ?? input.run
+		const transition = await repo.updateTaskRunInitialPromptPreparation({
+			runId: input.run.id,
+			taskId: input.taskId,
+			expectedUpdatedAt: input.run.updatedAt,
+			compiledPromptText: input.compiledPromptText,
+			contextSnapshot: input.runtimeContextSnapshot,
+		});
+		if (transition.kind === "applied") return transition.run;
+		throw new AppError(
+			409,
+			"RUN_PROMPT_PREPARATION_CONFLICT",
+			"Run changed while prompt was being prepared; reload the latest Task state.",
 		);
 	}
 	const updated = await repo.updateTaskRunResumePreparation({

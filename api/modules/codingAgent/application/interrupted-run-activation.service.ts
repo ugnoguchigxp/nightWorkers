@@ -9,12 +9,12 @@ import {
 	tasks,
 } from "../../../db/schema";
 import { AppError, NotFoundError } from "../../../lib/errors";
-import * as nightworkersRepo from "../../nightworkers/nightworkers.repository";
 import {
 	type CodingAgentProcessInterruptionSnapshot,
 	readProcessInterruptionSnapshot,
 } from "../context/process-interruption-snapshot";
 import { codingAgentRunExecutions } from "../persistence/runtime-execution-schema";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import {
 	type CodingAgentExecutionOwnerIdentity,
 	getCodingAgentExecutionOwnerIdentity,
@@ -248,7 +248,7 @@ export async function activateInterruptedCodingAgentRun(input: {
 		return { run: resumedRun, execution: claimedExecution };
 	});
 	await Promise.allSettled([
-		nightworkersRepo.createRunEvent({
+		requireCodingAgentHost().runJournal.appendRunEvent({
 			version: 1,
 			runId: result.run.id,
 			taskId: result.run.taskId,
@@ -265,7 +265,7 @@ export async function activateInterruptedCodingAgentRun(input: {
 				leaseVersion: result.execution.leaseVersion,
 			},
 		}),
-		nightworkersRepo.publishTaskRunUpdate(result.run),
+		requireCodingAgentHost().runJournal.publishRun({ id: result.run.id }),
 	]);
 	return result.run;
 }

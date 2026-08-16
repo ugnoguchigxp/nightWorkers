@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as runtimeRegistry from "../../../api/modules/codingAgent/runtime/registry";
-import * as workspaceRepo from "../../../api/modules/gitworktree/task-git-workspace.repository";
-import * as workspaceAttestation from "../../../api/modules/gitworktree/workspace-attestation.service";
 import * as repo from "../../../api/modules/nightworkers/nightworkers.repository";
 import { runSessionQueueForRepository } from "../../../api/modules/nightworkers/nightworkers.service";
+import * as taskRunStarter from "../../../api/modules/nightworkers/run-orchestration/start-task-run";
 import { repoRoot } from "./setup";
 
 describe("NightWorkers service", () => {
@@ -16,39 +14,6 @@ describe("NightWorkers service", () => {
 		const task = {
 			id: "task-next",
 			repositoryId: "repo-queue",
-			title: "Queued session",
-			description: "Run queued session",
-			objective: "Run queued session",
-			acceptanceCriteria: "Queued session starts",
-			timeoutSeconds: 60,
-			status: "running",
-			worktreePath: repoRoot,
-			revision: 1,
-			currentRevisionSnapshotId: "snapshot-next",
-		};
-		const head = "0".repeat(40);
-		const workspace = {
-			id: "workspace-next",
-			taskId: task.id,
-			repositoryId: task.repositoryId,
-			status: "ready",
-			worktreePath: repoRoot,
-			sourceBranch: "main",
-			sourceRef: "refs/heads/main",
-			targetBranch: "main",
-			targetRef: "refs/heads/main",
-			expectedHeadSha: null,
-			allocationVersion: 1,
-			repositoryIdentityRevision: 1,
-			bootstrapEvidenceJson: {
-				dependencyBootstrap: {
-					version: 1,
-					status: "not_required",
-					startedAt: new Date().toISOString(),
-					completedAt: new Date().toISOString(),
-					components: [],
-				},
-			},
 		};
 		const run = {
 			id: "run-next",
@@ -65,68 +30,19 @@ describe("NightWorkers service", () => {
 			repositoryIdentityStatus: "ready",
 			repositoryIdentityRevision: 1,
 		} as never);
-		vi.mocked(workspaceRepo.getTaskGitWorkspace).mockResolvedValue(
-			workspace as never,
-		);
-		vi.mocked(workspaceAttestation.attestTaskWorkspaceForRun).mockResolvedValue(
-			{
-				workspace,
-				attestation: {
-					id: "attestation-next",
-					digest: `sha256:${"1".repeat(64)}`,
-					headSha: head,
-					canonicalPath: repoRoot,
-				},
-			} as never,
-		);
 		vi.mocked(repo.countActiveTaskRuns).mockResolvedValue(0);
 		vi.mocked(repo.claimNextQueuedTask)
 			.mockResolvedValueOnce(task as never)
 			.mockResolvedValueOnce(null);
-		vi.mocked(repo.getTask).mockResolvedValue(task as never);
-		vi.mocked(repo.getTaskRevisionSnapshot).mockResolvedValue({
-			id: "snapshot-next",
-			taskId: task.id,
-			revision: 1,
-			digest: `sha256:${"2".repeat(64)}`,
-		} as never);
-		vi.mocked(repo.listActiveTaskRunsForTask).mockResolvedValue([]);
-		vi.mocked(repo.listTaskMessages).mockResolvedValue([
-			{ role: "user", content: task.description },
-		] as never);
-		vi.mocked(repo.createTaskRun).mockResolvedValue(run as never);
-		vi.mocked(repo.listTaskRunTodosForRun).mockResolvedValue([]);
-		vi.mocked(repo.listTaskRunsForTask).mockResolvedValue([run] as never);
-		vi.mocked(repo.listTaskEventsForRun).mockResolvedValue([]);
-		vi.mocked(repo.updateTaskRun).mockResolvedValue(run as never);
-		const runtimeStart = vi.fn().mockResolvedValue({
-			terminalState: "completed",
-			summary: "Queued session done",
-			finalReport: "Queued session report",
-			stoppedBy: "decision",
-			riskLevel: "low",
-			diffPatch: "",
-			logContent: "",
-		});
-		vi.mocked(runtimeRegistry.resolveAgentRuntime).mockReturnValue({
-			kind: "native-local",
-			start: runtimeStart,
-			stop: vi.fn(),
-		} as never);
+		vi.mocked(taskRunStarter.startTaskRun).mockResolvedValue(run as never);
 
 		const started = await runSessionQueueForRepository(task.repositoryId);
 
 		expect(started).toHaveLength(1);
 		expect(repo.claimNextQueuedTask).toHaveBeenCalledWith(task.repositoryId);
-		expect(repo.createTaskRun).toHaveBeenCalledWith(
-			expect.objectContaining({
-				taskId: task.id,
-				repositoryId: task.repositoryId,
-			}),
-			expect.anything(),
-		);
-		await vi.waitFor(() => {
-			expect(runtimeStart).toHaveBeenCalledTimes(1);
+		expect(taskRunStarter.startTaskRun).toHaveBeenCalledWith(task.id, {
+			executionMode: "implementation",
+			executionModeSource: "session_queue",
 		});
 	});
 
@@ -190,7 +106,7 @@ describe("NightWorkers service", () => {
 			id: "task-fail-run",
 			repositoryId: "repo-fail-start",
 		} as never);
-		vi.mocked(repo.getTask).mockRejectedValue(
+		vi.mocked(taskRunStarter.startTaskRun).mockRejectedValue(
 			new Error("Mock startTaskRun failure"),
 		);
 

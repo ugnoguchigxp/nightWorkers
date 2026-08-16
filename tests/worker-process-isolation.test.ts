@@ -117,7 +117,10 @@ describe("worker process isolation", () => {
 			);
 			const terminal = await waitForTerminalRun(run.id);
 
-			expect(terminal?.status).toBe("blocked");
+			// The deterministic fixture declares an unrecoverable tool failure;
+			// isolation must preserve the owner-written terminal state rather than
+			// remapping it to a recoverable block.
+			expect(terminal?.status).toBe("failed");
 			await expect(fs.stat(workerDatabasePath)).rejects.toMatchObject({
 				code: "ENOENT",
 			});

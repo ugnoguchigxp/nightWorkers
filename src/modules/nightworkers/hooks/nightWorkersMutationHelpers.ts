@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { TaskOperatorProjectionV1 } from "../../../../shared/modules/taskOperator";
+import { readJsonResponse } from "../../../lib/api-error";
 import { CodingAgentCommandError } from "../../codingAgent";
 import { patchTask as patchTaskCommand } from "../nightWorkersCommands";
 import type { Task } from "../types";
@@ -14,9 +15,7 @@ type TaskPatchInput = {
 };
 
 export async function patchTask(sessionId: string, input: TaskPatchInput) {
-	const res = await patchTaskCommand(sessionId, input);
-	if (!res.ok) throw new Error(await res.text());
-	return (await res.json()) as Task;
+	return readJsonResponse<Task>(await patchTaskCommand(sessionId, input));
 }
 
 export function resolveNextActiveSessionId(

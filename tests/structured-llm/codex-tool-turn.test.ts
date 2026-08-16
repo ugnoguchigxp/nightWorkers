@@ -137,7 +137,7 @@ describe("Codex Mission Pilot tool turns", () => {
 		});
 	});
 
-	it("keeps assistant text and malformed tool arguments losslessly available", () => {
+	it("rejects malformed tool arguments without turning them into executable arguments", () => {
 		const parsed = parseCodexToolTurnResponse(
 			JSON.stringify({
 				content: "引数を確認します。",
@@ -150,15 +150,16 @@ describe("Codex Mission Pilot tool turns", () => {
 			}),
 		);
 		expect(parsed).toMatchObject({
-			ok: true,
-			content: "引数を確認します。",
-			toolCalls: [
-				{
-					name: "read_task_operator_view",
-					arguments: { _raw: "{not-json" },
-				},
-			],
+			ok: false,
+			error: {
+				kind: "invalid_response",
+				code: "INVALID_TOOL_ARGUMENTS",
+				retryable: false,
+			},
 		});
+		if (parsed.ok) throw new Error("expected malformed tool arguments");
+		expect(parsed.error?.providerBody).toContain("{not-json");
+		expect(parsed.error?.providerBody).toContain("引数を確認します。");
 	});
 
 	it("requires an empty tool call list when no tools are available", () => {

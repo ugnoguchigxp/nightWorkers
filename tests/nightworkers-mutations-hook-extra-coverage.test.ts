@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { repositoryQueryKeys } from "../src/modules/nightworkers/queries/repository-queries";
 
 type MutationConfig = {
 	mutationFn: (...args: unknown[]) => Promise<unknown>;
@@ -64,7 +65,11 @@ const helpers = {
 function response(value: unknown, ok = true, message = "request failed") {
 	return {
 		ok,
-		json: vi.fn(async () => value),
+		status: ok ? 200 : 500,
+		headers: { get: vi.fn(() => null) },
+		json: vi.fn(async () =>
+			ok ? value : { error: { code: "TEST_FAILURE", message } },
+		),
 		text: vi.fn(async () => message),
 	};
 }
@@ -193,7 +198,7 @@ describe("useNightWorkersMutations extra coverage", () => {
 			{ id: "repo-1", name: "one", branch: "main" },
 			{ id: "repo-2", name: "two", branch: "dev" },
 		];
-		cache.set(JSON.stringify(["projects"]), existing);
+		cache.set(JSON.stringify(repositoryQueryKeys.all), existing);
 
 		api.createProject.mockResolvedValueOnce(response({ id: "created" }));
 		expect(
@@ -218,7 +223,7 @@ describe("useNightWorkersMutations extra coverage", () => {
 		await expect(config(1).mutationFn("repo-2")).resolves.toEqual({ ok: true });
 		api.deleteProject.mockResolvedValueOnce(response({}, false));
 		await expect(config(1).mutationFn("repo-2")).rejects.toThrow(
-			"Failed to delete project",
+			"request failed",
 		);
 		await config(1).onSuccess?.();
 		expect(activeSessionId).toBeNull();
@@ -240,16 +245,22 @@ describe("useNightWorkersMutations extra coverage", () => {
 			id: "repo-1",
 			data: { name: "optimistic" },
 		});
-		expect(cache.get(JSON.stringify(["projects"]))).toEqual([
+		expect(cache.get(JSON.stringify(repositoryQueryKeys.all))).toEqual([
 			expect.objectContaining({ id: "repo-1", name: "optimistic" }),
 			expect.objectContaining({ id: "repo-2", name: "two" }),
 		]);
 		await config(2).onError?.(new Error("x"), {}, context);
-		expect(cache.get(JSON.stringify(["projects"]))).toBe(existing);
+		expect(cache.get(JSON.stringify(repositoryQueryKeys.all))).toBe(existing);
 		await config(2).onError?.(new Error("x"), {}, undefined);
 		await config(2).onSuccess?.({ id: "repo-1", name: "server" });
 		await config(2).onSuccess?.({ id: "repo-new", name: "new" });
 		await config(2).onSettled?.();
+		expect(queryClient.cancelQueries).toHaveBeenCalledWith({
+			queryKey: repositoryQueryKeys.all,
+		});
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+			queryKey: repositoryQueryKeys.all,
+		});
 	});
 
 	it("handles create/delete/queue session cache insertion and replacement", async () => {
@@ -264,7 +275,7 @@ describe("useNightWorkersMutations extra coverage", () => {
 		);
 		api.createSession.mockResolvedValueOnce(response({}, false));
 		await expect(config(3).mutationFn({ title: "bad" })).rejects.toThrow(
-			"Failed to create session",
+			"request failed",
 		);
 		await config(3).onSuccess?.(task("task-created", "ready"));
 		await config(3).onSuccess?.(task("task-new"));
@@ -276,7 +287,7 @@ describe("useNightWorkersMutations extra coverage", () => {
 		});
 		api.deleteTask.mockResolvedValueOnce(response({}, false));
 		await expect(config(4).mutationFn("task-created")).rejects.toThrow(
-			"Failed to delete session",
+			"request failed",
 		);
 		await config(4).onSuccess?.({}, "task-created");
 		expect(helpers.resolveNextActiveSessionId).toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { readJsonResponse } from "../../lib/api-error";
 import type { GeneralSettings } from "../nightworkers/types";
 import {
 	executeDataRetentionCleanup,
@@ -35,9 +36,11 @@ export function SettingsRetentionPanel(input: {
 		setBusy(true);
 		setMessage("");
 		try {
-			const response = await previewDataRetentionCleanup();
-			if (!response.ok) throw new Error(await response.text());
-			setPreview((await response.json()) as RetentionCleanupPreview);
+			setPreview(
+				await readJsonResponse<RetentionCleanupPreview>(
+					await previewDataRetentionCleanup(),
+				),
+			);
 		} catch (error) {
 			setMessage(error instanceof Error ? error.message : String(error));
 		} finally {
@@ -49,19 +52,19 @@ export function SettingsRetentionPanel(input: {
 		setBusy(true);
 		setMessage("");
 		try {
-			const response = await executeDataRetentionCleanup({
-				previewId: preview.previewId,
-				expectedSettingsRevision: preview.settingsRevision,
-				idempotencyKey:
-					globalThis.crypto?.randomUUID?.() ??
-					`cleanup-${Date.now()}-${Math.random()}`,
-				reclaimDiskSpace: "incremental",
-			});
-			if (!response.ok) throw new Error(await response.text());
-			const result = (await response.json()) as {
+			const result = await readJsonResponse<{
 				runsPurged: number;
 				detailRowsDeleted: number;
-			};
+			}>(
+				await executeDataRetentionCleanup({
+					previewId: preview.previewId,
+					expectedSettingsRevision: preview.settingsRevision,
+					idempotencyKey:
+						globalThis.crypto?.randomUUID?.() ??
+						`cleanup-${Date.now()}-${Math.random()}`,
+					reclaimDiskSpace: "incremental",
+				}),
+			);
 			setMessage(t("settings.general.retention.cleanupSucceeded", result));
 			setPreview(null);
 		} catch (error) {

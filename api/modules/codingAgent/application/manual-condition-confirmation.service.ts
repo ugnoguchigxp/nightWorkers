@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "../../../db/client";
+import { type DbTransaction, db } from "../../../db/client";
 import { repositories, taskEvents, taskRuns, tasks } from "../../../db/schema";
 import {
 	codingAgentConditionConfirmations,
@@ -9,13 +9,16 @@ import {
 import { AppError } from "../../../lib/errors";
 import { captureWorkspaceSourceSnapshot } from "../verification/workspace-source-snapshot";
 
-export async function recordManualConditionConfirmationsForReview(input: {
-	taskId: string;
-	runId: string;
-	actorKind: "human_reviewer";
-	actorId: string;
-	evidenceRef: string;
-}) {
+export async function recordManualConditionConfirmationsForReview(
+	input: {
+		taskId: string;
+		runId: string;
+		actorKind: "human_reviewer";
+		actorId: string;
+		evidenceRef: string;
+	},
+	database: typeof db | DbTransaction = db,
+) {
 	if (input.actorKind !== "human_reviewer") {
 		throw new AppError(
 			403,
@@ -23,8 +26,8 @@ export async function recordManualConditionConfirmationsForReview(input: {
 			"Manual condition confirmation requires a human reviewer.",
 		);
 	}
-	await assertCompletedHumanReview(input);
-	const document = await db
+	await assertCompletedHumanReview(input, database);
+	const document = await database
 		.select()
 		.from(verificationDocuments)
 		.where(
@@ -37,7 +40,7 @@ export async function recordManualConditionConfirmationsForReview(input: {
 		.limit(1)
 		.then((rows) => rows[0]);
 	if (!document) return { confirmationCount: 0, sourceSnapshot: null };
-	const scope = await db
+	const scope = await database
 		.select({
 			runWorktreePath: taskRuns.worktreePath,
 			taskWorktreePath: tasks.worktreePath,
@@ -54,7 +57,7 @@ export async function recordManualConditionConfirmationsForReview(input: {
 	const repositoryRoot =
 		scope.runWorktreePath || scope.taskWorktreePath || scope.repositoryPath;
 	const sourceSnapshot = await captureWorkspaceSourceSnapshot(repositoryRoot);
-	const conditions = await db
+	const conditions = await database
 		.select()
 		.from(verificationChecklistItems)
 		.where(
@@ -67,7 +70,7 @@ export async function recordManualConditionConfirmationsForReview(input: {
 	if (required.length === 0) {
 		return { confirmationCount: 0, sourceSnapshot };
 	}
-	await db
+	await database
 		.insert(codingAgentConditionConfirmations)
 		.values(
 			required.map((condition) => ({
@@ -85,12 +88,15 @@ export async function recordManualConditionConfirmationsForReview(input: {
 	return { confirmationCount: required.length, sourceSnapshot };
 }
 
-async function assertCompletedHumanReview(input: {
-	taskId: string;
-	runId: string;
-	actorId: string;
-	evidenceRef: string;
-}) {
+async function assertCompletedHumanReview(
+	input: {
+		taskId: string;
+		runId: string;
+		actorId: string;
+		evidenceRef: string;
+	},
+	database: typeof db | DbTransaction = db,
+) {
 	if (input.evidenceRef !== `review-result:${input.actorId}`) {
 		throw new AppError(
 			409,
@@ -98,7 +104,7 @@ async function assertCompletedHumanReview(input: {
 			"Manual confirmation evidence does not match the human review.",
 		);
 	}
-	const events = await db
+	const events = await database
 		.select({ actor: taskEvents.actor, payloadJson: taskEvents.payloadJson })
 		.from(taskEvents)
 		.where(eq(taskEvents.taskRunId, input.runId))

@@ -3,6 +3,8 @@ import {
 	createMissionPilotRouter,
 	type MissionPilotBackendDependencies,
 } from "@nightworkers/mission-pilot/backend";
+import { serializeApiError } from "../../lib/api-error-response";
+import { AppError } from "../../lib/errors";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { getMissionPilotAvailability } from "./mission-pilot-availability";
 
@@ -24,18 +26,20 @@ function wrapMissionPilotRouter(
 	const composed = createOpenApiRouter();
 	composed.use("*", async (context, next) => {
 		const availability = getMissionPilotAvailability();
-		if (availability.status === "unavailable")
-			return context.json(
-				{
-					error: "Mission Pilot is unavailable.",
-					code: "MISSION_PILOT_UNAVAILABLE",
-					details: {
+		if (availability.status === "unavailable") {
+			const error = serializeApiError(
+				new AppError(
+					503,
+					"MISSION_PILOT_UNAVAILABLE",
+					"Mission Pilot is unavailable.",
+					{
 						stage: availability.stage,
 						reasonCode: availability.errorCode,
 					},
-				},
-				503,
+				),
 			);
+			return context.json(error.body, error.status);
+		}
 		return next();
 	});
 	return composed.route("/", router);

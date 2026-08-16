@@ -3,6 +3,7 @@ import {
 	canonicalizeStructuredLlmEndpoint,
 	resolveStructuredLlmProviderBaseUrl,
 } from "./endpoint-target";
+import { readBoundedProviderResponseText } from "./provider-failure";
 import type { StructuredLlmProviderEndpoint } from "./settings";
 
 export type StructuredLlmProviderHealthResult = {
@@ -381,7 +382,7 @@ async function readExecutionReadinessResponse(response: Response): Promise<{
 }> {
 	let body: string;
 	try {
-		body = await response.text();
+		body = await readBoundedProviderResponseText(response);
 	} catch {
 		return {
 			ok: false,

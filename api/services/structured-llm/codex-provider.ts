@@ -463,13 +463,16 @@ export async function callCodexProviderToolTurn(
 		isEnabled,
 		settings,
 	);
-	const parsed = parseCodexToolTurnResponse(result.content);
+	const parsed = parseCodexToolTurnResponse(result.content, input.tools);
 	if (!parsed.ok) {
+		if (parsed.error) throw parsed.error;
 		throw new StructuredProviderError({
-			kind: "unknown",
+			kind: "invalid_response",
+			code: "INVALID_TOOL_TURN_RESPONSE",
 			retryable: false,
 			message:
 				result.content.trim() || "Codex returned an empty tool turn response.",
+			providerBody: result.content,
 			cause: new Error(parsed.reason),
 		});
 	}

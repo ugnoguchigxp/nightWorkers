@@ -190,7 +190,7 @@ export async function prepareTaskRunInProcess(
 					taskRevisionSnapshotId: task.currentRevisionSnapshotId,
 					taskRevision: task.revision,
 					taskDigest: taskRevisionSnapshot?.digest ?? null,
-					status: "running",
+					status: "context_compiling",
 					workerKind: runtimeLaneResolution.workerKind,
 					baseRef: gitBaseline.baselineHead,
 					worktreePath: task.worktreePath ? executionRoot : null,

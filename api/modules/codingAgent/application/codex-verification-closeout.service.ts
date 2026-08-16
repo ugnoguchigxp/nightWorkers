@@ -1,4 +1,4 @@
-import * as verificationRepository from "../../nightworkers/nightworkers.verification.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import { runCompletionCheck } from "./completion-check.service";
 
 /**
@@ -19,7 +19,7 @@ export async function executeCodexVerificationCloseout(input: {
 	};
 }) {
 	const document =
-		await verificationRepository.getLatestActiveVerificationDocumentForTask(
+		await requireCodingAgentHost().verificationReader.getLatestActiveDocument(
 			input.taskId,
 		);
 	if (!document) {

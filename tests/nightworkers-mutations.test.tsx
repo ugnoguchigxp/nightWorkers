@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodingAgentCommandClient } from "../src/modules/codingAgent";
 import { useNightWorkersMutations } from "../src/modules/nightworkers/hooks/useNightWorkersMutations";
+import { repositoryQueryKeys } from "../src/modules/nightworkers/queries/repository-queries";
 import type {
 	BackgroundProcess,
 	GitCloseoutState,
@@ -284,10 +285,10 @@ describe("useNightWorkersMutations", () => {
 		const fetchMock = stubMutationFetch();
 		const { getActiveSessionId, mutations, queryClient } = renderMutations();
 
-		queryClient.setQueryData<Repository[]>(
-			["projects"],
-			[repository("repo-1", "Original"), repository("repo-2", "To delete")],
-		);
+		queryClient.setQueryData<Repository[]>(repositoryQueryKeys.all, [
+			repository("repo-1", "Original"),
+			repository("repo-2", "To delete"),
+		]);
 		queryClient.setQueryData<Task[]>(
 			["sessions"],
 			[task("task-1", "draft", 1), task("task-2", "ready", 2)],
@@ -313,7 +314,8 @@ describe("useNightWorkersMutations", () => {
 		await mutations.deleteSessionMutation.mutateAsync("task-created");
 		await mutations.queueSessionMutation.mutateAsync("task-1");
 
-		const projects = queryClient.getQueryData<Repository[]>(["projects"]) ?? [];
+		const projects =
+			queryClient.getQueryData<Repository[]>(repositoryQueryKeys.all) ?? [];
 		const sessions = queryClient.getQueryData<Task[]>(["sessions"]) ?? [];
 		expect(projects.find((project) => project.id === "repo-1")?.name).toBe(
 			"Renamed locally",

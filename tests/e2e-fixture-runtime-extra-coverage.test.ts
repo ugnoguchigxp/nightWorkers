@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../api/modules/codingAgent/ports/coding-agent-host.port";
 
 const mocks = vi.hoisted(() => ({
 	mkdir: vi.fn(),
@@ -49,6 +54,33 @@ function context(
 
 describe("E2E fixture runtime extra coverage", () => {
 	beforeEach(() => {
+		configureCodingAgentHost({
+			taskReader: {
+				getTask: async () => null,
+				getRepository: async () => null,
+				readArtifactContent: async () => null,
+			},
+			runReader: {
+				getRun: mocks.getTaskRun,
+				listRunTodos: async () => [],
+			},
+			runLifecycle: {
+				startRun: async () => null as never,
+				resumeRunTodo: async () => null as never,
+				resumeInterruptedRun: async () => null as never,
+				updateRunContext: async () => null as never,
+			},
+			runJournal: {
+				appendRunEvent: async () => {},
+				appendTaskMessage: async () => {},
+				publishRun: async () => {},
+				appendTaskEvent: async () => {},
+			},
+			verificationReader: {
+				getLatestActiveDocument: mocks.getVerification,
+				runCompletionCheck: mocks.completionCheck,
+			},
+		} satisfies CodingAgentHostPorts);
 		vi.clearAllMocks();
 		mocks.mkdir.mockResolvedValue(undefined);
 		mocks.writeFile.mockResolvedValue(undefined);
@@ -59,7 +91,10 @@ describe("E2E fixture runtime extra coverage", () => {
 		mocks.completionCheck.mockResolvedValue({ ok: true, result: "passed" });
 	});
 
-	afterEach(() => vi.useRealTimers());
+	afterEach(() => {
+		clearCodingAgentHostForTest();
+		vi.useRealTimers();
+	});
 
 	it("returns policy, tool, and verification failures", async () => {
 		for (const [marker, terminalState, stoppedBy, eventType] of [

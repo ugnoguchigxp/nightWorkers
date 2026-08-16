@@ -1,4 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../api/modules/codingAgent/ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../api/modules/codingAgent/ports/coding-agent-host.port";
 
 const mocks = vi.hoisted(() => ({
 	getTask: vi.fn(),
@@ -66,6 +71,7 @@ const command = {
 
 beforeEach(() => {
 	for (const mock of Object.values(mocks)) mock.mockReset();
+	configureCodingAgentHost(hostFake());
 	mocks.getTask.mockResolvedValue({
 		id: "task-1",
 		repositoryId: "repository-1",
@@ -91,6 +97,51 @@ beforeEach(() => {
 	mocks.getTaskRun.mockResolvedValue(null);
 });
 
+afterEach(() => {
+	clearCodingAgentHostForTest();
+});
+
+function hostFake(): CodingAgentHostPorts {
+	return {
+		taskReader: {
+			getTask: mocks.getTask,
+			getRepository: mocks.getRepository,
+			readArtifactContent: mocks.readArtifactOperatorContent,
+		},
+		runReader: {
+			getRun: mocks.getTaskRun,
+			listRunTodos: async () => [],
+		},
+		runLifecycle: {
+			startRun: mocks.startTaskRun,
+			resumeRunTodo: mocks.resumeTaskRunTodo,
+			resumeInterruptedRun: mocks.startTaskRun,
+			updateRunContext: async () => ({ kind: "not_found" }),
+		},
+		runJournal: {
+			appendRunEvent: mocks.createRunEvent,
+			appendTaskMessage: async () => {},
+			publishRun: async () => {},
+			appendTaskEvent: async () => {},
+		},
+		verificationReader: {
+			getLatestActiveDocument: async () => null,
+			runCompletionCheck: async () => completionCheckNotRun(),
+		},
+	};
+}
+
+function completionCheckNotRun() {
+	return {
+		ok: false,
+		reason: null,
+		suggestedAction: null,
+		sourceStateHash: null,
+		verify: { status: "not_run" as const },
+		confirmation: { status: "not_required" as const },
+	};
+}
+
 describe("Coding Agent run handler", () => {
 	it("starts only when every canonical Artifact field still matches", async () => {
 		await expect(handleStartCodingAgentRun(command)).resolves.toEqual({
@@ -99,8 +150,8 @@ describe("Coding Agent run handler", () => {
 			status: "running",
 		});
 		expect(mocks.startTaskRun).toHaveBeenCalledWith(
-			"task-1",
 			expect.objectContaining({
+				taskId: "task-1",
 				executionMode: "implementation",
 				runAssociation: {
 					kind: "coding_agent_request",
@@ -178,20 +229,14 @@ describe("Coding Agent run handler", () => {
 			status: "running",
 		});
 		expect(mocks.startTaskRun).toHaveBeenCalledTimes(1);
-		expect(mocks.startTaskRun).toHaveBeenCalledWith("task-1", {
-			executionMode: "implementation",
-			executionModeSource: "explicit",
+		expect(mocks.startTaskRun).toHaveBeenCalledWith({
+			taskId: "task-1",
+			runId: resumeCommand.runId,
 			planModeRequested: false,
-			resumeRunId: resumeCommand.runId,
-			latestUserMessageOverride: resumeCommand.userContext,
-			resumeCommand: {
-				kind: "process_interruption",
-				expectedInterruptionRevision:
-					resumeCommand.expectedInterruptionRevision,
-				todoId: resumeCommand.todoId,
-				expectedTodoRevision: resumeCommand.expectedTodoRevision,
-				userContext: resumeCommand.userContext,
-			},
+			expectedInterruptionRevision: resumeCommand.expectedInterruptionRevision,
+			todoId: resumeCommand.todoId,
+			expectedTodoRevision: resumeCommand.expectedTodoRevision,
+			userContext: resumeCommand.userContext,
 		});
 	});
 

@@ -1,7 +1,9 @@
 import { NotFoundError } from "../../lib/errors";
+import { stopBackgroundProcessesForRun } from "../../services/background-processes";
 import { getRunControlMetrics } from "../../services/run-control/metrics";
 import { nativeLocalRunner } from "../codingAgent";
 import type { ReviewResult } from "../review/results/types";
+import { transitionRunOutcome } from "../run/run-outcome-transition.repository";
 import { buildSecurityRuntimeContextSnapshot } from "../securityIntelligence/security-runtime-context.service";
 import * as repo from "./nightworkers.repository";
 import { hasFreshActiveRunHeartbeat } from "./run-orchestration/runtime-heartbeat";
@@ -39,14 +41,46 @@ export async function recoverStaleActiveRuns(
 			return { hasRunning: true as const, recoveredRunIds };
 		}
 
-		await repo.updateTaskRun(activeRun.id, {
-			status: "failed",
-			endedAt: new Date(),
-			finishedAt: new Date(),
-			summary: "Run recovered as failed after stale active-state detection.",
-			finalJudgment: null,
+		const transition = await transitionRunOutcome({
+			run: {
+				id: activeRun.id,
+				expectedStatuses: [activeRun.status],
+				expectedUpdatedAt: activeRun.updatedAt,
+				targetStatus: "failed",
+				patch: {
+					endedAt: new Date(),
+					finishedAt: new Date(),
+					summary:
+						"Run recovered as failed after stale active-state detection.",
+					finalJudgment: null,
+				},
+			},
+			task: {
+				id: task.id,
+				expectedStatus: task.status,
+				expectedUpdatedAt: task.updatedAt,
+				targetStatus: "failed",
+			},
 		});
-		await repo.updateTaskStatus(taskId, "failed");
+		if (transition.kind !== "applied") {
+			if (
+				transition.kind === "conflict" &&
+				["running", "context_compiling", "finalizing"].includes(
+					transition.run?.status ?? "",
+				)
+			) {
+				return { hasRunning: true as const, recoveredRunIds };
+			}
+			continue;
+		}
+		await repo.publishTaskRunUpdate(transition.run);
+		await stopBackgroundProcessesForRun(
+			activeRun.id,
+			"run_recovered_failed",
+		).catch(() => {
+			// The durable failed outcome is authoritative even if an already
+			// disconnected child cannot be reaped from this API process.
+		});
 		await repo.createRunEvent({
 			version: 1,
 			runId: activeRun.id,

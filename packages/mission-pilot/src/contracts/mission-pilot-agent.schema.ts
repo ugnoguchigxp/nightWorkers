@@ -65,12 +65,15 @@ export const missionPilotActionFailureKindSchema = z.enum([
 	"authentication",
 	"permission",
 	"invalid_request",
+	"invalid_response",
+	"schema_invalid",
 	"schema_validation",
 	"revision_conflict",
 	"domain_precondition",
 	"outcome_unknown",
 	"resource_limit",
 	"provider_capability",
+	"cancelled",
 	"unknown",
 ]);
 

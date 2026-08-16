@@ -60,10 +60,12 @@ describe("Mission Pilot package failure isolation", () => {
 		const response = await router.request(`/mission-pilot/tasks/${task.id}`);
 		expect(response.status).toBe(503);
 		expect(await response.json()).toMatchObject({
-			code: "MISSION_PILOT_UNAVAILABLE",
-			details: {
-				stage: "storage",
-				reasonCode: "MISSION_PILOT_STORAGE_UNAVAILABLE",
+			error: {
+				code: "MISSION_PILOT_UNAVAILABLE",
+				details: {
+					stage: "storage",
+					reasonCode: "MISSION_PILOT_STORAGE_UNAVAILABLE",
+				},
 			},
 		});
 	});

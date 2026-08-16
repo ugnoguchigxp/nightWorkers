@@ -6,6 +6,11 @@ import {
 	type RuntimeLogRetentionConfig,
 	RuntimeLogWriter,
 } from "../runtime/runtime-log-writer";
+import {
+	redactRuntimeSecretRecord,
+	redactRuntimeSecretText,
+	redactRuntimeSecretValue,
+} from "../services/security/secret-redaction";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -41,7 +46,7 @@ function levelLabel(level: LogLevel): string {
 
 function inlineMeta(meta?: Record<string, unknown>): string {
 	if (!meta || Object.keys(meta).length === 0) return "";
-	const pairs = Object.entries(meta)
+	const pairs = Object.entries(redactRuntimeSecretRecord(meta))
 		.filter(([, value]) => value !== undefined)
 		.map(
 			([key, value]) =>
@@ -99,7 +104,12 @@ function boundedText(value: string, maxBytes: number) {
 }
 
 function boundedLlmTraceLine(event: string, payload: Record<string, unknown>) {
-	const original = { timestamp: new Date().toISOString(), event, ...payload };
+	const safePayload = redactRuntimeSecretRecord(payload);
+	const original = {
+		timestamp: new Date().toISOString(),
+		event: redactRuntimeSecretText(event),
+		...safePayload,
+	};
 	const record: Record<string, unknown> = { ...original };
 	for (const key of ["systemPrompt", "userPrompt", "rawContent"] as const) {
 		if (typeof record[key] !== "string") continue;
@@ -125,10 +135,10 @@ function boundedLlmTraceLine(event: string, payload: Record<string, unknown>) {
 	if (Buffer.byteLength(line, "utf8") <= 2 * 1024 * 1024) return line;
 	return JSON.stringify({
 		timestamp: original.timestamp,
-		event,
-		callId: payload.callId ?? null,
-		provider: payload.provider ?? null,
-		label: payload.label ?? null,
+		event: original.event,
+		callId: record.callId ?? null,
+		provider: record.provider ?? null,
+		label: record.label ?? null,
 		truncated: true,
 		originalBytes: Buffer.byteLength(line, "utf8"),
 	});
@@ -145,7 +155,7 @@ export function logHttpEvent(params: {
 	const channel = params.channel || "api";
 	const level = params.level || "info";
 	if (!shouldLog(level)) return;
-	const line = `[${channel}]${nowLabel()} [${params.method}]${params.path} ${levelLabel(level)}: ${params.message}${inlineMeta(params.meta)}`;
+	const line = `[${redactRuntimeSecretText(channel)}]${nowLabel()} [${redactRuntimeSecretText(params.method)}]${redactRuntimeSecretText(params.path)} ${levelLabel(level)}: ${redactRuntimeSecretText(params.message)}${inlineMeta(params.meta)}`;
 	// eslint-disable-next-line no-console
 	console.log(line);
 	appendLogFile(API_LOG_PATH, line);
@@ -160,18 +170,33 @@ export function logEvent(params: {
 	const channel = params.channel || "api";
 	const level = params.level || "info";
 	if (!shouldLog(level)) return;
-	const line = `[${channel}]${nowLabel()} ${levelLabel(level)}: ${params.message}${inlineMeta(params.meta)}`;
+	const line = `[${redactRuntimeSecretText(channel)}]${nowLabel()} ${levelLabel(level)}: ${redactRuntimeSecretText(params.message)}${inlineMeta(params.meta)}`;
 	// eslint-disable-next-line no-console
 	console.log(line);
 	appendLogFile(API_LOG_PATH, line);
 }
 
 // LLM behavior is intentionally emitted as JSON for full-fidelity debugging.
-export const llmLogger = pino({
-	level: process.env.LOG_LEVEL || "info",
-	base: { channel: "llm" },
-	timestamp: pino.stdTimeFunctions.isoTime,
-});
+export function createLlmLogger(destination?: pino.DestinationStream) {
+	return pino(
+		{
+			level: process.env.LOG_LEVEL || "info",
+			base: { channel: "llm" },
+			timestamp: pino.stdTimeFunctions.isoTime,
+			hooks: {
+				logMethod(args, method) {
+					return (method as (...methodArgs: unknown[]) => unknown).apply(
+						this,
+						args.map((value) => redactRuntimeSecretValue(value)),
+					);
+				},
+			},
+		},
+		destination,
+	);
+}
+
+export const llmLogger = createLlmLogger();
 
 // Backward-compatible alias for existing imports.
 export const logger = llmLogger;
@@ -180,7 +205,9 @@ export function appendSupervisorTrace(
 	event: string,
 	payload?: Record<string, unknown>,
 ) {
-	const line = `[${new Date().toISOString()}] ${event}${payload ? ` ${JSON.stringify(payload)}` : ""}\n`;
+	const safeEvent = redactRuntimeSecretText(event);
+	const safePayload = payload ? redactRuntimeSecretRecord(payload) : undefined;
+	const line = `[${new Date().toISOString()}] ${safeEvent}${safePayload ? ` ${JSON.stringify(safePayload)}` : ""}\n`;
 	appendLogFile(TRACE_LOG_PATH, line.trimEnd());
 }
 

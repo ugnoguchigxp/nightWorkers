@@ -54,6 +54,8 @@ export async function runBackgroundCommandTool(
 			},
 		};
 	} catch (err) {
+		const projectSecretDenied =
+			err instanceof Error && err.message === "PROJECT_SECRET_PATH_DENIED";
 		return {
 			ok: false,
 			toolName: "run_background_command",
@@ -69,8 +71,12 @@ export async function runBackgroundCommandTool(
 				pid: null,
 			},
 			error: {
-				code: "BACKGROUND_COMMAND_FAILED",
-				message: unknownErrorMessage(err, "Background command failed."),
+				code: projectSecretDenied
+					? "ACCESS_DENIED"
+					: "BACKGROUND_COMMAND_FAILED",
+				message: projectSecretDenied
+					? "Project secret files cannot be accessed by commands."
+					: unknownErrorMessage(err, "Background command failed."),
 			},
 		};
 	}

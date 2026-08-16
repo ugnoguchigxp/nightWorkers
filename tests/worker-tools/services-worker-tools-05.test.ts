@@ -140,7 +140,7 @@ describe("runCommandTool", () => {
 		expect(result.payload.stderrDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
 	});
 
-	it("propagates an earlier pipeline failure", async () => {
+	it("rejects pipeline syntax instead of invoking a shell", async () => {
 		const result = await runCommandTool({
 			command: "echo ok | grep missing | head -1",
 			repoRoot: dummyRepoDir,
@@ -148,10 +148,10 @@ describe("runCommandTool", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.payload).toMatchObject({
-			exitCode: 1,
+			exitCode: -1,
 			timedOut: false,
 		});
-		expect(result.error?.code).toBe("COMMAND_FAILED");
+		expect(result.error?.code).toBe("DESTRUCTIVE_COMMAND");
 	});
 
 	it("blocks destructive commands from running", async () => {

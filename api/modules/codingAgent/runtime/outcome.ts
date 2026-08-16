@@ -6,15 +6,17 @@ export function outcomeFromRuntimeResult(runtimeResult: AgentRuntimeResult): {
 	summary: string;
 } {
 	const status =
-		runtimeResult.stoppedBy === "tool_failure"
-			? ("blocked" as const)
-			: runtimeResult.terminalState === "needs_human" &&
-					runtimeResult.stoppedBy !== "policy" &&
-					runtimeResult.stoppedBy !== "hook" &&
-					runtimeResult.stoppedBy !== "budget" &&
-					runtimeResult.humanActionRequired !== true
+		runtimeResult.terminalState === "failed"
+			? ("failed" as const)
+			: runtimeResult.stoppedBy === "tool_failure"
 				? ("blocked" as const)
-				: runtimeResult.terminalState;
+				: runtimeResult.terminalState === "needs_human" &&
+						runtimeResult.stoppedBy !== "policy" &&
+						runtimeResult.stoppedBy !== "hook" &&
+						runtimeResult.stoppedBy !== "budget" &&
+						runtimeResult.humanActionRequired !== true
+					? ("blocked" as const)
+					: runtimeResult.terminalState;
 	const reason =
 		runtimeResult.stoppedBy === "policy"
 			? "policy_violation"

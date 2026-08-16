@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import app, { nodeWebSocket } from "./app";
+import { initializeComposedCodingAgent } from "./composition/coding-agent";
 import {
 	bootstrapComposedMissionPilotStorage,
 	createMissionPilotDependencies,
@@ -60,6 +61,7 @@ const fxRefreshIntervalMs = 60 * 60 * 1000;
 const implementationQueueReconcileIntervalMs = 60 * 1000;
 const securityKnowledgeOutboxIntervalMs = 30 * 1000;
 
+initializeComposedCodingAgent();
 initializeCodingAgentRunHandlers();
 initializeTaskUserIntakeHandler();
 

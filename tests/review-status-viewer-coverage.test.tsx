@@ -180,7 +180,8 @@ describe("review status viewer coverage", () => {
 			onSubmitReviewPrompt: vi.fn(async () => true),
 		});
 		expect(named(root, "ReviewPromptActions")[0].props.disabled).toBe(false);
-		const button = archiveButton(root)!;
+		const button = archiveButton(root);
+		if (!button) throw new Error("Archive button was not rendered.");
 		expect(button.props["data-review-task-archive-action"]).toBe("archive");
 		await button.props.onClick();
 		expect(window.confirm).toHaveBeenCalledTimes(1);

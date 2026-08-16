@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { readJsonResponse } from "../../lib/api-error";
 import { fetchMcpServers } from "../mcp/mcpCommands";
 import type { McpServerConfig, Repository } from "../nightworkers/types";
 import {
@@ -202,9 +203,7 @@ export function useProjectIntelligenceSettings(
 }
 
 async function readJson<T>(responsePromise: Promise<Response>): Promise<T> {
-	const response = await responsePromise;
-	if (!response.ok) throw new Error(`HTTP ${response.status}`);
-	return (await response.json()) as T;
+	return readJsonResponse<T>(await responsePromise);
 }
 
 function errorMessage(error: unknown) {

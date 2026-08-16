@@ -1,5 +1,10 @@
 import path from "node:path";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../../../api/modules/codingAgent/ports/coding-agent-host.binding";
+import type { CodingAgentHostPorts } from "../../../api/modules/codingAgent/ports/coding-agent-host.port";
 export const repoRoot = "/Users/y.noguchi/Code/nightWorkers";
 export const implementationPhasePreamble = [
 	"実装フェーズに移行しました。",
@@ -127,6 +132,13 @@ vi.doMock(
 );
 
 vi.doMock(
+	"../../../api/modules/nightworkers/run-orchestration/start-task-run",
+	() => ({
+		startTaskRun: vi.fn(),
+	}),
+);
+
+vi.doMock(
 	"../../../api/modules/gitworktree/gitworktree.service",
 	async (importOriginal) => ({
 		...(await importOriginal<
@@ -187,6 +199,12 @@ vi.doMock("../../../api/services/conversation-context", () => ({
 }));
 
 beforeEach(() => {
+	configureCodingAgentHost({
+		runReader: {
+			getRun: vi.fn(async () => null),
+			listRunTodos: vi.fn(async () => []),
+		},
+	} as CodingAgentHostPorts);
 	vi.clearAllMocks();
 	delete process.env.ACTIVE_LLM_PROVIDER;
 	delete process.env.CODEX_ENABLED;
@@ -194,4 +212,8 @@ beforeEach(() => {
 	process.env.NIGHTWORKERS_LLM_SETTINGS_PATH =
 		"/tmp/nightworkers-service-02-empty-llm-settings.json";
 	process.env.NIGHTWORKERS_RUNTIME_LANE = "native-api-runner";
+});
+
+afterEach(() => {
+	clearCodingAgentHostForTest();
 });

@@ -17,6 +17,7 @@ import {
 	cancelPendingMissionPilotToolCalls,
 	cancelRunningMissionPilotToolCalls,
 } from "./agent/agent-lifecycle.repository";
+import type { MissionPilotAgentPlayHostInput } from "./agent/agent-session.repository";
 import {
 	backfillStoppedMissionPilotAgentSessions,
 	claimAgentPlay,
@@ -138,16 +139,86 @@ export type MissionPilotPersistenceCapability = Readonly<{
 	execute(request: MissionPilotPersistenceRequest): Promise<unknown>;
 }>;
 
+export type MissionPilotPersistenceHostInput = Readonly<{
+	prepareAgentPlay(input: {
+		sessionId: string;
+		taskId: string;
+		principal: {
+			kind: "human";
+			actorId: string;
+			authorizationRef: string;
+		};
+		grantedAt: string;
+	}): Promise<MissionPilotAgentPlayHostInput>;
+	resolveProviderToolCallActions(input: {
+		toolCalls: ReadonlyArray<{
+			id: string;
+			name: string;
+			arguments: Record<string, unknown>;
+		}>;
+	}): Promise<Readonly<Record<string, string>>>;
+}>;
+
 /**
  * Creates the in-process capability injected only into the Mission Pilot
  * package composition. The factory is intentionally not re-exported by the
  * module index or any HTTP router.
  */
-export function createMissionPilotPersistenceCapability(): MissionPilotPersistenceCapability {
+export function createMissionPilotPersistenceCapability(
+	host: MissionPilotPersistenceHostInput,
+): MissionPilotPersistenceCapability {
 	return Object.freeze({
 		async execute(request: MissionPilotPersistenceRequest) {
 			if (!isMissionPilotPersistenceRequest(request))
 				throw new Error("Invalid Mission Pilot persistence operation.");
+			if (request.operation === "claimAgentPlay") {
+				const [taskId, expectedVersion, requestedPrincipal, activation] =
+					request.args as [
+						string,
+						number,
+						(
+							| {
+									kind: "human";
+									actorId: string;
+									authorizationRef: string;
+							  }
+							| undefined
+						),
+						unknown,
+					];
+				const session = await getSessionByTaskId(taskId);
+				if (!session) return null;
+				const principal = requestedPrincipal ?? {
+					kind: "human" as const,
+					actorId: "local-task-operator-user",
+					authorizationRef: "local-user",
+				};
+				const grantedAt = new Date().toISOString();
+				const hostInput = await host.prepareAgentPlay({
+					sessionId: session.id,
+					taskId,
+					principal,
+					grantedAt,
+				});
+				return claimAgentPlay(
+					taskId,
+					expectedVersion,
+					principal,
+					activation as Parameters<typeof claimAgentPlay>[3],
+					hostInput,
+				);
+			}
+			if (request.operation === "persistMissionPilotProviderTurn") {
+				const [input] = request.args as [
+					Parameters<typeof persistMissionPilotProviderTurn>[0],
+				];
+				return persistMissionPilotProviderTurn({
+					...input,
+					resolvedActionIds: await host.resolveProviderToolCallActions({
+						toolCalls: input.toolCalls,
+					}),
+				});
+			}
 			const handler = operationHandlers[request.operation] as (
 				...args: readonly unknown[]
 			) => unknown;

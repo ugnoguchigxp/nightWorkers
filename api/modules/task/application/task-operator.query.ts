@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, count, desc, eq, gte, isNull, max } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, max, sql } from "drizzle-orm";
 import { TASK_OPERATOR_CONTENT_PAGE_SERIALIZED_CONTENT_BYTE_BUDGET } from "../../../../shared/modules/taskOperator";
 import { db } from "../../../db/client";
 import { repositories, taskMessages, tasks } from "../../../db/schema";
@@ -53,7 +53,7 @@ export async function readTaskTimelineFacts(input: {
 			})
 			.from(taskMessages)
 			.where(filter)
-			.orderBy(asc(taskMessages.createdAt), asc(taskMessages.id))
+			.orderBy(asc(taskMessages.createdAt), asc(sql<number>`rowid`))
 			.limit(limit + 1)
 			.offset(cursor),
 		db
@@ -146,7 +146,7 @@ export async function readLatestTaskUserMessageAfter(input: {
 				gte(taskMessages.createdAt, input.after),
 			),
 		)
-		.orderBy(desc(taskMessages.createdAt), desc(taskMessages.id))
+		.orderBy(desc(taskMessages.createdAt), desc(sql<number>`rowid`))
 		.limit(1);
 	return message ?? null;
 }

@@ -4,6 +4,8 @@ type Effect = () => undefined | (() => void);
 
 let stateSlots: unknown[] = [];
 let stateCursor = 0;
+let refSlots: Array<{ current: unknown }> = [];
+let refCursor = 0;
 let effects: Effect[] = [];
 let sessionsCache: unknown[] = [];
 let intervalCallback: (() => void) | null = null;
@@ -34,6 +36,7 @@ function response(
 	return {
 		ok: options.ok ?? true,
 		statusText: options.statusText ?? "Bad Request",
+		headers: new Headers(),
 		json: vi.fn(async () => value),
 		text: vi.fn(async () => options.text ?? "plain failure"),
 	} as Response;
@@ -43,6 +46,7 @@ function brokenJsonResponse(text = "broken json") {
 	return {
 		ok: false,
 		statusText: "Bad Response",
+		headers: new Headers(),
 		json: vi.fn(async () => {
 			throw new Error("not json");
 		}),
@@ -80,6 +84,8 @@ function detail(
 async function createHarness(initialState: unknown[] = []) {
 	stateSlots = [...initialState];
 	stateCursor = 0;
+	refSlots = [];
+	refCursor = 0;
 	effects = [];
 	sessionsCache = [];
 	intervalCallback = null;
@@ -95,6 +101,11 @@ async function createHarness(initialState: unknown[] = []) {
 				callback,
 			useEffect: (effect: Effect) => effects.push(effect),
 			useMemo: <T>(factory: () => T) => factory(),
+			useRef: <T>(initial: T) => {
+				const index = refCursor++;
+				if (!refSlots[index]) refSlots[index] = { current: initial };
+				return refSlots[index] as { current: T };
+			},
 			useState: <T>(initial: T | (() => T)) => {
 				const index = stateCursor++;
 				if (stateSlots.length <= index) {
@@ -142,6 +153,7 @@ async function createHarness(initialState: unknown[] = []) {
 			onTasksCreated?: (tasks: unknown[]) => Promise<void> | void,
 		) {
 			stateCursor = 0;
+			refCursor = 0;
 			effects = [];
 			return module.useProjectEvaluationController(repositoryId, {
 				onTasksCreated: onTasksCreated as never,
@@ -216,7 +228,7 @@ describe("useProjectEvaluationController extra coverage", () => {
 		expect(controller.isLoading).toBe(false);
 	});
 
-	it("reports JSON error, message, status, text, and non-Error refresh failures", async () => {
+	it("reports legacy and invalid JSON response failures through the common decoder", async () => {
 		const harness = await createHarness();
 		harness.useController();
 		const refreshEffect = effects[0];
@@ -231,7 +243,7 @@ describe("useProjectEvaluationController extra coverage", () => {
 			refreshEffect();
 			await flushPromises();
 		}
-		expect(stateSlots[9]).toBe("text body");
+		expect(stateSlots[9]).toBe("Response body is not valid JSON");
 
 		api.fetchHistory.mockRejectedValueOnce("string failure");
 		refreshEffect();
@@ -384,7 +396,7 @@ describe("useProjectEvaluationController extra coverage", () => {
 		);
 		const cleanup = effects[1]();
 		await flushPromises();
-		expect(api.fetchActivity).toHaveBeenCalledWith("evaluation-1", 2);
+		expect(api.fetchActivity).toHaveBeenCalledWith("evaluation-1", undefined);
 		expect(
 			(stateSlots[1] as ReturnType<typeof detail>).activityEvents.map(
 				(item: { id: string }) => item.id,

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db/client";
 import {
 	conversationContextSnapshots,
@@ -40,7 +40,7 @@ export async function loadConversationContextSource(input: {
 			.select()
 			.from(taskMessages)
 			.where(eq(taskMessages.taskId, input.taskId))
-			.orderBy(taskMessages.createdAt),
+			.orderBy(taskMessages.createdAt, sql<number>`rowid`),
 		db
 			.select()
 			.from(taskRuns)

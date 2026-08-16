@@ -11,6 +11,15 @@ import {
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import { sanitizePersistenceValue } from "../../services/security/secret-persistence-firewall";
 import { appendFinalResponseEvidence } from "../evidenceLedger";
+import {
+	type TaskRunUpdateData,
+	transitionTaskRunIfCurrent,
+} from "./nightworkers.run-transition.repository";
+
+export {
+	type TaskRunTransitionResult,
+	transitionTaskRunIfCurrent,
+} from "./nightworkers.run-transition.repository";
 
 export * from "./nightworkers.runs-event.repository";
 export * from "./nightworkers.runs-support";
@@ -269,55 +278,78 @@ export async function countActiveTaskRuns(repositoryId?: string) {
 }
 
 export async function claimNextQueuedTask(repositoryId: string) {
-	const [task] = await db
-		.select()
-		.from(tasks)
-		.where(
-			and(
-				eq(tasks.repositoryId, repositoryId),
-				inArray(tasks.status, ["ready", "queued"]),
-				sql`not exists (
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		const [task] = await db
+			.select()
+			.from(tasks)
+			.where(
+				and(
+					eq(tasks.repositoryId, repositoryId),
+					inArray(tasks.status, ["ready", "queued"]),
+					sql`not exists (
           select 1 from implementation_queue_entries iqe
           where iqe.task_id = ${tasks.id}
             and iqe.status in ('queued', 'claimed', 'processing', 'needs_human', 'awaiting_commit_decision', 'execution_completed', 'failed', 'cancelled')
         )`,
-			),
-		)
-		.orderBy(desc(tasks.priority), asc(tasks.updatedAt))
-		.limit(1);
-	if (!task) return null;
-	const [claimed] = await db
-		.update(tasks)
-		.set({ status: "running", updatedAt: new Date() })
-		.where(
-			and(eq(tasks.id, task.id), inArray(tasks.status, ["ready", "queued"])),
-		)
-		.returning();
-	if (claimed) {
+				),
+			)
+			.orderBy(desc(tasks.priority), asc(tasks.updatedAt))
+			.limit(1);
+		if (!task) return null;
+		const [claimed] = await db
+			.update(tasks)
+			.set({ status: "running", updatedAt: new Date() })
+			.where(
+				and(
+					eq(tasks.id, task.id),
+					inArray(tasks.status, ["ready", "queued"]),
+					eq(tasks.updatedAt, task.updatedAt),
+				),
+			)
+			.returning();
+		if (!claimed) continue;
 		nightWorkersRealtimeBroker.publish(claimed.id, {
 			type: "task_status_updated",
 			payload: { status: claimed.status, task: claimed },
 		});
+		return claimed;
 	}
-	return claimed ?? null;
+	return null;
 }
 
-type TaskRunUpdateData = {
-	status?: TaskRunStatus;
-	endedAt?: Date | null;
-	finishedAt?: Date | null;
-	logContent?: string;
-	diffPatch?: string;
-	testResults?: unknown;
-	workerKind?: string;
-	baseRef?: string | null;
-	worktreePath?: string | null;
-	timeoutSeconds?: number;
-	contextSnapshot?: unknown;
-	summary?: string | null;
-	finalReport?: string | null;
-	finalJudgment?: unknown;
-};
+export async function updateTaskRunInitialPromptPreparation(input: {
+	runId: string;
+	taskId: string;
+	expectedUpdatedAt: Date;
+	compiledPromptText: string;
+	contextSnapshot: unknown;
+}) {
+	const result = await db.transaction(async (tx) => {
+		const transition = await transitionTaskRunIfCurrent(
+			{
+				runId: input.runId,
+				expectedStatuses: ["context_compiling"],
+				expectedUpdatedAt: input.expectedUpdatedAt,
+				targetStatus: "running",
+				patch: { contextSnapshot: input.contextSnapshot },
+			},
+			tx,
+		);
+		if (transition.kind !== "applied") return transition;
+		if (transition.run.taskId !== input.taskId) {
+			throw new Error("Run does not belong to the requested Task.");
+		}
+		const [task] = await tx
+			.update(tasks)
+			.set({ compiledPrompt: input.compiledPromptText, updatedAt: new Date() })
+			.where(eq(tasks.id, input.taskId))
+			.returning({ id: tasks.id });
+		if (!task) throw new Error("Task disappeared during prompt preparation.");
+		return transition;
+	});
+	if (result.kind === "applied") await publishTaskRunUpdate(result.run);
+	return result;
+}
 
 export async function publishTaskRunUpdate(run: typeof taskRuns.$inferSelect) {
 	nightWorkersRealtimeBroker.publish(run.taskId, {

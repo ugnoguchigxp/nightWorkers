@@ -1,4 +1,4 @@
-import { exec, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import crypto from "node:crypto";
 import { Stats } from "node:fs";
 import fs from "node:fs/promises";
@@ -7,8 +7,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { getDeepRecordString, toDeepRecord } from "../../../shared/json-record";
 import { buildChildProcessEnvironment } from "../execution/child-process-environment";
-import { prepareWorkspaceConstrainedShell } from "../execution/workspace-process-confinement";
+import { prepareWorkspaceConstrainedCommand } from "../execution/workspace-process-confinement";
 import { DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS } from "../model-visible-payload";
+import { commandArgumentsReferenceProjectSecret } from "../security/project-secret-paths";
 import { analyzeCommand } from "./command-policy";
 import {
 	compressCommandStream,
@@ -21,7 +22,6 @@ import {
 } from "./tool-policy-enforcer";
 import type { WorkerToolResult } from "./types";
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_CHARS = DEFAULT_MODEL_VISIBLE_TEXT_LIMIT_CHARS;
 const MAX_EXEC_BUFFER_BYTES = 10 * 1024 * 1024;
@@ -273,6 +273,48 @@ export async function runCommandTool(
 			},
 		};
 	}
+	if (!safety.parsed) {
+		return {
+			ok: false,
+			toolName: "run_command",
+			startedAt,
+			finishedAt: new Date().toISOString(),
+			payload: emptyCommandOutput({
+				command,
+				classification: safety.classification,
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
+			error: {
+				code: "DESTRUCTIVE_COMMAND",
+				message: "Command could not be normalized for execution.",
+			},
+		};
+	}
+	if (
+		await commandArgumentsReferenceProjectSecret({
+			args: safety.parsed.args,
+			repositoryRoot: absoluteRepoRoot,
+			cwd: targetCwd,
+		})
+	) {
+		return {
+			ok: false,
+			toolName: "run_command",
+			startedAt,
+			finishedAt: new Date().toISOString(),
+			payload: emptyCommandOutput({
+				command,
+				classification: safety.classification,
+				cwd: targetCwd,
+				repositoryRoot: absoluteRepoRoot,
+			}),
+			error: {
+				code: "ACCESS_DENIED",
+				message: "Project secret files cannot be accessed by commands.",
+			},
+		};
+	}
 
 	const effectiveTimeoutSeconds = resolveCommandTimeout(timeoutSeconds, {
 		repoRoot: absoluteRepoRoot,
@@ -299,14 +341,12 @@ export async function runCommandTool(
 		}
 		const confined =
 			confinementRequired && process.platform !== "win32"
-				? await prepareWorkspaceConstrainedShell({
-						command,
+				? await prepareWorkspaceConstrainedCommand({
+						command: safety.parsed,
 						workspaceRoot: absoluteRepoRoot,
 						environment: childEnvironment,
 					})
 				: null;
-		const managedCommand =
-			process.platform === "win32" ? command : `set -o pipefail\n${command}`;
 		const executionOptions = {
 			cwd: targetCwd,
 			timeout: effectiveTimeoutSeconds * 1000,
@@ -315,13 +355,11 @@ export async function runCommandTool(
 		};
 		const promise = confined
 			? execFileAsync(confined.executable, confined.args, executionOptions)
-			: process.platform === "win32"
-				? execAsync(managedCommand, executionOptions)
-				: execFileAsync(
-						"/bin/bash",
-						["--noprofile", "--norc", "-c", managedCommand],
-						executionOptions,
-					);
+			: execFileAsync(
+					safety.parsed.program,
+					safety.parsed.args,
+					executionOptions,
+				);
 
 		const { stdout, stderr } = await promise;
 		const finishedAt = new Date().toISOString();
@@ -355,6 +393,9 @@ export async function runCommandTool(
 		const stderr = typeof error.stderr === "string" ? error.stderr : "";
 		const signal = typeof rawError.signal === "string" ? rawError.signal : null;
 		const timedOut = rawError.killed === true;
+		const confinementUnavailable = String(error.message ?? "").includes(
+			"WORKSPACE_PROCESS_CONFINEMENT_UNAVAILABLE",
+		);
 		const finishedAt = new Date().toISOString();
 
 		const message = timedOut
@@ -381,7 +422,11 @@ export async function runCommandTool(
 				compressionMode,
 			}),
 			error: {
-				code: timedOut ? "COMMAND_TIMEOUT" : "COMMAND_FAILED",
+				code: confinementUnavailable
+					? "CONFINEMENT_UNAVAILABLE"
+					: timedOut
+						? "COMMAND_TIMEOUT"
+						: "COMMAND_FAILED",
 				message,
 			},
 		};

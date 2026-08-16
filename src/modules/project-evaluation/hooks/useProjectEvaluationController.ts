@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readJsonResponse } from "../../../lib/api-error";
 import type { Task } from "../../nightworkers/types";
 import {
 	createProjectEvaluationTasks,
@@ -18,23 +19,6 @@ import type {
 	ProjectEvaluationTaskLink,
 	StartProjectEvaluationResponse,
 } from "../model/projectEvaluationTypes";
-
-async function parseJsonResponse<T>(response: Response): Promise<T> {
-	if (!response.ok) {
-		let message = response.statusText;
-		try {
-			const body = (await response.json()) as {
-				error?: string;
-				message?: string;
-			};
-			message = body.error || body.message || message;
-		} catch {
-			message = await response.text();
-		}
-		throw new Error(message);
-	}
-	return (await response.json()) as T;
-}
 
 function mergeActivityEvents(
 	current: ProjectEvaluationActivityEvent[],
@@ -86,21 +70,40 @@ export function useProjectEvaluationController(
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isCreatingTasks, setIsCreatingTasks] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const activityCursorRef = useRef<{
+		evaluationId: string | null;
+		afterSeq: number;
+	}>({ evaluationId: null, afterSeq: -1 });
+	const pollGenerationRef = useRef(0);
 
-	const loadDetail = useCallback(async (evaluationId: string) => {
-		const nextDetail = await parseJsonResponse<ProjectEvaluationDetail>(
-			await fetchProjectEvaluationDetail(evaluationId),
-		);
-		setDetail(nextDetail);
-		setSelectedKeys(new Set());
-		setSelectedIdeaIds(new Set());
-	}, []);
+	const resetActivityCursor = useCallback(
+		(nextDetail: ProjectEvaluationDetail) => {
+			activityCursorRef.current = {
+				evaluationId: nextDetail.evaluation.id,
+				afterSeq: maxActivitySeq(nextDetail.activityEvents),
+			};
+		},
+		[],
+	);
+
+	const loadDetail = useCallback(
+		async (evaluationId: string) => {
+			const nextDetail = await readJsonResponse<ProjectEvaluationDetail>(
+				await fetchProjectEvaluationDetail(evaluationId),
+			);
+			setDetail(nextDetail);
+			resetActivityCursor(nextDetail);
+			setSelectedKeys(new Set());
+			setSelectedIdeaIds(new Set());
+		},
+		[resetActivityCursor],
+	);
 
 	const refresh = useCallback(async () => {
 		setIsLoading(true);
 		setError(null);
 		try {
-			const evaluations = await parseJsonResponse<ProjectEvaluationRun[]>(
+			const evaluations = await readJsonResponse<ProjectEvaluationRun[]>(
 				await fetchProjectEvaluationHistory(repositoryId),
 			);
 			setHistory(evaluations);
@@ -112,6 +115,8 @@ export function useProjectEvaluationController(
 				}
 			} else {
 				setDetail(null);
+				setIsRunning(false);
+				setRunningEvaluationId(null);
 			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -128,12 +133,13 @@ export function useProjectEvaluationController(
 		setIsRunning(true);
 		setError(null);
 		try {
-			const started = await parseJsonResponse<StartProjectEvaluationResponse>(
+			const started = await readJsonResponse<StartProjectEvaluationResponse>(
 				await startProjectEvaluation(repositoryId),
 			);
 			setDetail(started.detail);
+			resetActivityCursor(started.detail);
 			setRunningEvaluationId(started.evaluationId);
-			const evaluations = await parseJsonResponse<ProjectEvaluationRun[]>(
+			const evaluations = await readJsonResponse<ProjectEvaluationRun[]>(
 				await fetchProjectEvaluationHistory(repositoryId),
 			);
 			setHistory(evaluations);
@@ -145,24 +151,37 @@ export function useProjectEvaluationController(
 			setIsRunning(false);
 			setRunningEvaluationId(null);
 		}
-	}, [repositoryId]);
+	}, [repositoryId, resetActivityCursor]);
 
 	useEffect(() => {
 		if (!runningEvaluationId) return;
-		let cancelled = false;
-		let afterSeq = maxActivitySeq(detail?.activityEvents ?? []);
+		const generation = pollGenerationRef.current + 1;
+		pollGenerationRef.current = generation;
+		const isCurrent = () =>
+			pollGenerationRef.current === generation &&
+			activityCursorRef.current.evaluationId === runningEvaluationId;
+		if (activityCursorRef.current.evaluationId !== runningEvaluationId) {
+			activityCursorRef.current = {
+				evaluationId: runningEvaluationId,
+				afterSeq: -1,
+			};
+		}
 
 		const poll = async () => {
 			try {
-				const replay = await parseJsonResponse<ProjectEvaluationActivityReplay>(
+				const afterSeq = activityCursorRef.current.afterSeq;
+				const replay = await readJsonResponse<ProjectEvaluationActivityReplay>(
 					await fetchProjectEvaluationActivityEvents(
 						runningEvaluationId,
 						afterSeq >= 0 ? afterSeq : undefined,
 					),
 				);
-				if (cancelled) return;
+				if (!isCurrent()) return;
 				if (replay.events.length > 0) {
-					afterSeq = Math.max(afterSeq, maxActivitySeq(replay.events));
+					activityCursorRef.current = {
+						evaluationId: runningEvaluationId,
+						afterSeq: Math.max(afterSeq, maxActivitySeq(replay.events)),
+					};
 					setDetail((current) =>
 						current?.evaluation.id === runningEvaluationId
 							? {
@@ -187,21 +206,22 @@ export function useProjectEvaluationController(
 				}
 				if (replay.status === "completed" || replay.status === "failed") {
 					const [nextDetail, evaluations] = await Promise.all([
-						parseJsonResponse<ProjectEvaluationDetail>(
+						readJsonResponse<ProjectEvaluationDetail>(
 							await fetchProjectEvaluationDetail(runningEvaluationId),
 						),
-						parseJsonResponse<ProjectEvaluationRun[]>(
+						readJsonResponse<ProjectEvaluationRun[]>(
 							await fetchProjectEvaluationHistory(repositoryId),
 						),
 					]);
-					if (cancelled) return;
+					if (!isCurrent()) return;
 					setDetail(nextDetail);
+					resetActivityCursor(nextDetail);
 					setHistory(evaluations);
 					setIsRunning(false);
 					setRunningEvaluationId(null);
 				}
 			} catch (err) {
-				if (cancelled) return;
+				if (!isCurrent()) return;
 				setError(err instanceof Error ? err.message : String(err));
 				setIsRunning(false);
 				setRunningEvaluationId(null);
@@ -211,59 +231,68 @@ export function useProjectEvaluationController(
 		void poll();
 		const timer = window.setInterval(() => void poll(), 1000);
 		return () => {
-			cancelled = true;
+			if (pollGenerationRef.current === generation)
+				pollGenerationRef.current += 1;
 			window.clearInterval(timer);
 		};
-	}, [detail?.activityEvents, repositoryId, runningEvaluationId]);
+	}, [repositoryId, resetActivityCursor, runningEvaluationId]);
 
-	const selectEvaluation = useCallback(async (evaluationId: string) => {
-		setError(null);
-		try {
-			const nextDetail = await parseJsonResponse<ProjectEvaluationDetail>(
-				await fetchProjectEvaluationDetail(evaluationId),
-			);
-			setDetail(nextDetail);
-			setSelectedKeys(new Set());
-			setSelectedIdeaIds(new Set());
-			if (nextDetail.evaluation.status === "running") {
-				setIsRunning(true);
-				setRunningEvaluationId(nextDetail.evaluation.id);
+	const selectEvaluation = useCallback(
+		async (evaluationId: string) => {
+			setError(null);
+			try {
+				const nextDetail = await readJsonResponse<ProjectEvaluationDetail>(
+					await fetchProjectEvaluationDetail(evaluationId),
+				);
+				setDetail(nextDetail);
+				resetActivityCursor(nextDetail);
+				setSelectedKeys(new Set());
+				setSelectedIdeaIds(new Set());
+				if (nextDetail.evaluation.status === "running") {
+					setIsRunning(true);
+					setRunningEvaluationId(nextDetail.evaluation.id);
+				} else {
+					setIsRunning(false);
+					setRunningEvaluationId(null);
+				}
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
 			}
-		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
-		}
-	}, []);
+		},
+		[resetActivityCursor],
+	);
 
 	const generateIdeas = useCallback(async () => {
 		if (!detail || selectedKeys.size === 0) return;
 		setIsGenerating(true);
 		setError(null);
 		try {
-			const result = await parseJsonResponse<{
+			const result = await readJsonResponse<{
 				ideas: ProjectEvaluationDetail["improvements"];
 			}>(
 				await generateProjectImprovements(detail.evaluation.id, {
 					dimensionKeys: [...selectedKeys],
 				}),
 			);
-			const nextDetail = await parseJsonResponse<ProjectEvaluationDetail>(
+			const nextDetail = await readJsonResponse<ProjectEvaluationDetail>(
 				await fetchProjectEvaluationDetail(detail.evaluation.id),
 			);
 			setDetail({ ...nextDetail, improvements: result.ideas });
+			resetActivityCursor(nextDetail);
 			setSelectedIdeaIds(new Set());
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [detail, selectedKeys]);
+	}, [detail, resetActivityCursor, selectedKeys]);
 
 	const createTasks = useCallback(async () => {
 		if (!detail || selectedIdeaIds.size === 0) return;
 		setIsCreatingTasks(true);
 		setError(null);
 		try {
-			const result = await parseJsonResponse<{
+			const result = await readJsonResponse<{
 				tasks: Task[];
 				taskLinks: ProjectEvaluationTaskLink[];
 			}>(

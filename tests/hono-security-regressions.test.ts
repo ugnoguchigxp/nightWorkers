@@ -6,6 +6,13 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { afterEach, describe, expect, it } from "vitest";
+import { errorHandler } from "../api/middleware/error-handler";
+import {
+	NIGHTWORKERS_API_MAX_BODY_BYTES,
+	NIGHTWORKERS_REQUEST_BODY_COMPACTION_CHUNK_COUNT,
+	nightworkersRequestBodyLimit,
+	readBodyWithinLimit,
+} from "../api/security/nightworkers-request-policy";
 
 const temporaryDirectories: string[] = [];
 
@@ -16,6 +23,81 @@ afterEach(() => {
 });
 
 describe("Hono security dependency regressions", () => {
+	it("compacts highly fragmented request bodies before rehydrating them", async () => {
+		const chunkCount = NIGHTWORKERS_REQUEST_BODY_COMPACTION_CHUNK_COUNT * 2 + 1;
+		const chunks = await readBodyWithinLimit(
+			new ReadableStream<Uint8Array>({
+				start(controller) {
+					for (let index = 0; index < chunkCount; index += 1) {
+						controller.enqueue(new Uint8Array([index % 251]));
+					}
+					controller.close();
+				},
+			}),
+		);
+
+		expect(chunks).toHaveLength(3);
+		expect(Buffer.concat(chunks)).toHaveLength(chunkCount);
+	});
+
+	it("rejects an under-declared streamed API request before its route handler", async () => {
+		let handlerReached = false;
+		const app = new Hono();
+		app.onError(errorHandler);
+		app.use("/api/*", nightworkersRequestBodyLimit());
+		app.post("/api/upload", (context) => {
+			handlerReached = true;
+			return context.text("unexpected");
+		});
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(new Uint8Array(NIGHTWORKERS_API_MAX_BODY_BYTES + 1));
+				controller.close();
+			},
+		});
+
+		const response = await app.fetch(
+			new Request("http://localhost/api/upload", {
+				method: "POST",
+				headers: { "content-length": "1" },
+				body,
+				duplex: "half",
+			} as RequestInit & { duplex: "half" }),
+		);
+
+		expect(response.status).toBe(413);
+		expect(await response.json()).toMatchObject({
+			error: { code: "REQUEST_BODY_TOO_LARGE" },
+		});
+		expect(handlerReached).toBe(false);
+	}, 15_000);
+
+	it("accepts a request containing the maximum supported five prompt images", async () => {
+		const app = new Hono();
+		app.use("/api/*", nightworkersRequestBodyLimit());
+		app.post("/api/upload", async (context) => {
+			const body = (await context.req.json()) as { images: unknown[] };
+			return context.json({ received: body.images.length });
+		});
+		const prefix = "data:image/png;base64,";
+		const image = `${prefix}${"A".repeat(5_100_000 - prefix.length)}`;
+		const payload = JSON.stringify({
+			images: Array.from({ length: 5 }, () => ({ dataUrl: image })),
+		});
+		expect(Buffer.byteLength(payload, "utf8")).toBeLessThan(
+			NIGHTWORKERS_API_MAX_BODY_BYTES,
+		);
+
+		const response = await app.request("/api/upload", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: payload,
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ received: 5 });
+	}, 15_000);
+
 	it("does not reflect an unapproved CORS origin when credentials are enabled", async () => {
 		const app = new Hono();
 		app.use(

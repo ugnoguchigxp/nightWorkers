@@ -6,17 +6,23 @@ import {
 	afterAll,
 	afterEach,
 	beforeAll,
+	beforeEach,
 	describe,
 	expect,
 	it,
 	vi,
 } from "vitest";
+import { createCodingAgentHostAdapter } from "../../api/composition/coding-agent";
 import { db } from "../../api/db/client";
 import { verificationDocuments } from "../../api/db/verification-schema";
 import {
 	buildCodingAgentSystemContext,
 	CODING_AGENT_SYSTEM_CONTEXT_VERSION,
 } from "../../api/modules/codingAgent/context";
+import {
+	clearCodingAgentHostForTest,
+	configureCodingAgentHost,
+} from "../../api/modules/codingAgent/ports/coding-agent-host.binding";
 import { compactNativeApiHistoryToBaseline } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-context-compaction";
 import type { NativeApiToolTurnProvider } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner";
 import { NativeApiRunner } from "../../api/modules/codingAgent/runtime/native-api-runner/native-api-runner";
@@ -94,6 +100,10 @@ beforeAll(() => {
 	process.env.NIGHTWORKERS_LLM_SETTINGS_PATH = settingsPath;
 });
 
+beforeEach(() => {
+	configureCodingAgentHost(createCodingAgentHostAdapter());
+});
+
 afterAll(() => {
 	delete process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
 	if (nativeSettingsDirectory) {
@@ -102,6 +112,7 @@ afterAll(() => {
 });
 
 afterEach(async () => {
+	clearCodingAgentHostForTest();
 	for (const id of repositoryIds.splice(0)) await deleteRepository(id);
 	delete process.env.NIGHTWORKERS_E2E_ISOLATED;
 });
@@ -1004,6 +1015,52 @@ describe("Native API LLM-owned Todo contract", () => {
 				}),
 			}),
 		);
+	});
+
+	it("does not start another provider attempt after aborting during retry backoff", async () => {
+		const { repository, task, run } = await createRuntimeRun(
+			"native-retry-backoff-abort",
+		);
+		const controller = new AbortController();
+		let callCount = 0;
+		const events: Array<{ type: string; payload?: Record<string, unknown> }> =
+			[];
+		const providerTurn: NativeApiToolTurnProvider = async () => {
+			callCount += 1;
+			throw new StructuredProviderError({
+				kind: "provider_capacity",
+				retryable: true,
+				message: "provider is temporarily busy",
+			});
+		};
+
+		await new NativeApiRunner({
+			providerTurn,
+			usageRecorder: async () => {},
+		}).run(
+			context({
+				runId: run.id,
+				taskId: task.id,
+				repositoryId: repository.id,
+			}),
+			{
+				emit: async (event) => {
+					events.push(event);
+					if (
+						event.type === "tool_call_progress" &&
+						event.payload?.action === "provider_same_route_retry_started"
+					) {
+						controller.abort(new Error("test abort during retry backoff"));
+					}
+				},
+			},
+			controller.signal,
+		);
+
+		expect(callCount).toBe(1);
+		expect(
+			events.filter((event) => event.type === "model_response_started"),
+		).toHaveLength(1);
 	});
 
 	it("retries only provider failures explicitly marked retryable", () => {

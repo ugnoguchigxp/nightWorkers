@@ -392,7 +392,7 @@ describe("NightWorkers workbench routes", () => {
 
 		expect(response.status).toBe(409);
 		expect(await response.json()).toMatchObject({
-			code: "workspace_binding_required",
+			error: { code: "workspace_binding_required" },
 		});
 		expect(llm.callStructuredJsonLLM).not.toHaveBeenCalled();
 	});
@@ -548,7 +548,7 @@ describe("NightWorkers workbench routes", () => {
 		);
 		expect(invalidTargetResponse.status).toBe(409);
 		expect(await invalidTargetResponse.json()).toMatchObject({
-			code: "review_target_invalid",
+			error: { code: "review_target_invalid" },
 		});
 		expect(await repo.listTaskRunsForTask(task.id)).toHaveLength(3);
 

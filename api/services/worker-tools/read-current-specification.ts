@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { isVerificationChecklistItemComplete } from "../../../shared/schemas/verification-checklist.schema";
 import { db } from "../../db/client";
 import { taskMessages, tasks } from "../../db/schema";
@@ -336,7 +336,10 @@ export async function listRecentSpecificationsTool(
 			})
 			.from(taskMessages)
 			.innerJoin(tasks, eq(taskMessages.taskId, tasks.id))
-			.orderBy(desc(taskMessages.createdAt))
+			.orderBy(
+				desc(taskMessages.createdAt),
+				desc(sql<number>`${taskMessages}.rowid`),
+			)
 			.limit(Math.max(limit * 4, 20));
 
 		const specifications: RecentSpecificationSummary[] = [];

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { apiFetch } from "../lib/api-base";
+import { readJsonResponse } from "../lib/api-error";
 import { i18next } from "./setup";
 import type { AppLanguage } from "./types";
 
@@ -14,9 +15,9 @@ export function AppI18nProvider({ children }: { children: ReactNode }) {
 
 		async function loadLanguage() {
 			try {
-				const res = await fetchGeneralSettings();
-				if (!res.ok) return;
-				const settings = (await res.json()) as GeneralSettingsResponse;
+				const settings = await readJsonResponse<GeneralSettingsResponse>(
+					await fetchGeneralSettings(),
+				);
 				if (cancelled || !settings.language) return;
 				await applyAppLanguage(settings.language);
 			} catch {

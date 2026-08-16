@@ -237,10 +237,11 @@ describe("runtime database access safety", () => {
 		expect(result.status).not.toBe(0);
 		const runId = result.stdout.match(/isolated run id: (.+)/)?.[1]?.trim();
 		expect(runId).toBeTruthy();
+		if (!runId) throw new Error("Isolated run ID was not emitted.");
 		expect(result.stdout).toContain("isolated runtime reset:");
 		expect(
 			fs.existsSync(
-				path.join(path.resolve(".nightworkers-evaluations"), runId!),
+				path.join(path.resolve(".nightworkers-evaluations"), runId),
 			),
 		).toBe(false);
 	});

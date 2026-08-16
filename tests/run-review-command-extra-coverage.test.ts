@@ -5,8 +5,11 @@ const mocks = vi.hoisted(() => ({
 	getTask: vi.fn(),
 	listEvents: vi.fn(),
 	createEvent: vi.fn(),
+	createEventInTransaction: vi.fn(),
 	updateRun: vi.fn(),
 	updateTaskStatus: vi.fn(),
+	publishRun: vi.fn(),
+	applyOutcomeTransition: vi.fn(),
 	decideOutcome: vi.fn(),
 	buildResult: vi.fn(),
 	collectEvidence: vi.fn(),
@@ -24,7 +27,15 @@ vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
 	createRunEvent: mocks.createEvent,
 	updateTaskRun: mocks.updateRun,
 	updateTaskStatus: mocks.updateTaskStatus,
+	publishTaskRunUpdate: mocks.publishRun,
 }));
+
+vi.mock(
+	"../api/modules/nightworkers/nightworkers.runs-event.repository",
+	() => ({
+		createRunEventInTransaction: mocks.createEventInTransaction,
+	}),
+);
 
 vi.mock("../api/services/run-control/run-outcome-gate", () => ({
 	decideRunOutcome: mocks.decideOutcome,
@@ -33,6 +44,10 @@ vi.mock("../api/services/run-control/run-outcome-gate", () => ({
 vi.mock("../api/modules/codingAgent", () => ({
 	recordManualConditionConfirmationsForReview: mocks.recordConfirmations,
 }));
+vi.mock(
+	"../api/modules/run/application/run-outcome-transition.command",
+	() => ({ applyRunOutcomeTransition: mocks.applyOutcomeTransition }),
+);
 
 vi.mock(
 	"../api/modules/nightworkers/nightworkers.run-orchestration.service",
@@ -76,6 +91,8 @@ beforeEach(() => {
 		id: "task-1",
 		repositoryId: "fallback-repo",
 		revision: 4,
+		status: "needs_review",
+		updatedAt: new Date("2026-08-16T00:00:00.000Z"),
 	});
 	mocks.listEvents.mockResolvedValue([{ id: "event-1" }]);
 	mocks.decideOutcome.mockReturnValue({
@@ -88,10 +105,26 @@ beforeEach(() => {
 		{ kind: "run_event", eventId: "default" },
 	]);
 	mocks.shouldContinue.mockReturnValue(true);
+	const transition = {
+		kind: "applied",
+		run: { ...baseRun, status: "completed" },
+		task: {
+			id: "task-1",
+			repositoryId: "fallback-repo",
+			status: "completed",
+		},
+		queueEntry: null,
+	} as const;
+	mocks.applyOutcomeTransition.mockImplementation(async (input) => {
+		await input.afterApply?.(transition, {});
+		return transition;
+	});
 	for (const mock of [
 		mocks.createEvent,
+		mocks.createEventInTransaction,
 		mocks.updateRun,
 		mocks.updateTaskStatus,
+		mocks.publishRun,
 		mocks.recordConfirmations,
 		mocks.completeQueue,
 		mocks.archiveQueue,
@@ -146,11 +179,37 @@ describe("run review command extra coverage", () => {
 		);
 		expect(mocks.recordConfirmations).toHaveBeenCalledWith(
 			expect.objectContaining({ actorId: "review-result-1" }),
+			{},
 		);
 		expect(mocks.archiveQueue).toHaveBeenCalledWith("run-1");
-		expect(mocks.getTask).toHaveBeenCalledOnce();
+		expect(mocks.applyOutcomeTransition).toHaveBeenCalledWith(
+			expect.objectContaining({
+				run: expect.objectContaining({
+					id: "run-1",
+					targetStatus: "completed",
+				}),
+				task: expect.objectContaining({
+					id: "task-1",
+					targetStatus: "completed",
+				}),
+			}),
+		);
 		expect(mocks.runQueue).toHaveBeenCalledWith("repository-1");
-		expect(mocks.createEvent).toHaveBeenCalledTimes(2);
+		expect(mocks.createEvent).not.toHaveBeenCalled();
+		expect(mocks.createEventInTransaction).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not write review evidence or queue side effects when outcome CAS conflicts", async () => {
+		mocks.applyOutcomeTransition.mockRejectedValueOnce({
+			code: "RUN_OUTCOME_CONFLICT",
+		});
+		await expect(reviewTaskRunCommand("run-1", request)).rejects.toMatchObject({
+			code: "RUN_OUTCOME_CONFLICT",
+		});
+		expect(mocks.createEvent).not.toHaveBeenCalled();
+		expect(mocks.recordConfirmations).not.toHaveBeenCalled();
+		expect(mocks.archiveQueue).not.toHaveBeenCalled();
+		expect(mocks.runQueue).not.toHaveBeenCalled();
 	});
 
 	it("uses runtime and request fallbacks with collected evidence", async () => {
@@ -184,10 +243,11 @@ describe("run review command extra coverage", () => {
 		expect(mocks.recordConfirmations).not.toHaveBeenCalled();
 		expect(mocks.archiveQueue).not.toHaveBeenCalled();
 		expect(mocks.runQueue).not.toHaveBeenCalled();
-		expect(mocks.updateRun).toHaveBeenCalledWith("run-1", {
-			status: "needs_human",
-			summary: "needs attention",
-		});
+		expect(mocks.applyOutcomeTransition).toHaveBeenCalledWith(
+			expect.objectContaining({
+				run: expect.objectContaining({ targetStatus: "needs_human" }),
+			}),
+		);
 	});
 
 	it.each([
@@ -213,15 +273,48 @@ describe("run review command extra coverage", () => {
 		);
 	});
 
-	it("loads the task repository only when the run has no repository", async () => {
+	it("uses the transitioned Task repository when the Run has no repository", async () => {
 		mocks.getRun.mockResolvedValueOnce({ ...baseRun, repositoryId: null });
-		mocks.getTask.mockResolvedValueOnce({ repositoryId: "task-repository" });
+		mocks.getTask.mockResolvedValueOnce({
+			id: "task-1",
+			repositoryId: "task-repository",
+			revision: 4,
+			status: "needs_review",
+			updatedAt: new Date(),
+		});
+		mocks.applyOutcomeTransition.mockImplementationOnce(async (input) => {
+			await input.afterApply?.(
+				{
+					kind: "applied",
+					run: { ...baseRun, repositoryId: null, status: "completed" },
+					task: {
+						id: "task-1",
+						repositoryId: "task-repository",
+						status: "completed",
+					},
+					queueEntry: null,
+				},
+				{},
+			);
+			return {
+				kind: "applied",
+				run: { ...baseRun, repositoryId: null, status: "completed" },
+				task: {
+					id: "task-1",
+					repositoryId: "task-repository",
+					status: "completed",
+				},
+				queueEntry: null,
+			};
+		});
 		await reviewTaskRunCommand("run-1", request);
 		expect(mocks.runQueue).toHaveBeenCalledWith("task-repository");
 
 		mocks.getRun.mockResolvedValueOnce({ ...baseRun, repositoryId: null });
 		mocks.getTask.mockResolvedValueOnce(null);
-		await reviewTaskRunCommand("run-1", request);
+		await expect(reviewTaskRunCommand("run-1", request)).rejects.toMatchObject({
+			code: "TASK_NOT_FOUND",
+		});
 		expect(mocks.runQueue).toHaveBeenCalledTimes(1);
 	});
 });

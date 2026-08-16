@@ -2,12 +2,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	normalizeStructuredProviderError,
 	providerHttpError,
+	readBoundedProviderResponseText,
 	StructuredProviderError,
 	withStructuredProviderAttempt,
 } from "../api/services/structured-llm/provider-failure";
 
 describe("structured provider failure coverage", () => {
 	afterEach(() => vi.useRealTimers());
+
+	it("rejects an over-limit provider body before buffering its complete stream", async () => {
+		const response = new Response(
+			new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(Buffer.from("abcd"));
+					controller.enqueue(Buffer.from("e"));
+					controller.close();
+				},
+			}),
+		);
+
+		await expect(
+			readBoundedProviderResponseText(response, 4),
+		).rejects.toMatchObject({ code: "PROVIDER_RESPONSE_TOO_LARGE" });
+	});
 
 	it("classifies every HTTP status family and retry policy", () => {
 		const cases = [

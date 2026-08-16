@@ -1,5 +1,5 @@
 import { logEvent } from "../../../lib/logger";
-import * as repo from "../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 import type { RuntimeContractWarningSeverity } from "./shared";
 import type { AgentRuntimeEvent, AgentRuntimeSink } from "./types";
 
@@ -123,7 +123,7 @@ export function createLedgerSink(taskRunId: string): AgentRuntimeSink {
 			const mapped = EVENT_MAPPING[event.type];
 			const canonicalType = resolveCanonicalEventType(event, mapped);
 			try {
-				await repo.createRunEvent({
+				await requireCodingAgentHost().runJournal.appendRunEvent({
 					version: 1,
 					runId: taskRunId,
 					timestamp: new Date().toISOString(),

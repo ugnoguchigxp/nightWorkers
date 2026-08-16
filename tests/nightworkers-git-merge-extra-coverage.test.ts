@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { GitCliError } from "../api/modules/gitworktree/gitworktree-cli";
 import {
 	createMergeRecordForCommittedRun,
 	deferTaskRunMerge,
@@ -33,6 +34,10 @@ const mocks = vi.hoisted(() => {
 			return { stdout: "" };
 		},
 	);
+	const gitCommandRunner = vi.fn(async (args: string[], options?: unknown) => {
+		const result = await execFileAsync("git", args, options);
+		return { ...result, stderr: "", exitCode: 0 };
+	});
 	const db = {
 		select: vi.fn(() => ({
 			from: vi.fn(() => ({
@@ -65,6 +70,7 @@ const mocks = vi.hoisted(() => {
 	return {
 		state,
 		execFileAsync,
+		gitCommandRunner,
 		db,
 		getMergeRecord,
 		createMergeRecord,
@@ -83,6 +89,15 @@ vi.mock("node:util", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:util")>();
 	return { ...actual, promisify: vi.fn(() => mocks.execFileAsync) };
 });
+vi.mock(
+	"../api/modules/gitworktree/gitworktree-cli",
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../api/modules/gitworktree/gitworktree-cli")
+		>()),
+		runGitCommand: mocks.gitCommandRunner,
+	}),
+);
 vi.mock("../api/db/client", () => ({ db: mocks.db }));
 vi.mock("../api/modules/gitCloseout/closeout-admission.service", () => ({
 	admitCloseout: mocks.admit,
@@ -462,9 +477,13 @@ describe("previewTaskRunMerge", () => {
 	it("captures conflict paths with missing stdout/stderr fallbacks", async () => {
 		preparePreview();
 		queueCommand(["merge-tree", "--write-tree", "target-sha", "source-sha"], {
-			reject: {
-				stdout: "CONFLICT content in src/a.ts\nCONFLICT rename in src/b.ts\n",
-			},
+			reject: new GitCliError(
+				"git_command_failed",
+				"merge conflict",
+				"",
+				1,
+				"CONFLICT content in src/a.ts\nCONFLICT rename in src/b.ts\n",
+			),
 		});
 
 		const result = await previewTaskRunMerge({ runId, expectedVersion: 4 });
@@ -475,7 +494,7 @@ describe("previewTaskRunMerge", () => {
 
 		preparePreview();
 		queueCommand(["merge-tree", "--write-tree", "target-sha", "source-sha"], {
-			reject: {},
+			reject: new GitCliError("git_command_failed", "merge conflict"),
 		});
 		const empty = await previewTaskRunMerge({ runId, expectedVersion: 4 });
 		expect(empty).toMatchObject({ conflictPathsJson: [] });

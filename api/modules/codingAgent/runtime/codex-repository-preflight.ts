@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { promisify } from "node:util";
 import type { RuntimePromptSnapshot } from "../../../services/todo-context";
 import { STARTER_STACKS } from "../../../services/worker-tools/template-registry";
-import * as repo from "../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../ports/coding-agent-host.binding";
 
 const execFileAsync = promisify(execFile);
 const DIRECTORY_ENTRY_PAGE_LIMIT = 200;
@@ -107,8 +107,18 @@ export async function prepareCodexRepositoryRuntimeContext(input: {
 		...input.contextSnapshot,
 		repositoryPreflight,
 	};
-	await repo.updateTaskRun(input.runId, { contextSnapshot });
-	await repo.createRunEvent({
+	const host = requireCodingAgentHost();
+	const current = await host.runReader.getRun(input.runId);
+	if (!current) throw new Error("CODEX_REPOSITORY_PREFLIGHT_RUN_NOT_FOUND");
+	const updated = await host.runLifecycle.updateRunContext({
+		runId: input.runId,
+		expectedUpdatedAt: current.updatedAt,
+		expectedStatuses: [current.status],
+		contextSnapshot,
+	});
+	if (updated.kind !== "applied")
+		throw new Error("CODEX_REPOSITORY_PREFLIGHT_CONTEXT_CONFLICT");
+	await host.runJournal.appendRunEvent({
 		version: 1,
 		runId: input.runId,
 		taskId: input.taskId,

@@ -34,6 +34,7 @@ import {
 	missionPilotSessions,
 	missionPilotToolCalls,
 } from "../api/modules/missionPilot/persistence";
+import { StructuredProviderError } from "../api/services/structured-llm/provider-failure";
 import {
 	bindSystemContextCatalogSnapshot,
 	systemContextPromptAudit,
@@ -88,6 +89,53 @@ async function fixture() {
 const readPort: MissionPilotTaskReadPort = missionPilotTaskReadPort;
 
 describe("Mission Pilot persistent agent runtime", () => {
+	it("persists a typed invalid provider response with sanitized diagnostics", async () => {
+		const fixtureState = await fixture();
+		const result = await runMissionPilotAgentWake(
+			{ sessionId: fixtureState.sessionId },
+			{
+				readPort,
+				provider: {
+					nextTurn: async () => {
+						throw new StructuredProviderError({
+							kind: "invalid_response",
+							message: "Provider returned invalid tool arguments.",
+							code: "INVALID_TOOL_ARGUMENTS",
+							retryable: false,
+							providerBody:
+								'{"rawArguments":"{\\"limit\\":101}","authorization":"Bearer provider-secret"}',
+						});
+					},
+				},
+			},
+		);
+		expect(result).toMatchObject({
+			kind: "attention",
+			failure: {
+				kind: "invalid_response",
+				providerCode: "INVALID_TOOL_ARGUMENTS",
+				details: {
+					providerBody: expect.stringContaining(
+						'"rawArguments":"{\\"limit\\":101}"',
+					),
+				},
+			},
+		});
+		const items = await listMissionPilotConversation(fixtureState.sessionId);
+		const failure = items.find((item) => item.kind === "runtime_failure");
+		expect(failure?.bodyJson).toMatchObject({
+			failure: {
+				kind: "invalid_response",
+				details: {
+					providerBody: expect.stringContaining(
+						'"rawArguments":"{\\"limit\\":101}"',
+					),
+				},
+			},
+		});
+		expect(JSON.stringify(failure?.bodyJson)).toContain("[REDACTED]");
+	});
+
 	it("keeps an assistant-only turn as waiting and preserves the same logical session", async () => {
 		const fixtureState = await fixture();
 		const requestId = crypto.randomUUID();

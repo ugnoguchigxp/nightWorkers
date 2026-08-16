@@ -1,6 +1,6 @@
 import { recordLlmUsage } from "../../../../services/llm-usage";
 import { callProviderToolTurn } from "../../../../services/structured-llm/providers";
-import * as repo from "../../../nightworkers/nightworkers.repository";
+import { requireCodingAgentHost } from "../../ports/coding-agent-host.binding";
 import type {
 	AgentRunContext,
 	AgentRuntimeResult,
@@ -138,7 +138,7 @@ export class NativeApiRunner {
 	private async isCancelled(runId: string, signal?: AbortSignal) {
 		if (signal?.aborted || this.cancelledRunIds.has(runId)) return true;
 		try {
-			const run = await repo.getTaskRun(runId);
+			const run = await requireCodingAgentHost().runReader.getRun(runId);
 			if (run?.status === "cancelled") {
 				this.cancelledRunIds.add(runId);
 				return true;

@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { applyAppLanguage } from "../../i18n/I18nProvider";
+import { ApiResponseError, readJsonResponse } from "../../lib/api-error";
 import {
 	AppearanceSettings,
 	createBlueprintPreviewDesignSettings,
@@ -24,15 +26,22 @@ import {
 	SettingsProjectExplorationPanel,
 } from "../ontology";
 import { SettingsVulnerabilityScanProviderPanel } from "../securityScan";
+import {
+	llmSettingsQueryKeys,
+	llmSettingsQueryOptions,
+	readNormalizedLlmSettings,
+} from "./llm-settings-query";
 import { GeneralSettingsPanel } from "./SettingsGeneralPanel";
 import { SettingsLlmPanel } from "./SettingsLlmPanel";
 import { SettingsPlanModePanel } from "./SettingsPlanModePanel";
 import { SettingsSaveActions } from "./SettingsSaveActions";
 import { defaultSettings } from "./settings-defaults";
 import {
-	fetchFxRates,
-	fetchGeneralSettings,
-	fetchLlmSettings,
+	fxRateCacheQueryOptions,
+	generalSettingsQueryOptions,
+	settingsResourceQueryKeys,
+} from "./settings-resource-queries";
+import {
 	refreshFxRates as refreshFxRatesCommand,
 	saveGeneralSettings as saveGeneralSettingsCommand,
 	saveLlmSettings,
@@ -60,12 +69,14 @@ export function SettingsScreen({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const queryClient = useQueryClient();
+	const llmSettingsQuery = useQuery(llmSettingsQueryOptions());
+	const generalSettingsQuery = useQuery(generalSettingsQueryOptions());
+	const fxRateCacheQuery = useQuery(fxRateCacheQueryOptions());
 	const [settings, setSettings] = useState<LlmSettings>(defaultSettings);
 	const [generalSettings, setGeneralSettings] = useState<GeneralSettings>(
 		defaultGeneralSettings,
 	);
-	const [fxRateCache, setFxRateCache] = useState<FxRateCache | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
 	const [llmSaveStatus, setLlmSaveStatus] =
 		useState<SaveFeedbackStatus>("idle");
@@ -99,6 +110,9 @@ export function SettingsScreen({
 	const [appearanceMessage, setAppearanceMessage] = useState("");
 	const [appearanceMessageStatus, setAppearanceMessageStatus] =
 		useState<SaveFeedbackStatus>("idle");
+	const [isLlmDraftInitialized, setIsLlmDraftInitialized] = useState(false);
+	const [isLlmDraftDirty, setIsLlmDraftDirty] = useState(false);
+	const generalDraftStateRef = useRef({ initialized: false, dirty: false });
 	const {
 		applyAppearanceSettings,
 		saveAppearanceSettings: persistAppearanceSettings,
@@ -115,24 +129,18 @@ export function SettingsScreen({
 	const ActiveSectionIcon = activeSectionMeta.icon;
 
 	useEffect(() => {
-		Promise.all([
-			fetchLlmSettings().then((res) => res.json()),
-			fetchGeneralSettings().then((res) => res.json()),
-			fetchFxRates().then((res) => (res.ok ? res.json() : null)),
-		])
-			.then(
-				([llmData, generalData, fxData]: [
-					Partial<LlmSettings>,
-					Partial<GeneralSettings>,
-					FxRateCache | null,
-				]) => {
-					setSettings({ ...defaultSettings, ...llmData });
-					setGeneralSettings(mergeGeneralSettings(generalData));
-					setFxRateCache(fxData);
-				},
-			)
-			.finally(() => setIsLoading(false));
-	}, []);
+		if (!llmSettingsQuery.data || (isLlmDraftInitialized && isLlmDraftDirty))
+			return;
+		setSettings(llmSettingsQuery.data);
+		if (!isLlmDraftInitialized) setIsLlmDraftInitialized(true);
+	}, [isLlmDraftDirty, isLlmDraftInitialized, llmSettingsQuery.data]);
+
+	useEffect(() => {
+		if (!generalSettingsQuery.data || generalDraftStateRef.current.dirty)
+			return;
+		setGeneralSettings(generalSettingsQuery.data);
+		generalDraftStateRef.current.initialized = true;
+	}, [generalSettingsQuery.data]);
 
 	const handleSave = async () => {
 		setIsSaving(true);
@@ -140,17 +148,21 @@ export function SettingsScreen({
 		setLlmSaveMessage("");
 		try {
 			const res = await saveLlmSettings(settings);
-			if (!res.ok) {
-				throw new Error(
-					t("settings.saveFailedWithStatus", { status: res.status }),
-				);
-			}
-			setSettings(settings);
+			const saved = await readNormalizedLlmSettings(res);
+			queryClient.setQueryData(llmSettingsQueryKeys.settings, saved);
+			setSettings(saved);
+			setIsLlmDraftDirty(false);
 			setLlmSaveStatus("success");
 			setLlmSaveMessage(t("settings.saveSucceeded"));
 		} catch (err) {
 			setLlmSaveStatus("error");
-			setLlmSaveMessage(err instanceof Error ? err.message : String(err));
+			setLlmSaveMessage(
+				err instanceof ApiResponseError
+					? t("settings.saveFailedWithStatus", { status: err.status })
+					: err instanceof Error
+						? err.message
+						: String(err),
+			);
 		} finally {
 			setIsSaving(false);
 		}
@@ -162,6 +174,7 @@ export function SettingsScreen({
 	) => {
 		setLlmSaveStatus("idle");
 		setLlmSaveMessage("");
+		setIsLlmDraftDirty(true);
 		setSettings((prev) => ({ ...prev, [key]: value }));
 	};
 
@@ -170,24 +183,24 @@ export function SettingsScreen({
 		setGeneralMessage("");
 		setGeneralMessageStatus("idle");
 		try {
-			const res = await saveGeneralSettingsCommand(generalSettings);
-			if (!res.ok) {
-				setGeneralMessage(t("settings.general.saveFailed"));
-				setGeneralMessageStatus("error");
-				return;
-			}
 			const saved = mergeGeneralSettings(
-				(await res.json()) as Partial<GeneralSettings>,
+				await readJsonResponse<Partial<GeneralSettings>>(
+					await saveGeneralSettingsCommand(generalSettings),
+				),
 			);
 			setGeneralSettings(saved);
+			queryClient.setQueryData(settingsResourceQueryKeys.general, saved);
+			generalDraftStateRef.current.dirty = false;
 			void applyAppLanguage(saved.language);
 			setGeneralMessage(t("settings.general.saveSucceeded"));
 			setGeneralMessageStatus("success");
 		} catch (error) {
 			setGeneralMessage(
-				error instanceof Error
-					? error.message
-					: t("settings.general.saveFailed"),
+				error instanceof ApiResponseError
+					? t("settings.general.saveFailed")
+					: error instanceof Error
+						? error.message
+						: t("settings.general.saveFailed"),
 			);
 			setGeneralMessageStatus("error");
 		} finally {
@@ -200,14 +213,10 @@ export function SettingsScreen({
 		setGeneralMessage("");
 		setGeneralMessageStatus("idle");
 		try {
-			const res = await refreshFxRatesCommand();
-			if (!res.ok) {
-				throw new Error(
-					t("settings.general.exchangeRefreshFailed", { status: res.status }),
-				);
-			}
-			const cache = (await res.json()) as FxRateCache;
-			setFxRateCache(cache);
+			const cache = await readJsonResponse<FxRateCache>(
+				await refreshFxRatesCommand(),
+			);
+			queryClient.setQueryData(settingsResourceQueryKeys.fxRates, cache);
 			setGeneralSettings((prev) => ({
 				...prev,
 				fx: { ...prev.fx, source: "ecb", lastRefreshedAt: cache.fetchedAt },
@@ -215,12 +224,68 @@ export function SettingsScreen({
 			setGeneralMessage(t("settings.general.exchangeRefreshSucceeded"));
 			setGeneralMessageStatus("success");
 		} catch (err) {
-			setGeneralMessage(err instanceof Error ? err.message : String(err));
+			setGeneralMessage(
+				err instanceof ApiResponseError
+					? t("settings.general.exchangeRefreshFailed", {
+							status: err.status,
+						})
+					: err instanceof Error
+						? err.message
+						: String(err),
+			);
 			setGeneralMessageStatus("error");
 		} finally {
 			setIsRefreshingFx(false);
 		}
 	};
+
+	const onGeneralSettingsChange = (next: GeneralSettings) => {
+		generalDraftStateRef.current.dirty = true;
+		setGeneralSettings(next);
+	};
+
+	const renderGeneralResourceErrors = () => (
+		<>
+			{generalSettingsQuery.isError ? (
+				<div
+					className="rounded-lg border border-rose-500/50 bg-rose-950/30 p-3 text-sm text-rose-100"
+					role="alert"
+				>
+					<span>
+						{generalSettingsQuery.error instanceof Error
+							? generalSettingsQuery.error.message
+							: t("settings.general.loadFailed")}
+					</span>
+					<button
+						type="button"
+						className="ml-3 underline"
+						onClick={() => void generalSettingsQuery.refetch()}
+					>
+						{t("settings.general.retry")}
+					</button>
+				</div>
+			) : null}
+			{fxRateCacheQuery.isError ? (
+				<div
+					className="rounded-lg border border-amber-500/50 bg-amber-950/30 p-3 text-sm text-amber-100"
+					role="alert"
+				>
+					<span>
+						{fxRateCacheQuery.error instanceof Error
+							? fxRateCacheQuery.error.message
+							: t("settings.general.fxLoadFailed")}
+					</span>
+					<button
+						type="button"
+						className="ml-3 underline"
+						onClick={() => void fxRateCacheQuery.refetch()}
+					>
+						{t("settings.general.retry")}
+					</button>
+				</div>
+			) : null}
+		</>
+	);
 
 	const saveAppearanceSettings = () => {
 		persistAppearanceSettings(appearanceDraft);
@@ -265,10 +330,30 @@ export function SettingsScreen({
 		</>
 	);
 
-	if (isLoading) {
+	if (llmSettingsQuery.isPending) {
 		return (
-			<div className="flex flex-1 items-center justify-center bg-[#121214] text-zinc-500">
-				設定をロード中...
+			<div
+				className="flex flex-1 items-center justify-center bg-[#121214] text-zinc-500"
+				aria-busy="true"
+			>
+				{t("settings.loading")}
+			</div>
+		);
+	}
+	if (llmSettingsQuery.isError && !isLlmDraftInitialized) {
+		return (
+			<div
+				className="flex flex-1 flex-col items-center justify-center gap-3 bg-[#121214] text-zinc-300"
+				role="alert"
+			>
+				<span>
+					{llmSettingsQuery.error instanceof Error
+						? llmSettingsQuery.error.message
+						: t("settings.saveFailed")}
+				</span>
+				<button type="button" onClick={() => void llmSettingsQuery.refetch()}>
+					{t("common.retry")}
+				</button>
 			</div>
 		);
 	}
@@ -341,6 +426,7 @@ export function SettingsScreen({
 
 					{activeSection === "general" ? (
 						<>
+							{renderGeneralResourceErrors()}
 							<SettingsSaveActions
 								onSave={() => void saveGeneralSettings()}
 								isSaving={isSavingGeneral}
@@ -349,9 +435,9 @@ export function SettingsScreen({
 							/>
 							<GeneralSettingsPanel
 								value={generalSettings}
-								fxCache={fxRateCache}
+								fxCache={fxRateCacheQuery.data ?? null}
 								isRefreshingFx={isRefreshingFx}
-								onChange={setGeneralSettings}
+								onChange={onGeneralSettingsChange}
 								onRefreshFx={() => void refreshFxRates()}
 							/>
 							<SettingsSaveActions
@@ -365,6 +451,7 @@ export function SettingsScreen({
 
 					{activeSection === "plan-mode" ? (
 						<>
+							{renderGeneralResourceErrors()}
 							<SettingsSaveActions
 								onSave={() => void saveGeneralSettings()}
 								isSaving={isSavingGeneral}
@@ -373,7 +460,7 @@ export function SettingsScreen({
 							/>
 							<SettingsPlanModePanel
 								value={generalSettings}
-								onChange={setGeneralSettings}
+								onChange={onGeneralSettingsChange}
 							/>
 							<SettingsSaveActions
 								onSave={() => void saveGeneralSettings()}

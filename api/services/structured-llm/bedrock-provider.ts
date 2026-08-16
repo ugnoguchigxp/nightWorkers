@@ -13,6 +13,7 @@ import {
 	getStructuredLlmSetting,
 	type readStructuredLlmProviderSettings,
 } from "./settings";
+import { decodeProviderToolCalls } from "./tool-argument-codec";
 import type { ProviderToolMessage, ProviderToolTurnResult } from "./tool-calls";
 import type { ProviderCallResult } from "./types";
 
@@ -201,20 +202,22 @@ export async function callBedrockProviderToolTurn(
 	const content = blocks
 		.flatMap((block) => (typeof block.text === "string" ? [block.text] : []))
 		.join("\n");
-	const toolCalls = blocks.flatMap((block) => {
-		const toolUse = block.toolUse;
-		if (!toolUse?.toolUseId || !toolUse.name) return [];
-		const rawInput = toolUse.input;
-		return [
-			{
-				id: toolUse.toolUseId,
-				name: toolUse.name,
-				arguments:
-					rawInput && typeof rawInput === "object" && !Array.isArray(rawInput)
-						? (rawInput as Record<string, unknown>)
-						: { _raw: rawInput },
-			},
-		];
+	const toolCalls = decodeProviderToolCalls({
+		provider: "Bedrock",
+		calls: blocks.flatMap((block, index) => {
+			const toolUse = block.toolUse;
+			if (!toolUse) return [];
+			return [
+				{
+					id: toolUse.toolUseId || `bedrock_call_${index}`,
+					name: toolUse.name || "<missing>",
+					arguments: toolUse.input,
+				},
+			];
+		}),
+		tools: input.tools,
+		content,
+		responseBody: JSON.stringify(res.output?.message?.content ?? []),
 	});
 	const usage = readProviderUsage(res);
 	const providerDebug = {

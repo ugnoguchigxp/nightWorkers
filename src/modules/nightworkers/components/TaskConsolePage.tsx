@@ -1,44 +1,54 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-	Check,
-	GitPullRequest,
-	MessageSquare,
-	Play,
-	RefreshCw,
-	Shield,
-	ShieldAlert,
-	Terminal,
-} from "lucide-react";
+import { Check, RefreshCw, Shield, Terminal } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
-import { sanitizeTerminalText } from "@/modules/nightworkers/components/terminalText";
 import { client } from "../../../lib/api";
+import { readJsonResponse } from "../../../lib/api-error";
 import {
 	useCodingAgentCommandClient,
 	useCodingAgentCommandMutations,
 } from "../../codingAgent";
 import { taskOperatorProjectionQueryOptions } from "../../taskOperator";
-import { apiPath } from "../nightWorkersCommands";
+import { reviewTaskRun } from "../nightWorkersCommands";
 import { getActiveNightWorkersRealtimeConnection } from "../realtime/nightWorkersRealtimeConnection";
+import type { Repository, Task, TaskRun } from "../types";
 import {
-	getTaskConsoleStatusColor,
-	getTaskConsoleStatusLabel,
+	TaskConsoleHeader,
+	TaskConsoleSidebar,
+} from "./TaskConsoleTaskSummary";
+import {
 	isRecord,
+	shouldPollTaskConsoleStatus,
+	type TaskConsoleRunDetails,
 } from "./task-console-model";
+import { sanitizeTerminalText } from "./terminalText";
+
 export function TaskConsolePage({ id }: { id: string }) {
+	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const codingAgentCommandClient = useCodingAgentCommandClient(
 		getActiveNightWorkersRealtimeConnection,
 	);
 	const [activeTab, setActiveTab] = useState<"log" | "diff">("log");
-	const { data: task, isLoading: isTaskLoading } = useQuery({
+	const {
+		data: task,
+		isLoading: isTaskLoading,
+		isError: isTaskError,
+		error: taskError,
+		refetch: refetchTask,
+	} = useQuery({
 		queryKey: ["task", id],
 		queryFn: async () => {
 			const res = await client.tasks[":id"].$get({ param: { id } });
-			if (!res.ok) throw new Error("Failed to fetch task");
-			return res.json();
+			return readJsonResponse<Task>(res);
 		},
-		refetchInterval: 3000,
+		refetchInterval: (query) =>
+			shouldPollTaskConsoleStatus(
+				(query.state.data as { status?: string } | undefined)?.status,
+			)
+				? 3000
+				: false,
 	});
 	const { data: repo } = useQuery({
 		queryKey: ["repository", task?.repositoryId],
@@ -47,19 +57,28 @@ export function TaskConsolePage({ id }: { id: string }) {
 			const res = await client.repositories[":id"].$get({
 				param: { id: task.repositoryId },
 			});
-			if (!res.ok) throw new Error("Failed to fetch repository");
-			return res.json();
+			return readJsonResponse<Repository>(res);
 		},
 		enabled: !!task?.repositoryId,
 	});
-	const { data: runs = [] } = useQuery({
+	const {
+		data: runs = [],
+		isError: isRunsError,
+		error: runsError,
+		refetch: refetchRuns,
+	} = useQuery({
 		queryKey: ["taskRuns", id],
 		queryFn: async () => {
 			const res = await client.tasks[":id"].runs.$get({ param: { id } });
-			if (!res.ok) throw new Error("Failed to fetch task runs");
-			return res.json();
+			return readJsonResponse<TaskRun[]>(res);
 		},
-		refetchInterval: 3000,
+		refetchInterval: (query) =>
+			shouldPollTaskConsoleStatus(
+				(query.state.data as Array<{ status?: string }> | undefined)?.[0]
+					?.status,
+			) || shouldPollTaskConsoleStatus(task?.status)
+				? 3000
+				: false,
 	});
 	const { data: taskOperatorView = null } = useQuery(
 		taskOperatorProjectionQueryOptions(id),
@@ -67,18 +86,27 @@ export function TaskConsolePage({ id }: { id: string }) {
 
 	const activeRun = runs[0];
 
-	const { data: runDetails } = useQuery({
+	const {
+		data: runDetails,
+		isError: isRunDetailsError,
+		error: runDetailsError,
+		refetch: refetchRunDetails,
+	} = useQuery({
 		queryKey: ["runDetails", activeRun?.id],
 		queryFn: async () => {
 			if (!activeRun?.id) return null;
 			const res = await client.runs[":id"].$get({
 				param: { id: activeRun.id },
 			});
-			if (!res.ok) throw new Error("Failed to fetch run details");
-			return res.json();
+			return readJsonResponse<TaskConsoleRunDetails>(res);
 		},
 		enabled: !!activeRun?.id,
-		refetchInterval: 1500,
+		refetchInterval: (query) =>
+			shouldPollTaskConsoleStatus(
+				(query.state.data as { status?: string } | undefined)?.status,
+			)
+				? 1500
+				: false,
 	});
 
 	const { startRunMutation } = useCodingAgentCommandMutations({
@@ -101,134 +129,84 @@ export function TaskConsolePage({ id }: { id: string }) {
 			action: "complete" | "cancel";
 			note?: string;
 		}) => {
-			const res = await fetch(apiPath(`/api/runs/${activeRun?.id}/review`), {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(data),
-			});
-			if (!res.ok) throw new Error("Failed to submit review");
-			return res.json();
+			if (!activeRun?.id) throw new Error("No active Run to review");
+			return readJsonResponse(await reviewTaskRun(activeRun.id, data));
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["task", id] });
 			queryClient.invalidateQueries({ queryKey: ["taskRuns", id] });
+			if (activeRun?.id)
+				queryClient.invalidateQueries({
+					queryKey: ["runDetails", activeRun.id],
+				});
 		},
 	});
 
-	if (isTaskLoading || !task) {
+	if (isTaskLoading) {
 		return (
 			<div className="flex items-center justify-center min-h-[50vh]">
 				<RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
 			</div>
 		);
 	}
+	const queryError =
+		(isTaskError && taskError) ||
+		(isRunsError && runsError) ||
+		(isRunDetailsError && runDetailsError);
+	if (queryError) {
+		return (
+			<div
+				className="flex min-h-[50vh] flex-col items-center justify-center gap-3"
+				role="alert"
+			>
+				<span>
+					{queryError instanceof Error
+						? queryError.message
+						: t("taskConsole.loadFailed")}
+				</span>
+				<button
+					type="button"
+					onClick={() => {
+						void refetchTask();
+						void refetchRuns();
+						void refetchRunDetails();
+					}}
+				>
+					{t("taskConsole.retry")}
+				</button>
+			</div>
+		);
+	}
+	if (!task) {
+		return (
+			<div className="flex min-h-[50vh] items-center justify-center">
+				{t("taskConsole.notFound")}
+			</div>
+		);
+	}
 
 	return (
 		<div className="max-w-7xl mx-auto px-6 py-8">
-			<div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6 mb-8">
-				<div>
-					<div className="flex items-center gap-3 mb-1">
-						<span
-							className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${getTaskConsoleStatusColor(task.status)}`}
-						>
-							{getTaskConsoleStatusLabel(task.status)}
-						</span>
-						<span className="text-xs text-muted-foreground font-mono">
-							ID: {task.id.slice(0, 8)}
-						</span>
-					</div>
-					<h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-						{task.title}
-					</h1>
-					{repo && (
-						<p className="text-sm text-muted-foreground mt-1">
-							Repository:{" "}
-							<span className="font-mono">
-								{repo.name} ({repo.localPath})
-							</span>
-						</p>
-					)}
-				</div>
-
-				<div className="flex items-center gap-2">
-					{![
-						"running",
-						"context_compiling",
-						"compiling_context",
-						"finalizing",
-					].includes(task.status) && (
-						<Button
-							onClick={() => {
-								if (!taskOperatorView) return;
-								startRunMutation.mutate({
-									taskId: id,
-									expectedTaskRevision: taskOperatorView.task.revision,
-								});
-							}}
-							disabled={
-								startRunMutation.isPending ||
-								!taskOperatorView?.commandCatalog.availableIds.includes(
-									"run.implementation.start",
-								)
-							}
-							className="gap-1.5"
-						>
-							<Play className="h-4 w-4 fill-current" />
-							Re-run Agent
-						</Button>
-					)}
-				</div>
-			</div>
+			<TaskConsoleHeader
+				task={task}
+				repository={repo}
+				canStart={Boolean(
+					taskOperatorView?.commandCatalog.availableIds.includes(
+						"run.implementation.start",
+					),
+				)}
+				isStarting={startRunMutation.isPending}
+				onStart={() => {
+					if (!taskOperatorView) return;
+					startRunMutation.mutate({
+						taskId: id,
+						expectedTaskRevision: taskOperatorView.task.revision,
+					});
+				}}
+			/>
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-				<div className="space-y-6 lg:col-span-1">
-					<div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-						<h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
-							<GitPullRequest className="h-5 w-5 text-primary" />
-							Goal & Instructions
-						</h2>
-						<div className="text-sm text-muted-foreground bg-background/50 rounded-lg p-3 border border-border/60 min-h-[100px] whitespace-pre-wrap">
-							{task.description || "No instruction description provided."}
-						</div>
-					</div>
-
-					<div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-						<h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
-							<MessageSquare className="h-5 w-5 text-cyan-400" />
-							Runtime Prompt
-						</h2>
-						<p className="text-xs text-muted-foreground mb-2">
-							Prompt snapshot used for execution:
-						</p>
-						<div className="text-xs text-muted-foreground bg-background/50 rounded-lg p-3 border border-border/60 font-mono min-h-[100px] max-h-[250px] overflow-y-auto whitespace-pre-wrap">
-							{task.compiledPrompt ||
-								"(No runtime prompt snapshot yet. Run the agent first.)"}
-						</div>
-					</div>
-
-					<div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-						<h2 className="text-lg font-bold mb-3 text-foreground flex items-center gap-2">
-							<ShieldAlert className="h-5 w-5 text-amber-400" />
-							Execution Boundaries
-						</h2>
-						<div className="space-y-2 text-sm text-muted-foreground">
-							<div className="flex justify-between border-b border-border/50 pb-1">
-								<span>Timeout</span>
-								<span className="font-mono">{task.timeoutSeconds}s</span>
-							</div>
-							<div className="flex justify-between border-b border-border/50 pb-1">
-								<span>Safe Mode</span>
-								<span className="text-emerald-400">
-									Command blocklists active
-								</span>
-							</div>
-							<div className="flex justify-between">
-								<span>Memory Loop</span>
-								<span className="text-cyan-400">Post-evaluation active</span>
-							</div>
-						</div>
-					</div>
-				</div>
+				<TaskConsoleSidebar task={task} />
 
 				<div className="lg:col-span-2 flex flex-col min-h-[500px]">
 					<div className="flex items-center justify-between border-b border-border mb-4">
@@ -242,7 +220,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 										: "border-transparent text-muted-foreground hover:text-foreground"
 								}`}
 							>
-								Agent Terminal Console
+								{t("taskConsole.logTab")}
 							</button>
 							<button
 								type="button"
@@ -253,12 +231,14 @@ export function TaskConsolePage({ id }: { id: string }) {
 										: "border-transparent text-muted-foreground hover:text-foreground"
 								}`}
 							>
-								Review Diffs
+								{t("taskConsole.diffTab")}
 							</button>
 						</div>
 						{runDetails?.endedAt && (
 							<span className="text-xs text-muted-foreground">
-								Ended: {new Date(runDetails.endedAt).toLocaleTimeString()}
+								{t("taskConsole.ended", {
+									time: new Date(runDetails.endedAt).toLocaleTimeString(),
+								})}
 							</span>
 						)}
 					</div>
@@ -267,29 +247,36 @@ export function TaskConsolePage({ id }: { id: string }) {
 						<div className="flex-1 bg-black border border-zinc-800 rounded-xl p-5 shadow-2xl font-mono text-xs text-zinc-300 overflow-y-auto max-h-[500px] flex flex-col justify-between">
 							<div className="space-y-4">
 								<div className="text-zinc-500 flex justify-between border-b border-zinc-900 pb-2 mb-2">
-									<span>SYSTEM: Native Local Worker Active</span>
+									<span>{t("taskConsole.localWorkerActive")}</span>
 									<span className="animate-pulse text-cyan-400">
-										● LIVE MONITORING
+										● {t("taskConsole.monitoring")}
 									</span>
 								</div>
 
 								{runDetails?.events && runDetails.events.length > 0 ? (
 									runDetails.events.map((evt) => {
-										const payload = isRecord(evt.payloadJson)
+										const payload: Record<string, unknown> = isRecord(
+											evt.payloadJson,
+										)
 											? evt.payloadJson
 											: {};
-										const runEvent = isRecord(payload.runEvent)
+										const runEvent: Record<string, unknown> = isRecord(
+											payload.runEvent,
+										)
 											? payload.runEvent
 											: {};
-										const runEventData = isRecord(runEvent.data)
+										const runEventData: Record<string, unknown> = isRecord(
+											runEvent.data,
+										)
 											? runEvent.data
 											: {};
-										const nestedPayload = isRecord(payload.payload)
+										const nestedPayload: Record<string, unknown> = isRecord(
+											payload.payload,
+										)
 											? payload.payload
 											: {};
-										const payloadError = isRecord(payload.error)
-											? payload.error
-											: null;
+										const payloadError: Record<string, unknown> | null =
+											isRecord(payload.error) ? payload.error : null;
 										const expectedEvidence = Array.isArray(
 											payload.expectedEvidence,
 										)
@@ -318,7 +305,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 												>
 													<div className="flex items-center gap-2 text-cyan-300 font-semibold">
 														<RefreshCw className="h-3.5 w-3.5 animate-spin" />
-														<span>OpenAI stream</span>
+														<span>{t("taskConsole.modelStream")}</span>
 														<span className="text-[10px] text-zinc-500 font-mono">
 															[{new Date(evt.timestamp).toLocaleTimeString()}]
 														</span>
@@ -339,8 +326,12 @@ export function TaskConsolePage({ id }: { id: string }) {
 													<div className="flex items-center gap-2 text-amber-400 font-bold">
 														<Shield className="h-4 w-4" />
 														<span>
-															Supervisor: Phase{" "}
-															{String(payload.phase || "Plan")}
+															{t("taskConsole.supervisorPhase", {
+																phase: String(
+																	payload.phase ||
+																		t("taskConsole.defaultPhase"),
+																),
+															})}
 														</span>
 														<span className="text-[10px] text-zinc-500 font-mono">
 															[{new Date(evt.timestamp).toLocaleTimeString()}]
@@ -352,14 +343,15 @@ export function TaskConsolePage({ id }: { id: string }) {
 															"",
 														)}
 													</p>
-													{payload.rationale && (
+													{Boolean(payload.rationale) && (
 														<p className="text-[11px] text-amber-300/80 italic font-sans">
-															Rationale: {String(payload.rationale)}
+															{t("taskConsole.rationale")}:{" "}
+															{String(payload.rationale)}
 														</p>
 													)}
 													{expectedEvidence.length > 0 && (
 														<div className="text-[10px] text-zinc-400 font-sans">
-															Expected Evidence:{" "}
+															{t("taskConsole.expectedEvidence")}:{" "}
 															{expectedEvidence
 																.map((e) => `"${String(e)}"`)
 																.join(", ")}
@@ -378,14 +370,15 @@ export function TaskConsolePage({ id }: { id: string }) {
 													<div className="flex items-center gap-2 text-blue-400 font-semibold">
 														<Terminal className="h-3.5 w-3.5" />
 														<span>
-															Worker: Running tool "
-															{String(payload.toolName || "")}"
+															{t("taskConsole.workerRunningTool", {
+																toolName: String(payload.toolName || ""),
+															})}
 														</span>
 														<span className="text-[10px] text-zinc-500 font-mono">
 															[{new Date(evt.timestamp).toLocaleTimeString()}]
 														</span>
 													</div>
-													{payload.arguments && (
+													{Boolean(payload.arguments) && (
 														<pre className="text-[10px] text-zinc-400 bg-zinc-950 p-2 rounded border border-zinc-900 overflow-x-auto max-w-full">
 															{JSON.stringify(payload.arguments, null, 2)}
 														</pre>
@@ -412,8 +405,14 @@ export function TaskConsolePage({ id }: { id: string }) {
 													>
 														<Check className="h-3.5 w-3.5" />
 														<span>
-															Worker: Tool "{String(payload.toolName || "")}"{" "}
-															{isSuccess ? "success" : "failed"}
+															{t("taskConsole.workerToolResult", {
+																toolName: String(payload.toolName || ""),
+																result: t(
+																	isSuccess
+																		? "taskConsole.toolSucceeded"
+																		: "taskConsole.toolFailed",
+																),
+															})}
 														</span>
 														<span className="text-[10px] text-zinc-500 font-mono">
 															[{new Date(evt.timestamp).toLocaleTimeString()}]
@@ -442,7 +441,8 @@ export function TaskConsolePage({ id }: { id: string }) {
 													)}
 													{payloadError && (
 														<p className="text-[11px] text-rose-300 font-sans">
-															Error: {String(payloadError.message || "")}
+															{t("taskConsole.error")}:{" "}
+															{String(payloadError.message || "")}
 														</p>
 													)}
 												</div>
@@ -457,7 +457,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 												>
 													<div className="flex items-center gap-2 text-purple-400 font-bold">
 														<Check className="h-4 w-4" />
-														<span>Execution Final Report</span>
+														<span>{t("taskConsole.finalReport")}</span>
 														<span className="text-[10px] text-zinc-500 font-mono">
 															[{new Date(evt.timestamp).toLocaleTimeString()}]
 														</span>
@@ -465,10 +465,10 @@ export function TaskConsolePage({ id }: { id: string }) {
 													<p className="text-zinc-200 text-sm whitespace-pre-wrap font-sans">
 														{String(payload.finalReport || evt.message)}
 													</p>
-													{payload.diffStat && (
+													{Boolean(payload.diffStat) && (
 														<div>
 															<span className="text-xs text-purple-300 font-bold">
-																Change stats:
+																{t("taskConsole.changeStats")}:
 															</span>
 															<pre className="text-[10px] text-zinc-300 bg-zinc-950 p-2 rounded border border-zinc-900 overflow-x-auto max-w-full font-mono mt-1">
 																{String(payload.diffStat)}
@@ -501,8 +501,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 									})
 								) : (
 									<div className="text-zinc-600 italic py-8 text-center">
-										No run logs generated yet. Click "Run Agent" to begin
-										execution.
+										{t("taskConsole.noLogs")}
 									</div>
 								)}
 
@@ -516,8 +515,8 @@ export function TaskConsolePage({ id }: { id: string }) {
 										<RefreshCw className="h-3.5 w-3.5 animate-spin" />
 										<span>
 											{activeRun?.status === "finalizing"
-												? "Final judgment is being prepared..."
-												: "Agent is working inside the workspace sandbox..."}
+												? t("taskConsole.finalizing")
+												: t("taskConsole.working")}
 										</span>
 									</div>
 								)}
@@ -526,7 +525,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 							{runDetails?.logContent && (
 								<details className="mt-8 border-t border-zinc-900 pt-4">
 									<summary className="cursor-pointer text-zinc-500 hover:text-zinc-300">
-										View raw standard outputs
+										{t("taskConsole.viewRawOutput")}
 									</summary>
 									<pre className="mt-2 text-[10px] text-zinc-400 whitespace-pre-wrap max-h-[200px] overflow-y-auto bg-zinc-950 p-2 rounded">
 										{runDetails.logContent}
@@ -542,9 +541,9 @@ export function TaskConsolePage({ id }: { id: string }) {
 							{runDetails?.diffPatch ? (
 								<div>
 									<div className="text-zinc-500 border-b border-zinc-900 pb-2 mb-4 flex items-center justify-between">
-										<span>Generated Git Patch</span>
+										<span>{t("taskConsole.generatedPatch")}</span>
 										<span className="text-emerald-400 font-bold">
-											READY TO REVIEW
+											{t("taskConsole.readyReview")}
 										</span>
 									</div>
 									<pre className="text-zinc-300 whitespace-pre bg-zinc-900/50 p-3 rounded-lg border border-zinc-900 max-h-[300px] overflow-x-auto">
@@ -557,7 +556,7 @@ export function TaskConsolePage({ id }: { id: string }) {
 											onClick={() =>
 												reviewRunMutation.mutate({
 													action: "complete",
-													note: "Approved and finalized",
+													note: t("taskConsole.approvedNote"),
 												})
 											}
 											disabled={reviewRunMutation.isPending}
@@ -565,14 +564,14 @@ export function TaskConsolePage({ id }: { id: string }) {
 										>
 											<Check className="h-4 w-4" />
 											{reviewRunMutation.isPending
-												? "Completing..."
-												: "Approve & Merge Diff"}
+												? t("taskConsole.completing")
+												: t("taskConsole.approve")}
 										</Button>
 										<Button
 											onClick={() =>
 												reviewRunMutation.mutate({
 													action: "cancel",
-													note: "Discarded by user",
+													note: t("taskConsole.discardedNote"),
 												})
 											}
 											disabled={reviewRunMutation.isPending}
@@ -580,15 +579,14 @@ export function TaskConsolePage({ id }: { id: string }) {
 											className="border-zinc-800 hover:bg-zinc-900 hover:text-white flex-1"
 										>
 											{reviewRunMutation.isPending
-												? "Discarding..."
-												: "Discard Diff"}
+												? t("taskConsole.discarding")
+												: t("taskConsole.discard")}
 										</Button>
 									</div>
 								</div>
 							) : (
 								<div className="text-zinc-500 italic py-12 text-center">
-									No diff was generated. This run might be pending, running, or
-									failed.
+									{t("taskConsole.noDiff")}
 								</div>
 							)}
 						</div>

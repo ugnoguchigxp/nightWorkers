@@ -1,4 +1,4 @@
-import { ValidationError } from "../../lib/errors";
+import { NotFoundError, ValidationError } from "../../lib/errors";
 import { logEvent } from "../../lib/logger";
 import { createOpenApiRouter } from "../../lib/openapi";
 import { getOntologyRunDebugReportRoute } from "../ontology";
@@ -34,7 +34,10 @@ import {
 	stopBackgroundProcessHandler,
 	stopTaskRunHandler,
 } from "./nightworkers.route-handlers";
-import { withOpenApiRouteError } from "./nightworkers.route-utils";
+import {
+	routeErrorResponse,
+	withOpenApiRouteError,
+} from "./nightworkers.route-utils";
 import * as service from "./nightworkers.service";
 import {
 	archiveWorkbenchSessionRoute,
@@ -144,7 +147,8 @@ const router = createOpenApiRouter()
 	.openapi(getRepositoryRoute, async (c) => {
 		const id = c.req.param("id");
 		const repo = await service.getRepository(id);
-		if (!repo) return c.json({ error: "Repository not found" }, 404);
+		if (!repo)
+			return routeErrorResponse(c, new NotFoundError("Repository not found"));
 		return c.json(repo, 200);
 	})
 	.openapi(
@@ -172,7 +176,7 @@ const router = createOpenApiRouter()
 		readProjectFileRoute,
 		withOpenApiRouteError(readProjectFileRoute, async (c) => {
 			const filePath = c.req.query("path");
-			if (!filePath) return c.json({ error: "path is required" }, 400);
+			if (!filePath) throw new ValidationError("path is required");
 			const file = await service.readProjectFile(
 				c.req.param("id"),
 				filePath,
@@ -194,7 +198,8 @@ const router = createOpenApiRouter()
 	.openapi(deleteRepositoryRoute, async (c) => {
 		const id = c.req.param("id");
 		const repo = await service.deleteRepository(id);
-		if (!repo) return c.json({ error: "Repository not found" }, 404);
+		if (!repo)
+			return routeErrorResponse(c, new NotFoundError("Repository not found"));
 		return c.json(repo, 200);
 	})
 	.openapi(listTasksRoute, async (c) => {
@@ -260,13 +265,15 @@ const router = createOpenApiRouter()
 	.openapi(getTaskRoute, async (c) => {
 		const id = c.req.param("id");
 		const task = await service.getTask(id);
-		if (!task) return c.json({ error: "Task not found" }, 404);
+		if (!task)
+			return routeErrorResponse(c, new NotFoundError("Task not found"));
 		return c.json(task, 200);
 	})
 	.openapi(deleteTaskRoute, async (c) => {
 		const id = c.req.param("id");
 		const task = await service.deleteTask(id);
-		if (!task) return c.json({ error: "Task not found" }, 404);
+		if (!task)
+			return routeErrorResponse(c, new NotFoundError("Task not found"));
 		return c.json(task, 200);
 	})
 	.openapi(updateTaskRoute, async (c) => {
@@ -295,7 +302,8 @@ const router = createOpenApiRouter()
 				idempotencyKey: c.req.header("Idempotency-Key"),
 			}),
 		});
-		if (!task.data) return c.json({ error: "Task not found" }, 404);
+		if (!task.data)
+			return routeErrorResponse(c, new NotFoundError("Task not found"));
 		return c.json(task.data, 200);
 	})
 	.openapi(
@@ -325,7 +333,8 @@ const router = createOpenApiRouter()
 		submitRunReviewRoute,
 		withOpenApiRouteError(submitRunReviewRoute, async (c) => {
 			const run = await service.getTaskRun(c.req.param("id"));
-			if (!run) return c.json({ error: "Run not found" }, 404);
+			if (!run)
+				return routeErrorResponse(c, new NotFoundError("Run not found"));
 			const projection = await readTaskOperatorProjection(
 				run.taskId,
 				humanTaskOperatorQueryContext(),
