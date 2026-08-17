@@ -22,12 +22,12 @@
 		"target": {
 			"kind": "diff",
 			"baseRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			"assessedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"assessedRevision": "working-tree/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			"rawTargetDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			"canonicalTargetDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 		},
-		"proofRef": "sibp:v1:db0a367184c4c2bf6f6dc506bb5ec90c8ad783a10622ce48064c6f86532da613",
-		"proofDigest": "sha256:db0a367184c4c2bf6f6dc506bb5ec90c8ad783a10622ce48064c6f86532da613"
+		"proofRef": "sibp:v1:96c056168c1fb83d12e77f5e09b7bbd2effe287525f5dbda858fe9be8513687c",
+		"proofDigest": "sha256:96c056168c1fb83d12e77f5e09b7bbd2effe287525f5dbda858fe9be8513687c"
 	},
 	"assessmentFixture": "nightworkers-security-intelligence-v1.json",
 	"negativeAssessmentCases": [
