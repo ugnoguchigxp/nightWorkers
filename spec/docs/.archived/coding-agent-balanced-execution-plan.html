@@ -1,0 +1,503 @@
+<article lang="ja">
+  <h1 id="coding-agent-balanced-execution-plan">Coding Agent Balanced Execution Plan</h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>completed</code></li>
+    <li>Created: 2026-07-19</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Incident repository: <code>/Users/y.noguchi/Code/todolist</code></li>
+    <li>
+      Related plan: <code>spec/docs/coding-agent-runtime-reliability-recovery-plan.html</code>
+    </li>
+    <li>
+      Primary scope: Coding Agent completion readiness、verification reconciliation、Codex / Native
+      runtime closeout
+    </li>
+  </ul>
+  <h3 id="implementation-result2026-07-19">Implementation result（2026-07-19）</h3>
+  <ul>
+    <li>
+      Phase 0: Todo終端だけで誤完了するcontroller fixtureとactive verification
+      document統合fixtureを追加済み。
+    </li>
+    <li>
+      Phase 1: Task、Run、source hash、active verification document、completion
+      check、candidateを統合するreadiness projectionを実装済み。
+    </li>
+    <li>
+      Phase 2: Coding Agent role moduleへfinalize controllerを移し、active verification
+      document未達時の<code>FINALIZE_RECONCILIATION_REQUIRED</code>を実装済み。
+    </li>
+    <li>
+      Phase 3: Codex SDK / Native APIの両laneへ同じreadiness reconciliationとprior
+      candidate保持を接続済み。
+    </li>
+    <li>
+      Phase 4: discrepancy集約、compact recovery packet、Native context
+      compaction時のdigest・paging相当情報・構造化readiness保持を実装済み。
+    </li>
+    <li>
+      Phase 5: targeted 36件、全Vitest、<code>bun run verify</code>、<code
+        >bun run check:architecture</code
+      >が成功。両laneのreadiness scenarioは3回以上連続成功。
+    </li>
+  </ul>
+  <h2 id="section-1-結論">1. 結論</h2>
+  <p>
+    Coding
+    AgentのTodo、実装、検証、完了報告を別々の強制workflowにせず、最終回答候補が出た時点で次の正本を一つのreadiness
+    snapshotへ集約する。
+  </p>
+  <ol>
+    <li>Task Goalと確定済み仕様</li>
+    <li>Todo planとcurrent state</li>
+    <li>現在のworkspace source state</li>
+    <li>同じsource stateに対する検証証跡</li>
+    <li>直前のfinal candidate</li>
+  </ol>
+  <p>
+    Hostはこれらの意味を独自判定せず、相互に矛盾していないか、必要な観測が欠落していないかという構造条件だけを確認する。不足がある場合は固定文で拒否せず、差分、raw
+    evidence参照、未解決条件、直前候補をCoding Agentへ返す。Coding
+    Agentはそのpacketから、実装修正、追加検証、Todo再計画、<code>needs_human</code>、回答再生成のうち合理的な次actionを選ぶ。
+  </p>
+  <p>
+    Todoは作業記憶と進行管理、source diffは成果物、verification evidenceは観測事実、final
+    candidateはユーザー向け判断として扱い、いずれか一つを他の代用にしない。
+  </p>
+  <h2 id="section-2-現状との差">2. 現状との差</h2>
+  <p>
+    現行<code>RunFinalizeController</code>は、Todo
+    planが存在し、<code>pending</code>、<code>running</code>、<code>needs_human</code>が残っていなければ<code>FINALIZE_ALLOWED</code>を返す。Taskにactive
+    verification documentがあっても、<code>runCompletionCheck</code>の結果は参照しない。
+  </p>
+  <p>
+    そのためtodolist Runでは、必須条件8件がすべてunknown、active test discoveryなし、successful test
+    executionなし、successful full
+    verifyなしでも、Todoをすべて<code>passed</code>へ遷移することでRunが<code>completed</code>になった。
+  </p>
+  <p>一方、次の基盤は既に存在するため再実装しない。</p>
+  <ul>
+    <li>Run-local <code>todoKey</code>とcanonical Todo ID</li>
+    <li>request-scoped authority</li>
+    <li>Codex State Cardとresume fallback</li>
+    <li>command resultのexit code、raw stdout / stderr、process identity</li>
+    <li>workspace <code>sourceStateHash</code></li>
+    <li>test inventoryとacceptance condition mapping</li>
+    <li><code>runCompletionCheck</code>とquality gate</li>
+    <li>prior final candidateとcandidate revision event</li>
+    <li>Codex / Native共通recovery guidance</li>
+  </ul>
+  <p>本計画は、これらを完了reconciliationへ接続する差分に限定する。</p>
+  <h2 id="section-3-設計原則">3. 設計原則</h2>
+  <h3 id="section-31-llmが所有する判断">3.1 LLMが所有する判断</h3>
+  <ul>
+    <li>Taskの意味と実装範囲</li>
+    <li>Todoの分割、更新、skip、追加</li>
+    <li>どの変更と検証が十分かという評価</li>
+    <li>観測失敗後の次action</li>
+    <li>ユーザーへ返す最終本文</li>
+  </ul>
+  <h3 id="section-32-hostが所有する構造条件">3.2 Hostが所有する構造条件</h3>
+  <ul>
+    <li>Task、Run、repository、verification documentのauthority一致</li>
+    <li>Todo planとTodo revisionの整合</li>
+    <li>同時running一件、明示Todo mutation、idempotency</li>
+    <li>検証証跡と現在の<code>sourceStateHash</code>の一致</li>
+    <li>
+      active verification documentに記載されたrequired
+      conditionが未確認のまま、<code>completed</code>と矛盾しないこと
+    </li>
+    <li>final candidateが最新readiness snapshotを読んだturnから生成されていること</li>
+  </ul>
+  <p>
+    Hostはユーザー文言やerror messageをkeyword分類せず、受入条件を追加せず、Todoを暗黙更新しない。
+  </p>
+  <h3 id="section-33-検証の適用範囲">3.3 検証の適用範囲</h3>
+  <ul>
+    <li>
+      active verification documentがあるTaskでは、そのdocumentを正本としてreadinessを評価する。
+    </li>
+    <li>
+      verification
+      documentがないTaskでは、HostがTask種別を推測して新しいgateを作らない。Todo構造条件とLLM判断を維持する。
+    </li>
+    <li>
+      <code>failed</code>または<code>skipped</code>
+      Todoは過去の試行としてsnapshotへ残すが、それだけでTask失敗または成功を決めない。
+    </li>
+    <li>
+      特定toolの呼び出しを完了条件にしない。現在sourceに対応するevidenceが存在するかを確認する。
+    </li>
+  </ul>
+  <h2 id="section-4-target-control-loop">4. Target control loop</h2>
+  <figure>
+    <pre class="mermaid" data-spec-html-source="markdown">flowchart TD
+    A[&quot;Coding AgentがTaskを理解しTodoを更新&quot;] --&gt; B[&quot;repositoryを調査・実装&quot;]
+    B --&gt; C[&quot;検証し観測証跡を保存&quot;]
+    C --&gt; D[&quot;final candidateを生成&quot;]
+    D --&gt; E[&quot;Completion Readiness Snapshotを構築&quot;]
+    E --&gt; F{&quot;正本・Todo・source・検証・candidateが整合?&quot;}
+    F --&gt;|Yes| G[&quot;Run completed&quot;]
+    F --&gt;|No| H[&quot;差分と未解決条件をreconciliation packetで返す&quot;]
+    H --&gt; I[&quot;LLMが修正・追加検証・再計画・質問・回答再生成を選択&quot;]
+    I --&gt; B
+</pre>
+    <figcaption>4. Target control loopの図</figcaption>
+  </figure>
+  <p>
+    reconciliationは新しいmodeではなく、通常runtimeの次turnである。Coding Agentのtool
+    surfaceとnative commandは維持する。
+  </p>
+  <h2 id="section-5-completion-readiness-contract">5. Completion Readiness contract</h2>
+  <p>Coding Agent固有contractとして次のprojectionを追加する。</p>
+  <pre><code class="language-ts">type CodingAgentCompletionReadiness = {
+  authority: {
+    taskId: string;
+    runId: string;
+    repositoryRoot: string;
+    verificationDocumentId: string | null;
+  };
+  task: {
+    goalDigest: string;
+    specificationRefs: string[];
+  };
+  todo: {
+    planRevision: number;
+    counts: Record&lt;string, number&gt;;
+    currentTodoId: string | null;
+    todoRevisions: Record&lt;string, number&gt;;
+  };
+  workspace: {
+    sourceStateHash: string;
+  };
+  verification: {
+    applicability: &quot;active&quot; | &quot;not_configured&quot;;
+    checkedSourceStateHash: string | null;
+    result: CompletionCheckResult | null;
+  };
+  candidate: {
+    revision: number;
+    digest: string;
+  };
+  discrepancies: Array&lt;{
+    code: string;
+    summary: string;
+    rawRef?: string;
+  }&gt;;
+  satisfactionConditions: string[];
+};
+</code></pre>
+  <p>
+    <code>CompletionCheckResult</code
+    >と<code>sourceStateHash</code>は既存schemaとserviceを再利用する。新しい意味判定schemaを重複して作らない。
+  </p>
+  <h3 id="readiness-outcome">Readiness outcome</h3>
+  <ul>
+    <li>
+      <code>ready</code>: Todo構造が整合し、active verification
+      documentがある場合は現在sourceに対するcompletion
+      checkが成功し、最新candidateがそのsnapshotより後に生成されている。
+    </li>
+    <li>
+      <code>reconcile</code>:
+      修正可能な不足または矛盾がある。Runをterminalにせず、packetを次turnへ返す。
+    </li>
+    <li><code>needs_human</code>: LLMがTodo mutationで明示した外部判断待ちを維持する。</li>
+    <li>
+      <code>failed</code>: runtime障害またはLLMが自力完結不能と判断した既存failure経路を維持する。
+    </li>
+  </ul>
+  <h2 id="section-6-実装フェーズ">6. 実装フェーズ</h2>
+  <h3 id="phase-0-誤完了を回帰fixtureとして固定">Phase 0: 誤完了を回帰fixtureとして固定</h3>
+  <h4 id="実装">実装</h4>
+  <ol>
+    <li>
+      Todoをすべて<code>passed</code>にするが、active verification documentのrequired
+      conditionがunknownのfixtureを追加する。
+    </li>
+    <li>
+      <code>completion_check.ok = false</code
+      >でも現行controllerが<code>FINALIZE_ALLOWED</code>を返すbaselineを失敗testとして固定する。
+    </li>
+    <li>
+      todolist実測を抽象化し、test未発見、test未実行、full
+      verify未実行をそれぞれ独立scenarioにする。
+    </li>
+    <li>source変更後に過去のgreen evidenceがstaleになるscenarioを追加する。</li>
+  </ol>
+  <h4 id="主な対象">主な対象</h4>
+  <ul>
+    <li><code>tests/run-control/completion-preconditions.cases.ts</code></li>
+    <li><code>tests/codex-agent-runtime/llm-owned-contract.cases.ts</code></li>
+    <li><code>tests/native-api-runner/llm-owned-contract.cases.ts</code></li>
+    <li>quality gate tests</li>
+  </ul>
+  <h4 id="受け入れ条件">受け入れ条件</h4>
+  <ul>
+    <li>production変更前に、Todo終端だけで誤完了する現象が一つの原因として再現する。</li>
+    <li>
+      各fixtureがTodo mutation failureやprovider
+      failureではなく、verification未接続を理由に失敗する。
+    </li>
+  </ul>
+  <h3 id="phase-1-readiness-projection-service">Phase 1: Readiness projection service</h3>
+  <h4 id="実装-1">実装</h4>
+  <ol>
+    <li>
+      <code>api/modules/codingAgent/application/completion-readiness.service.ts</code>を追加する。
+    </li>
+    <li>
+      Task / Run authority、Todo snapshot、workspace source snapshot、active verification
+      document、<code>runCompletionCheck</code>結果、candidate revisionを一度に取得する。
+    </li>
+    <li>
+      DB rowやtool名を直接LLMへ並べず、共通recovery guidance形式のobservation、discrepancy、raw
+      refへ正規化する。
+    </li>
+    <li>
+      同じ<code>sourceStateHash</code>に対応しないinventory、mapping、test evidence、full
+      verifyはstale observationとして示す。
+    </li>
+    <li>
+      verification documentがない場合は<code>not_configured</code>とし、Hostが要求を追加しない。
+    </li>
+  </ol>
+  <h4 id="主な対象-1">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/application/completion-readiness.service.ts</code></li>
+    <li><code>api/modules/codingAgent/context/types.ts</code></li>
+    <li><code>shared/modules/codingAgent</code></li>
+    <li><code>api/modules/codingAgent/verification/quality-gate.service.ts</code>は再利用のみ</li>
+  </ul>
+  <h4 id="受け入れ条件-1">受け入れ条件</h4>
+  <ul>
+    <li>一つのsnapshotからTask、Todo、source、verification、candidateの関係を追跡できる。</li>
+    <li>
+      required conditionのmissing mapping、test未実行、full verify未実行、source
+      staleが別codeで返る。
+    </li>
+    <li>projection作成でTodo、checklist、Task statusを変更しない。</li>
+  </ul>
+  <h3 id="phase-2-finalize-controllerとの接続">Phase 2: Finalize controllerとの接続</h3>
+  <h4 id="実装-2">実装</h4>
+  <ol>
+    <li>
+      Coding Agent固有のfinalize
+      controllerを<code>api/modules/codingAgent/application</code>へ置く。
+    </li>
+    <li>既存のTodo / revision precondition判定後、readiness projectionを評価する。</li>
+    <li>
+      active verification documentがあり<code>completion_check.ok = false</code
+      >なら、<code>FINALIZE_RECONCILIATION_REQUIRED</code>とsnapshotを返す。
+    </li>
+    <li>
+      現在sourceに対応したinventory、test execution、full verify、required condition
+      mappingが揃った場合だけ<code>ready</code>にする。
+    </li>
+    <li><code>not_configured</code>では従来のTodo構造条件とLLM判断を維持する。</li>
+    <li>
+      旧<code>api/services/run-control/finalize-controller.ts</code>にはAgent非依存composition以外を残さない。
+    </li>
+  </ol>
+  <h4 id="受け入れ条件-2">受け入れ条件</h4>
+  <ul>
+    <li>Todo終端だけでは、active verification document付きRunを完了できない。</li>
+    <li>HostがTodoを追加、再開、passedへ変更しない。</li>
+    <li>failed verificationはRun failureへ自動変換されず、LLMが次actionを選べる。</li>
+    <li>green evidence後にsourceが変わるとreconciliationへ戻る。</li>
+  </ul>
+  <h3 id="phase-3-codex--native-runtime共通reconciliation">
+    Phase 3: Codex / Native runtime共通reconciliation
+  </h3>
+  <h4 id="実装-3">実装</h4>
+  <ol>
+    <li>
+      Codex SDK runtimeとNative API runnerのfinal candidate処理を同じapplication serviceへ接続する。
+    </li>
+    <li><code>buildCodingAgentCompletionRecoveryFeedback</code>へreadiness snapshotを追加する。</li>
+    <li>
+      prior candidate、latest user request、Todo snapshot、verification discrepancy、raw evidence
+      refを次turnへ保持する。
+    </li>
+    <li>candidate revisionとreadiness revisionを関連付け、古いcandidateの誤採用を防ぐ。</li>
+    <li>
+      retry turnでも通常のtool surfaceを維持し、固定された修正順やtool allowlistを追加しない。
+    </li>
+  </ol>
+  <h4 id="主な対象-2">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code></li>
+    <li>
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-run-coordinator.ts</code>
+    </li>
+    <li><code>api/modules/codingAgent/context/recovery-guidance.ts</code></li>
+    <li>candidate event persistence</li>
+  </ul>
+  <h4 id="受け入れ条件-3">受け入れ条件</h4>
+  <ul>
+    <li>両runtime laneが同じ不足に対して同じreadiness codeを返す。</li>
+    <li>reconciliation後も元Taskのfinal candidateが失われない。</li>
+    <li>LLMはpacketから新しい修正Todoを追加できる。</li>
+    <li>reconciliation turnがTodo説明だけで終わっても、その本文だけを最終成果として採用しない。</li>
+  </ul>
+  <h3 id="phase-4-evidence取得の誘導とwarning圧縮">Phase 4: Evidence取得の誘導とwarning圧縮</h3>
+  <h4 id="実装-4">実装</h4>
+  <ol>
+    <li>
+      System Contextへtool義務ではなく、readiness
+      discrepancyを次actionの判断材料として扱う説明を追加する。
+    </li>
+    <li>
+      <code>run_check</code>、test inventory、condition mapping、completion
+      checkの既存説明を、入力と返却されるevidenceの関係が分かる文言へ揃える。
+    </li>
+    <li>
+      native command結果はraw observationとして保持するが、required
+      conditionをHostが自動充足しない。
+    </li>
+    <li>
+      同じ原因のcontract warningをturn内で集約し、件数、最初と最後のevent
+      ref、現在の未解決状態を一つのdiscrepancyとして返す。
+    </li>
+    <li>
+      Todo revision conflictではlatest plan revision、canonical ID、Todo
+      revisionを一つの訂正packetで返す。
+    </li>
+  </ol>
+  <h4 id="受け入れ条件-4">受け入れ条件</h4>
+  <ul>
+    <li>Coding Agentは不足理由と、それを確認可能にする既存能力を同時に把握できる。</li>
+    <li>同一原因のwarning反復がTask Goalやverification resultをcontext外へ押し出さない。</li>
+    <li>toolを使うかnative commandを使うかはLLMが選べる。</li>
+  </ul>
+  <h3 id="phase-5-統合回帰とrollout">Phase 5: 統合回帰とrollout</h3>
+  <h4 id="統合scenario">統合scenario</h4>
+  <ol>
+    <li>active verification documentと8件のrequired conditionを持つ実装Taskを開始する。</li>
+    <li>妥当なTodo planを作り、部分実装後にTodoを一度すべて終端化する。</li>
+    <li>final candidate生成時にreadiness reconciliationへ戻ることを確認する。</li>
+    <li>packetから不足test、condition mapping、full verify、E2E失敗を認識する。</li>
+    <li>Coding Agentが修正Todoを追加し、実装と検証を更新する。</li>
+    <li>source変更で古いevidenceがstaleになることを確認する。</li>
+    <li>現在sourceでinventory、focused test、full verifyを成功させる。</li>
+    <li>required conditionをすべて解決し、新しいfinal candidateで完了する。</li>
+    <li>同じscenarioをCodex SDK / Native APIの両laneで実行する。</li>
+  </ol>
+  <h4 id="rollout条件">Rollout条件</h4>
+  <ul>
+    <li>
+      active verification document付きRunで、<code>completion_check.ok = false</code
+      >かつ<code>completed</code>となる件数が0。
+    </li>
+    <li>verification documentなしの質問・read-only Taskに回帰がない。</li>
+    <li>reconciliationから追加の人手介入なしで復旧できる。</li>
+    <li><code>bun run verify</code>がgreen。</li>
+    <li><code>bun run check:architecture</code>がgreen。</li>
+    <li>統合scenarioが両laneで3回連続成功する。</li>
+    <li>Candidate、Todo、source hash、verification result、final reportが同じRun結果を示す。</li>
+  </ul>
+  <h2 id="section-7-test-matrix">7. Test matrix</h2>
+  <table>
+    <caption>
+      7. Test matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Scenario</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Todo open</td>
+        <td>Todo snapshot付きreconciliation</td>
+      </tr>
+      <tr>
+        <td>Todo terminal、verification unknown</td>
+        <td>verification不足付きreconciliation</td>
+      </tr>
+      <tr>
+        <td>required test mappingなし</td>
+        <td>condition IDとmissing mappingを返す</td>
+      </tr>
+      <tr>
+        <td>test失敗</td>
+        <td>raw evidence refと失敗状態を返す</td>
+      </tr>
+      <tr>
+        <td>full verifyなし</td>
+        <td>full verify不足を返す</td>
+      </tr>
+      <tr>
+        <td>green verify後にsource変更</td>
+        <td>evidence staleとしてreconciliation</td>
+      </tr>
+      <tr>
+        <td>現在sourceで全条件green</td>
+        <td>finalize可能</td>
+      </tr>
+      <tr>
+        <td>verification documentなし</td>
+        <td>Hostが新条件を作らない</td>
+      </tr>
+      <tr>
+        <td>prior candidateあり</td>
+        <td>reconciliation後もcandidate保持</td>
+      </tr>
+      <tr>
+        <td>stale Todo revision</td>
+        <td>latest canonical ID / revisionを返す</td>
+      </tr>
+      <tr>
+        <td>needs_human Todoあり</td>
+        <td>既存needs_human outcomeを維持</td>
+      </tr>
+      <tr>
+        <td>Codex / Native</td>
+        <td>同じreadiness結果</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-8-観測指標">8. 観測指標</h2>
+  <ul>
+    <li><code>verification_not_ready</code>状態から自律復旧した率</li>
+    <li>active verification document付き誤完了件数</li>
+    <li>source変更後のstale evidence検出率</li>
+    <li>reconciliation一回あたりの重複warning件数</li>
+    <li>final candidate revisionから完了までのturn数</li>
+    <li>Todo mutation、source mutation、verification evidence、final candidateのevent相関</li>
+    <li>同一受入条件の再失敗率</li>
+  </ul>
+  <p>指標はTask成功を自動判定するscoreには使わず、制御ループの偏りと復旧性を観測するために使う。</p>
+  <h2 id="section-9-実装todo案">9. 実装Todo案</h2>
+  <ol>
+    <li>verification未接続による誤完了fixtureを追加する。</li>
+    <li>Completion Readiness contractとprojection serviceを実装する。</li>
+    <li>finalize controllerをCoding Agent role moduleへ移しreadinessへ接続する。</li>
+    <li>Codex / Native runtimeを共通reconciliationへ接続する。</li>
+    <li>recovery packetへTask、Todo、source、verification、candidate差分を統合する。</li>
+    <li>warning集約とrevision訂正guidanceを実装する。</li>
+    <li>targeted testと両lane統合scenarioを実行する。</li>
+    <li>full verifyとarchitecture checkを実行する。</li>
+    <li>差分、観測指標、未解決事項をreviewして報告する。</li>
+  </ol>
+  <h2 id="section-10-完了条件">10. 完了条件</h2>
+  <p>本計画は次をすべて確認した時点で完了とする。</p>
+  <ul>
+    <li>Todo terminalだけではactive verification document付きRunが完了しない。</li>
+    <li>
+      verification未達時、禁止文ではなく具体的なobservations、discrepancies、raw refs、satisfaction
+      conditionsがLLMへ返る。
+    </li>
+    <li>LLMがTodo、実装、検証、回答のどこを更新するか選べる。</li>
+    <li>HostがTask意味、Todo状態、受入条件を暗黙更新しない。</li>
+    <li>現在sourceに対応する検証証跡だけがreadinessへ採用される。</li>
+    <li>verification documentがないTaskへ新しい固定workflowを適用しない。</li>
+    <li>Codex SDK / Native APIの両laneが同じcompletion contractを使う。</li>
+    <li>
+      targeted test、<code>bun run verify</code>、<code>bun run check:architecture</code
+      >が成功する。
+    </li>
+    <li>todolist相当の統合scenarioが3回連続で正しくreconciliationから完了へ収束する。</li>
+  </ul>
+</article>

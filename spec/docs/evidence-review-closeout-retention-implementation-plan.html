@@ -1,0 +1,2084 @@
+<article lang="ja">
+  <h1 id="evidencereviewcloseout整合性と記録保持-実装計画">
+    Evidence・Review・Closeout整合性と記録保持 実装計画
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>proposed</code></li>
+    <li>Document created: 2026-07-29</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Baseline branch: <code>main</code></li>
+    <li>Baseline HEAD: <code>00e33d6d9768f10d14358fded45bd9a55999f7d6</code></li>
+    <li>Baseline worktree: dirty</li>
+    <li>
+      Primary scope:
+      <ul>
+        <li>
+          Task revision、Coding Agent Run、Diff、Verification、Review、Rework、再Verification、Git
+          closeoutの一貫したEvidence binding
+        </li>
+        <li>final responseのEvidence化</li>
+        <li>closeout直前のserver-side admission</li>
+        <li>Coding Agent完全記録の既定7日保持</li>
+        <li>設定画面からの保持期間変更</li>
+        <li>期限切れ記録のpreview付き即時cleanup</li>
+        <li>SQLiteの肥大化抑制とdisk space回収</li>
+      </ul>
+    </li>
+    <li>
+      Related documents:
+      <ul>
+        <li><code>spec/trust-model.md</code></li>
+        <li><code>spec/configuration.md</code></li>
+        <li><code>spec/docs/.archived/coding-agent-balanced-execution-plan.html</code></li>
+        <li><code>spec/multi-language-test-evidence-quality-gate-implementation-plan.md</code></li>
+        <li>
+          <code>spec/docs/.archived/coding-agent-runtime-reliability-recovery-plan.html</code>
+        </li>
+        <li>
+          <code>spec/docs/.archived/mission-pilot-coding-agent-module-separation-plan.html</code>
+        </li>
+        <li>
+          <code
+            >spec/docs/.archived/project-worktree-authority-and-secret-boundary-implementation-plan.html</code
+          >
+        </li>
+      </ul>
+    </li>
+  </ul>
+  <p>
+    現在のworktreeには本計画と無関係な未コミット変更が存在する。本計画の実装ではそれらを
+    ユーザー所有の変更として扱い、復元、上書き、取り込み、再設計を行わない。migration番号と schema
+    bootstrap変更は、実装開始時点の最新状態から採番し直す。
+  </p>
+  <h2 id="section-1-結論">1. 結論</h2>
+  <p>
+    NightWorkersの完了根拠を、Task IDや時刻だけで関連付けた可変recordの集合ではなく、
+    同一の<code>EvidenceSubjectSnapshot</code>へ結び付いた型付きEvidence Ledgerとして扱う。
+  </p>
+  <p>正本となる関係は次のとおりとする。</p>
+  <pre><code class="language-text">Task revision
+  -&gt; Coding Agent implementation Run
+  -&gt; workspace source state / Diff
+  -&gt; Verification
+  -&gt; final response
+  -&gt; Review
+  -&gt; 必要なら新しいRework Run
+  -&gt; 再Verification
+  -&gt; 再Review
+  -&gt; Closeout Admission
+  -&gt; Git commit / merge
+</code></pre>
+  <p>Evidenceの正しさと保存期間は別の軸で管理する。</p>
+  <ul>
+    <li>正しさ: <code>current | stale | foreign | failed | missing</code></li>
+    <li>詳細の保持状態: <code>full | compacted | purging | purged</code></li>
+  </ul>
+  <p>
+    完全な実行記録は既定7日保持する。ただしTask、Run、source、Verification、Review、 final
+    response、closeout、Git結果を結ぶ小さな基幹Ledgerは自動削除しない。進行中、
+    Review待ち、再検証待ち、closeout待ちのEvidenceは7日を超えても保護する。
+  </p>
+  <p>
+    大容量本文を基幹recordと同じSQLite行へ持ち続けず、digest付きpayloadとしてruntime
+    artifact領域へ分離する。cleanupはpayloadだけを期限削除し、基幹Ledgerを残す。
+  </p>
+  <h2 id="section-2-目的">2. 目的</h2>
+  <p>変更後は次を満たす。</p>
+  <ol>
+    <li>Taskのどのrevisionを実装したRunか一意に分かる。</li>
+    <li>
+      Verification、Review、final response、closeoutが同一Run、同一workspace source state、
+      同一verification documentに対するものか構造的に照合できる。
+    </li>
+    <li>Diffが変わった時点で、それ以前のVerificationとReviewをstaleにする。</li>
+    <li>
+      Review指摘によりsourceが変わった場合は、新しいRework Runとして保存し、
+      再Verificationと再Reviewなしでcloseoutできない。
+    </li>
+    <li>
+      merge target、target HEAD、merge strategy、integration policyが変わったら merge
+      previewとそのCI evidenceを無効化する。
+    </li>
+    <li>別RunのEvidenceを現在Runの完了根拠にできない。</li>
+    <li>final response本文を型付きEvidenceとして保存し、Reviewとcloseoutの対象へ含める。</li>
+    <li>Git closeoutは直前に作成したimmutableなCloseout Admissionだけを使用する。</li>
+    <li>Coding Agentが生成した完全記録を既定7日保持し、設定画面で1〜365日の範囲に変更できる。</li>
+    <li>設定画面から、期限切れ対象をpreviewして直ちにcleanupできる。</li>
+    <li>
+      cleanup後も過去のcloseout根拠、commit SHA、Review verdict、Verification結果要約を追跡できる。
+    </li>
+    <li>SQLiteのDELETEだけで完了扱いにせず、WALとfree pageの回収結果も観測できる。</li>
+  </ol>
+  <h2 id="section-3-非目的">3. 非目的</h2>
+  <p>本計画では次を行わない。</p>
+  <ul>
+    <li>Coding Agentへ意味別mode、固定workflow、tool allowlistを追加しない。</li>
+    <li>
+      Task本文、Todo名、command、error messageをkeywordや正規表現で分類して完了可否を決めない。
+    </li>
+    <li>HostがReview結果からTodoを暗黙更新しない。</li>
+    <li>Review Agentへ実装workspaceの編集所有権を与えない。</li>
+    <li>Mission PilotへCoding Agentのrepository編集・検証所有権を移さない。</li>
+    <li>Evidenceの物理的deduplicateを、別Run Evidenceの論理的再利用として扱わない。</li>
+    <li>保持期間変更の保存操作だけで、確認なしに即時削除しない。</li>
+    <li>
+      通常cleanupでTask、Task revision、Run、commit、merge、closeoutの親recordをcascade削除しない。
+    </li>
+    <li><code>VACUUM</code>を毎回の定期cleanupで無条件実行しない。</li>
+    <li>自動cleanupに「保護中記録も強制削除する」overrideを追加しない。</li>
+    <li>Taskの明示削除、Project削除、法的保持、export archiveの一般機能を本計画へ広げない。</li>
+  </ul>
+  <h2 id="section-4-現行実装で維持する基盤">4. 現行実装で維持する基盤</h2>
+  <h3 id="section-41-workspace-source-state">4.1 Workspace source state</h3>
+  <p>
+    Coding Agent verificationは<code>sourceStateHash</code>を生成し、inventory、test execution、
+    Full Verifyが同じsource stateかをQuality Gateで照合できる。このhash計算と
+    <code>WorkspaceSourceSnapshot</code>は再利用する。
+  </p>
+  <h3 id="section-42-completion-readiness">4.2 Completion Readiness</h3>
+  <p>
+    <code>api/modules/codingAgent/application/completion-readiness.service.ts</code
+    >はTask、Todo、workspace、 verification、final
+    candidateの不足を一つのprojectionへ集約する。このprojectionを Evidence
+    freshnessのconsumerとし、別の意味判定を重複実装しない。
+  </p>
+  <h3 id="section-43-review-target-manifest">4.3 Review target manifest</h3>
+  <p>
+    Reviewはsource implementation Run、diff digest、final report digest、verification snapshotを
+    含むversion 2 manifestを持つ。これをversion 3へ拡張し、Task revision、
+    <code>EvidenceSubjectSnapshot</code>、final response Evidenceを追加する。
+  </p>
+  <h3 id="section-44-git-mutation-lockとmerge-cas">4.4 Git mutation lockとmerge CAS</h3>
+  <p>
+    repository単位のGit mutation lock、commit ownership record、merge record version、 source
+    commit、target HEADの再確認は維持する。Closeout Admissionはこのlock内で
+    Git操作直前に作成・再確認する。
+  </p>
+  <h3 id="section-45-runtime-retention">4.5 Runtime retention</h3>
+  <p><code>api/services/runtime-retention/runtime-retention.service.ts</code>には次が存在する。</p>
+  <ul>
+    <li>多重sweepのcoalescing</li>
+    <li>1,000行単位のbatch delete</li>
+    <li>runtime log sweep</li>
+    <li>LLM usageの期限削除</li>
+    <li>cleanup結果の監査record</li>
+    <li>startup cleanupと定期cleanup</li>
+  </ul>
+  <p>
+    既存serviceはagent非依存schedulerとcleanup participantのcompositionへ限定し、 Coding
+    Agent固有の削除可能性判定を直接持たせない。
+  </p>
+  <h3 id="section-46-runtime-artifact-root">4.6 Runtime artifact root</h3>
+  <p>
+    <code>getRuntimePaths().artifactsDir</code>が管理対象artifact rootとして存在する。大容量Evidence
+    payloadはこのroot配下へ置き、workspace、任意のtemporary directory、任意のabsolute pathを payload
+    storeとして扱わない。
+  </p>
+  <h2 id="section-5-現行の不足">5. 現行の不足</h2>
+  <h3 id="section-51-task-revisionが明示されていない">5.1 Task revisionが明示されていない</h3>
+  <p>
+    <code>tasks</code>には現在内容のrevision番号とappend-only
+    snapshotがない。<code>updatedAt</code>だけでは、 Run開始時のTask本文、objective、acceptance
+    criteriaを再現できない。
+  </p>
+  <h3 id="section-52-runがtask-revisionを固定していない">5.2 RunがTask revisionを固定していない</h3>
+  <p>
+    <code>task_runs</code>にはTodo plan revisionはあるが、実装対象にしたTask revision
+    snapshotがない。 Task変更後も、既存RunのEvidenceが現在Taskのものに見える可能性がある。
+  </p>
+  <h3 id="section-53-verification-queryがrunを十分に限定しない">
+    5.3 Verification queryがRunを十分に限定しない
+  </h3>
+  <p>
+    Quality Gateは現在source hashを確認するが、Evidence取得の起点がTaskとverification
+    documentであり、current implementation Runというauthorityが弱い。同じsource hashを持つ
+    別RunのEvidenceを誤採用できる余地がある。
+  </p>
+  <h3 id="section-54-checklistがevidenceの正本と混在している">
+    5.4 ChecklistがEvidenceの正本と混在している
+  </h3>
+  <p>
+    verification checklist rowがstatus、evidence ID、reasonを可変fieldとして持つ。checklistを
+    append-only Evidenceから再計算するprojectionではなく正本として読む経路が残ると、 古いEvidence
+    IDや手動更新済みstatusを完了根拠にできる。
+  </p>
+  <h3 id="section-55-normal-closeoutがreviewとverificationをfail-closeしない">
+    5.5 normal closeoutがReviewとVerificationをfail-closeしない
+  </h3>
+  <p>
+    normal closeoutはReview、Verification、Securityの状態を表示するが、Git readinessと
+    <code>canCommit</code>が分離している。未完了Review、stale Verification、blocking
+    findingがあっても commit可能とする既存testがある。
+  </p>
+  <h3 id="section-56-final-responseが型付きevidenceではない">
+    5.6 final responseが型付きEvidenceではない
+  </h3>
+  <p>
+    final report本文とcandidate revisionはRun、event、runtime laneごとに扱いが分散している。 Review
+    manifest、Verification snapshot、source stateとの一意なbindingがない。
+  </p>
+  <h3 id="section-57-完全記録がsqlite行へinline保存される">
+    5.7 完全記録がSQLite行へinline保存される
+  </h3>
+  <p>次のような大容量fieldが基幹recordと同じSQLite行に存在する。</p>
+  <ul>
+    <li><code>task_runs.context_snapshot</code></li>
+    <li><code>task_runs.log_content</code></li>
+    <li><code>task_runs.diff_patch</code></li>
+    <li><code>task_runs.test_results</code></li>
+    <li><code>native_api_turns.history_json</code></li>
+    <li><code>native_api_turns.provider_debug_json</code></li>
+    <li><code>native_api_tool_calls.arguments_json</code></li>
+    <li><code>native_api_tool_calls.result_json</code></li>
+    <li><code>native_api_tool_calls.model_visible_output</code></li>
+    <li><code>activity_artifacts.content_text</code></li>
+    <li><code>activity_events.payload_json</code></li>
+    <li>verification raw stdout / stderr artifact</li>
+    <li>Review artifact JSON</li>
+  </ul>
+  <p>
+    親recordを期限削除するとFK cascadeで基幹Evidenceまで失い、inline fieldだけを残すと
+    SQLiteが増え続ける。
+  </p>
+  <h3 id="section-58-保持期間は設定可能なapiになっていない">
+    5.8 保持期間は設定可能なAPIになっていない
+  </h3>
+  <p>
+    <code>DataRetentionSettings</code>は存在するが、route schemaは日数を7、3、30、90へ固定している。
+    設定画面にも保持期間、現在サイズ、cleanup preview、即時cleanupがない。
+  </p>
+  <h3 id="section-59-schedulerが設定変更を即時反映しない">
+    5.9 schedulerが設定変更を即時反映しない
+  </h3>
+  <p>
+    retention timerのintervalはserver起動時に一度だけ読み込まれる。設定保存後に次回実行時刻を
+    再計算する仕組みがない。
+  </p>
+  <h3 id="section-510-deleteだけではdatabase-fileが縮まらない">
+    5.10 DELETEだけではdatabase fileが縮まらない
+  </h3>
+  <p>
+    現在のdatabase bootstrapはforeign key、busy timeout、WALを設定するが、 incremental auto
+    vacuumを設定していない。DELETE後のfree pageとWALを観測・回収しないと、 logical
+    sizeが減ってもfile sizeが維持される。
+  </p>
+  <h2 id="section-6-用語">6. 用語</h2>
+  <h3 id="section-61-task-revision">6.1 Task Revision</h3>
+  <p>
+    Taskのtitle、description、objective、acceptance criteria、確定済み仕様参照をimmutableに
+    snapshotしたもの。意味のあるTask変更のたびにrevisionを増やす。
+  </p>
+  <h3 id="section-62-implementation-run">6.2 Implementation Run</h3>
+  <p>
+    Coding Agentが登録済みrepositoryで調査、編集、command実行、検証、final response生成を行う
+    Run。Review修正は元Runを書き換えず、新しいimplementation Runとして保存する。
+  </p>
+  <h3 id="section-63-evidence-subject">6.3 Evidence Subject</h3>
+  <p>
+    Evidenceが何に対する観測かを表すimmutable snapshot。Task revision、implementation Run、
+    workspace source state、verification documentを結び付ける。
+  </p>
+  <h3 id="section-64-evidence-receipt">6.4 Evidence Receipt</h3>
+  <p>
+    Verification、Review、final response、Security、closeoutの型付き基幹record。結果、digest、
+    subject ID、時刻を持つ。raw payloadが期限削除されても残る。
+  </p>
+  <h3 id="section-65-full-fidelity-payload">6.5 Full-fidelity Payload</h3>
+  <p>
+    LLM transcript、tool input/output、stdout/stderr、完全diff、個別test case、debug payload、
+    context snapshot等の大容量データ。既定7日保持の対象。
+  </p>
+  <h3 id="section-66-closeout-admission">6.6 Closeout Admission</h3>
+  <p>
+    Git操作直前に現在のTask revision、source、Verification、Review、final response、
+    Security、finding、staged diffを再確認して作るimmutable snapshot。commit／mergeは admission
+    IDとrevisionを必要とする。
+  </p>
+  <h2 id="section-7-target-invariants">7. Target invariants</h2>
+  <table>
+    <caption>
+      7. Target invariants
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">変更・状態</th>
+        <th scope="col">必須結果</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Task revisionが変わる</td>
+        <td>以前のRun由来Evidenceは現在Taskの根拠として<code>stale</code></td>
+      </tr>
+      <tr>
+        <td>implementation Runが違う</td>
+        <td>current closeoutでは<code>foreign</code>。同じsource hashでも利用禁止</td>
+      </tr>
+      <tr>
+        <td><code>sourceStateHash</code>またはdiff digestが変わる</td>
+        <td>Verification、Review、final response、closeout admissionを無効化</td>
+      </tr>
+      <tr>
+        <td>verification document revision／digestが変わる</td>
+        <td>checklist、mapping、Verification receipt、completion checkを再計算</td>
+      </tr>
+      <tr>
+        <td>Review指摘でsourceを修正する</td>
+        <td>新しいRework implementation Runを作成し、再Verificationと再Reviewを要求</td>
+      </tr>
+      <tr>
+        <td>final response candidateが変わる</td>
+        <td>以前のReviewとcloseout admissionを無効化</td>
+      </tr>
+      <tr>
+        <td>blocking findingが未解決</td>
+        <td><code>canCommit=false</code></td>
+      </tr>
+      <tr>
+        <td>Security evidenceがrequiredかつ未完了／stale</td>
+        <td><code>canCommit=false</code></td>
+      </tr>
+      <tr>
+        <td>merge target branchが変わる</td>
+        <td>preview、decision、CI evidenceを無効化</td>
+      </tr>
+      <tr>
+        <td>target HEADが変わる</td>
+        <td>previewを無効化し再作成を要求</td>
+      </tr>
+      <tr>
+        <td>merge strategy／integration policy revisionが変わる</td>
+        <td>previewを無効化</td>
+      </tr>
+      <tr>
+        <td>closeout admission後にhookがsourceを変える</td>
+        <td>admissionを無効化し、再Verificationと再Reviewを要求</td>
+      </tr>
+      <tr>
+        <td>Full-fidelity payloadが期限削除される</td>
+        <td>Receiptとbindingは維持し、UIは<code>purged</code>を表示</td>
+      </tr>
+      <tr>
+        <td>closeout待ちEvidenceが7日を超える</td>
+        <td>payloadを削除せず保護</td>
+      </tr>
+      <tr>
+        <td>closeout前に必要payloadが既にpurged</td>
+        <td>fail-closeし、新しいRun／再検証を要求</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Evidence freshnessは保存時のbooleanではなく、現在のauthorityとbindingからread時に導出する。
+    historical receiptのverdict、binding、digestはappend-onlyとし、staleになっても削除・上書き
+    しない。retention lifecycle metadataだけはpayload削除時に更新できる。
+  </p>
+  <h2 id="section-8-target-control-flow">8. Target control flow</h2>
+  <figure>
+    <pre class="mermaid" data-spec-html-source="markdown">flowchart TD
+    A[&quot;Task Revision Snapshot&quot;] --&gt; B[&quot;Implementation Run admission&quot;]
+    B --&gt; C[&quot;Evidence Subject: sourceStateHash / diffDigest&quot;]
+    C --&gt; D[&quot;Verification Receipt&quot;]
+    D --&gt; E[&quot;Final Response Evidence&quot;]
+    E --&gt; F[&quot;Review Manifest v3&quot;]
+    F --&gt; G{&quot;Blocking findingまたは修正?&quot;}
+    G --&gt;|Yes| H[&quot;新しいRework Implementation Run&quot;]
+    H --&gt; C
+    G --&gt;|No| I[&quot;Closeout AdmissionをGit lock内で作成&quot;]
+    I --&gt; J{&quot;全bindingが現在値と一致?&quot;}
+    J --&gt;|No| K[&quot;Admission無効化・再検証&quot;]
+    J --&gt;|Yes| L[&quot;Commit / Merge&quot;]
+    L --&gt; M[&quot;基幹Ledgerを保持&quot;]
+    M --&gt; N[&quot;終端後7日でFull-fidelity payloadをcleanup&quot;]
+</pre>
+    <figcaption>8. Target control flowの図</figcaption>
+  </figure>
+  <p>
+    Hostはこの順序を新しいCoding Agent modeや固定tool workflowとして強制しない。各Evidenceを
+    保存するapplication commandのpreconditionと、finalize／closeoutの構造条件として強制する。
+  </p>
+  <h2 id="section-9-ownershipとmodule境界">9. Ownershipとmodule境界</h2>
+  <h3 id="section-91-apimodulestaskoperator">9.1 <code>api/modules/taskOperator</code></h3>
+  <ul>
+    <li>Task mutationのrevision CAS</li>
+    <li>Task revision snapshotの作成</li>
+    <li>Task revision digest</li>
+    <li>user、Mission Pilot、その他callerを同じTask commandへ通す</li>
+  </ul>
+  <h3 id="section-92-apimodulesagentsshare">9.2 <code>api/modules/agentsShare</code></h3>
+  <p>両roleで同じ意味を持つ次のcontractと純粋関数だけを置く。</p>
+  <ul>
+    <li><code>EvidenceSubjectBinding</code></li>
+    <li>Evidence freshness enumと比較関数</li>
+    <li>digest inputのcanonicalization</li>
+    <li>typed evidence reference</li>
+  </ul>
+  <p>route、repository、role判定、cleanup実行は置かない。</p>
+  <h3 id="section-93-apimodulescodingagent">9.3 <code>api/modules/codingAgent</code></h3>
+  <ul>
+    <li>implementation Run admission時のTask revision binding</li>
+    <li>workspace source snapshotからのEvidence Subject作成</li>
+    <li>Verification receiptのcurrent Run binding</li>
+    <li>final response Evidenceの作成</li>
+    <li>completion readinessでのfreshness projection</li>
+    <li>Coding Agent full-fidelity payloadの保持対象分類</li>
+  </ul>
+  <h3 id="section-94-apimodulesreview">9.4 <code>api/modules/review</code></h3>
+  <ul>
+    <li>Review Target Manifest version 3</li>
+    <li>subject、Verification、final responseのbinding確認</li>
+    <li>Review verdictとfinding receipt</li>
+    <li>Reviewをread-onlyに保つ</li>
+    <li>correctionを新しいimplementation Runへ依頼するcommand</li>
+    <li>Review固有payloadの保持対象分類</li>
+  </ul>
+  <h3 id="section-95-apimodulesmissionpilot">9.5 <code>api/modules/missionPilot</code></h3>
+  <ul>
+    <li>handoffしたimplementation Runの構造的provenance</li>
+    <li>current subjectに対するVerification／Review結果の評価</li>
+    <li>rework Run作成と次actionの判断</li>
+    <li>closeoutを直接実装せず、agent-independent closeout commandを利用</li>
+  </ul>
+  <h3 id="section-96-apimodulesevidenceledger">9.6 <code>api/modules/evidenceLedger</code></h3>
+  <p>Agent非依存の共有application boundaryとして追加する。</p>
+  <ul>
+    <li>Evidence Subject persistence</li>
+    <li>Receipt header persistence</li>
+    <li>payload metadataとpayload store port</li>
+    <li>freshness query</li>
+    <li>retention participant port</li>
+  </ul>
+  <p>role固有の意味判定、route、Review workflow、Coding Agent toolは置かない。</p>
+  <h3 id="section-97-apimodulesgitcloseout">9.7 <code>api/modules/gitCloseout</code></h3>
+  <p>Agent非依存のCloseout Admission application serviceを置く。</p>
+  <ul>
+    <li>admission snapshot作成</li>
+    <li>Git mutation lock内の直前再確認</li>
+    <li>admission consume／invalidate</li>
+    <li>commit／merge commandへのexpected admission revision適用</li>
+  </ul>
+  <p>
+    既存NightWorkers routeはこのpublic commandを呼ぶcomposition adapterとする。新しい
+    Agent固有closeout logicを<code>api/modules/nightworkers</code>へ追加しない。
+  </p>
+  <h3 id="section-98-apiservicesruntime-retention">
+    9.8 <code>api/services/runtime-retention</code>
+  </h3>
+  <ul>
+    <li>scheduler</li>
+    <li>cleanup participantのcomposition</li>
+    <li>cleanup lease</li>
+    <li>preview／execute jobの共通制御</li>
+    <li>runtime artifact rootの安全な削除</li>
+    <li>WAL checkpoint／page reclaim</li>
+    <li>audit</li>
+  </ul>
+  <p>
+    Coding Agent、Review、Mission Pilotのtableや状態をkeywordで分類しない。各moduleが返す typed
+    cleanup candidateを処理する。
+  </p>
+  <h3 id="section-99-frontend">9.9 Frontend</h3>
+  <ul>
+    <li>
+      Coding Agent Evidenceの表示modelとfreshness projection: <code>src/modules/codingAgent</code>
+    </li>
+    <li>Review固有表示: <code>src/modules/review</code></li>
+    <li>保持期間、cleanup status、preview、実行: <code>src/modules/settings</code></li>
+    <li>NightWorkers timelineは公開された表示modelを利用するだけとする。</li>
+  </ul>
+  <h2 id="section-10-canonical-contracts">10. Canonical contracts</h2>
+  <h3 id="section-101-task-revision-snapshot">10.1 Task Revision Snapshot</h3>
+  <pre><code class="language-ts">type TaskRevisionSnapshot = {
+  id: string;
+  taskId: string;
+  revision: number;
+  digest: string;
+  title: string;
+  description: string | null;
+  objective: string | null;
+  acceptanceCriteria: string | null;
+  specificationRefs: string[];
+  createdBy: string | null;
+  createdAt: string;
+};
+</code></pre>
+  <ul>
+    <li><code>tasks.revision</code>とsnapshot作成を同一transactionで行う。</li>
+    <li>digestはfield順を固定したcanonical JSONから生成する。</li>
+    <li><code>updatedAt</code>をrevisionの代用にしない。</li>
+    <li>
+      status、queue position、lease等、実装意味を変えない運用fieldはTask revision対象に含めない。
+    </li>
+    <li>どのfieldがrevision対象かをTask Operator contractで固定する。</li>
+  </ul>
+  <h3 id="section-102-evidence-subject-snapshot">10.2 Evidence Subject Snapshot</h3>
+  <pre><code class="language-ts">type EvidenceSubjectBinding = {
+  id: string;
+  version: 1;
+  taskId: string;
+  taskRevisionId: string;
+  taskRevision: number;
+  taskDigest: string;
+  implementationRunId: string;
+  workspaceId: string;
+  workspaceAllocationVersion: number;
+  baseHead: string;
+  sourceStateHash: string;
+  diffDigest: string;
+  verificationDocumentId: string | null;
+  verificationDocumentDigest: string | null;
+  createdAt: string;
+};
+</code></pre>
+  <ul>
+    <li>一つのimplementation Run内でsourceが変わるたびに新しいsubjectを作成できる。</li>
+    <li>
+      <code>implementationRunId + sourceStateHash + verificationDocumentDigest</code
+      >を同一性の中心にする。
+    </li>
+    <li>同じsource hashを別Runで観測しても、subject IDは共有しない。</li>
+    <li>
+      <code>baseHead</code>、workspace ID、allocation
+      versionを含め、別workspaceの偶然一致を除外する。
+    </li>
+    <li>diffがない場合も空文字列のcanonical digestを保存し、<code>null</code>と混同しない。</li>
+  </ul>
+  <h3 id="section-103-receipt-header">10.3 Receipt header</h3>
+  <p>Verification、Review、Security、final response、closeoutのtyped tableは共通headerを持つ。</p>
+  <pre><code class="language-ts">type EvidenceReceiptHeader = {
+  id: string;
+  subjectId: string;
+  kind:
+    | &quot;verification&quot;
+    | &quot;final_response&quot;
+    | &quot;review&quot;
+    | &quot;security&quot;
+    | &quot;closeout&quot;;
+  schemaVersion: number;
+  resultDigest: string;
+  payloadId: string | null;
+  payloadDigest: string | null;
+  payloadByteLength: number | null;
+  payloadPurgedAt: string | null;
+  createdAt: string;
+};
+</code></pre>
+  <p>
+    一つの巨大な汎用Evidence JSON tableは作らない。headerの意味を共有し、Verification、
+    Review、final response、Security、closeoutの結果fieldはそれぞれの型付きtableが所有する。
+    receiptのverdict、binding、digestはappend-onlyとし、<code>payloadPurgedAt</code>だけをretention
+    lifecycle metadataとして更新可能にする。
+  </p>
+  <h3 id="section-104-freshness-projection">10.4 Freshness projection</h3>
+  <pre><code class="language-ts">type EvidenceFreshness =
+  | { status: &quot;current&quot; }
+  | { status: &quot;stale&quot;; reasons: string[] }
+  | { status: &quot;foreign&quot;; reasons: string[] }
+  | { status: &quot;failed&quot;; reasons: string[] }
+  | { status: &quot;missing&quot;; reasons: string[] };
+</code></pre>
+  <p>比較順序は次のとおりとする。</p>
+  <ol>
+    <li>task ID</li>
+    <li>task revision ID／digest</li>
+    <li>implementation Run ID</li>
+    <li>workspace ID／allocation version</li>
+    <li>base HEAD</li>
+    <li>source state hash</li>
+    <li>diff digest</li>
+    <li>verification document ID／digest</li>
+    <li>receipt固有result</li>
+  </ol>
+  <p>
+    TaskまたはRunが違う場合は<code>foreign</code>、同じauthorityでsource等が古い場合は<code>stale</code>とする。
+    UI文言ではなくenumとreason codeで判断する。
+  </p>
+  <h3 id="section-105-final-response-evidence">10.5 Final Response Evidence</h3>
+  <pre><code class="language-ts">type FinalResponseEvidence = EvidenceReceiptHeader &amp; {
+  kind: &quot;final_response&quot;;
+  implementationRunId: string;
+  candidateRevision: number;
+  content: string;
+  contentDigest: string;
+  readinessSnapshotDigest: string;
+  verificationReceiptIds: string[];
+};
+</code></pre>
+  <ul>
+    <li>final response本文は基幹Evidenceとして自動削除しない。</li>
+    <li>大容量attachment、tool result、生成途中candidateはpayloadとして7日保持する。</li>
+    <li>
+      Native API runtimeとCodex SDK runtimeは同じ<code>FinalizeCandidateCommand</code>を呼ぶ。
+    </li>
+    <li>candidate revisionが変わればReviewとCloseout Admissionを無効化する。</li>
+    <li>schema parse failure時もprovider本文を保持する既存原則を維持する。</li>
+  </ul>
+  <h3 id="section-106-review-target-manifest-version-3">10.6 Review Target Manifest version 3</h3>
+  <pre><code class="language-ts">type ReviewTargetManifestV3 = {
+  version: 3;
+  digest: string;
+  taskId: string;
+  subjectId: string;
+  taskRevisionId: string;
+  implementationRunId: string;
+  sourceStateHash: string;
+  diffDigest: string;
+  verificationReceiptIds: string[];
+  verificationSnapshotDigest: string;
+  finalResponseEvidenceId: string;
+  finalResponseDigest: string;
+  targetFiles: Array&lt;{
+    path: string;
+    diffDigest: string;
+    diffBytes: number;
+  }&gt;;
+};
+</code></pre>
+  <ul>
+    <li>Review開始時とReview完了時の両方でmanifestを再検証する。</li>
+    <li>source Runの<code>diffPatch</code>や<code>finalReport</code>を時刻で推測しない。</li>
+    <li>
+      Review中にsourceまたはfinal
+      responseが変わった場合はReview結果を保存しても<code>stale</code>とする。
+    </li>
+    <li>version 2 manifestはhistorical表示だけに使い、新しいcloseout authorityにしない。</li>
+  </ul>
+  <h3 id="section-107-rework-lineage">10.7 Rework lineage</h3>
+  <pre><code class="language-ts">type ReworkRunProvenance = {
+  sourceReviewReceiptId: string;
+  sourceImplementationRunId: string;
+  sourceSubjectId: string;
+  blockingFindingIds: string[];
+};
+</code></pre>
+  <ul>
+    <li>Review runtimeはrepositoryを編集しない。</li>
+    <li>修正は新しいCoding Agent implementation Runへhandoffする。</li>
+    <li>新Runは元Review findingをcontextとして読めるが、元RunのVerificationを継承しない。</li>
+    <li>新sourceに対するVerification、final response、Reviewを新規作成する。</li>
+    <li>finding dispositionは、修正Runと再Review receiptへ参照が付いた場合に解決可能とする。</li>
+  </ul>
+  <h3 id="section-108-closeout-admission">10.8 Closeout Admission</h3>
+  <pre><code class="language-ts">type CloseoutAdmissionSnapshot = {
+  id: string;
+  revision: number;
+  status: &quot;current&quot; | &quot;invalidated&quot; | &quot;consumed&quot;;
+  subjectId: string;
+  taskRevisionId: string;
+  implementationRunId: string;
+  sourceStateHash: string;
+  diffDigest: string;
+  finalResponseEvidenceId: string;
+  verificationReceiptIds: string[];
+  reviewReceiptId: string;
+  securityReceiptId: string | null;
+  unresolvedBlockingFindingIds: string[];
+  stagedDiffDigest: string;
+  repositoryHead: string;
+  mergePreviewBindingDigest: string | null;
+  createdAt: string;
+  consumedAt: string | null;
+  invalidatedAt: string | null;
+  invalidationReason: string | null;
+};
+</code></pre>
+  <p><code>canCommit</code>は次の論理積とする。</p>
+  <pre><code class="language-text">gitReady
+AND taskRevisionCurrent
+AND subjectCurrent
+AND verificationCurrentAndPassed
+AND finalResponseCurrent
+AND reviewCurrentAndApproved
+AND noUnresolvedBlockingFinding
+AND securityCurrentOrExplicitlyNotRequired
+AND stagedDiffMatchesReviewedDiff
+AND mergePreviewCurrentWhenRequired
+</code></pre>
+  <p>
+    Git commit／merge
+    commandは<code>admissionId</code>と<code>expectedAdmissionRevision</code>を受け取る。
+    admissionをGit mutation lock外で再利用しない。
+  </p>
+  <h3 id="section-109-merge-preview-binding">10.9 Merge Preview Binding</h3>
+  <pre><code class="language-ts">type MergePreviewBinding = {
+  sourceCommitSha: string;
+  targetBranch: string;
+  targetHeadSha: string;
+  strategy: string;
+  integrationPolicyRevision: number;
+  ciEvidenceDigest: string | null;
+};
+</code></pre>
+  <p>
+    いずれかが変わった場合は、同一transactionでpreview、decision、CI evidenceをclearし、 record
+    versionを増やす。
+  </p>
+  <h2 id="section-11-retention-policy">11. Retention policy</h2>
+  <h3 id="section-111-設定">11.1 設定</h3>
+  <p>既存<code>GeneralSettings.dataRetention</code>へ次を追加する。</p>
+  <pre><code class="language-ts">type DataRetentionSettings = RuntimeLogRetentionConfig &amp; {
+  codingAgentFullRecordDays: number;
+  usageDataDays: number;
+  auditEventDays: number;
+  sweepIntervalMinutes: number;
+};
+</code></pre>
+  <p>規則:</p>
+  <ul>
+    <li><code>codingAgentFullRecordDays</code>の既定値は<code>7</code>。</li>
+    <li>設定可能範囲は1〜365日。</li>
+    <li><code>0</code>、負数、非整数、上限超過はschema validationで拒否する。</li>
+    <li>設定欠落時は7日へnormalizeする。</li>
+    <li>設定保存はcleanupを実行しない。</li>
+    <li>短縮後は次回scheduled sweepまたは明示cleanupで新しいcutoffを使用する。</li>
+    <li>延長しても既にpurgedのpayloadは復元しない。</li>
+    <li>run-linked provider transcriptを含む完全記録はこの単一設定に従う。</li>
+    <li>全体API logやusage集計等、同じ情報の正本ではない運用データは既存の個別設定を維持する。</li>
+  </ul>
+  <h3 id="section-112-恒久保持する基幹record">11.2 恒久保持する基幹record</h3>
+  <p>次は自動retentionの削除対象にしない。</p>
+  <ul>
+    <li>repositoryとTaskのidentity</li>
+    <li>Task revision snapshot</li>
+    <li>implementation Run identity、status、開始・終了時刻、provenance</li>
+    <li>Evidence Subject Snapshot</li>
+    <li>Verification receiptのcheck kind、command digest、runner、exit code、pass/fail要約</li>
+    <li>Review verdict、finding severity、disposition、manifest digest</li>
+    <li>final response本文、candidate revision、content digest</li>
+    <li>Security verdictの要約</li>
+    <li>Closeout Admission</li>
+    <li>commit SHA、merge SHA、source／target branch、target HEAD</li>
+    <li>core receipt payloadのdigest、byte length、purged timestamp</li>
+    <li>Run単位の削除済みdetail件数、byte数、manifest digest</li>
+    <li>cleanupの最新集計状態</li>
+  </ul>
+  <p>TaskまたはProjectをユーザーが明示削除する既存操作は別であり、自動retentionとは区別する。</p>
+  <h3 id="section-113-既定7日保持する完全記録">11.3 既定7日保持する完全記録</h3>
+  <p>次は<code>codingAgentFullRecordDays</code>の対象とする。</p>
+  <ul>
+    <li>provider request／response transcript</li>
+    <li>Native turn historyとprovider debug</li>
+    <li>tool arguments、tool result、model-visible output</li>
+    <li>action／activity eventの大容量payload</li>
+    <li>command raw stdout／stderr</li>
+    <li>Run log</li>
+    <li>完全diff patchと中間diff</li>
+    <li>test inventoryのcase明細</li>
+    <li>test executionのcase明細とfailure detail</li>
+    <li>Verification parsed report</li>
+    <li>Review artifactのraw JSON</li>
+    <li>Security toolのraw result</li>
+    <li>context snapshotとcompaction前history</li>
+    <li>final responseの生成途中candidate</li>
+    <li>run-linkedの中間assistant／system／tool message本文とmetadata</li>
+    <li>run-linked attachmentと生成artifact</li>
+  </ul>
+  <h3 id="section-114-retention-anchor">11.4 retention anchor</h3>
+  <p><code>expiresAt</code>は保存時に固定せず、policyとRun状態からeligibility queryで計算する。</p>
+  <table>
+    <caption>
+      11.4 retention anchor
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Run／Task状態</th>
+        <th scope="col">retention anchor</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>failed</code>、<code>timed_out</code>、<code>cancelled</code></td>
+        <td><code>run.finishedAt</code></td>
+      </tr>
+      <tr>
+        <td>superseded historical Run</td>
+        <td><code>run.finishedAt</code></td>
+      </tr>
+      <tr>
+        <td>closeout済み</td>
+        <td><code>closeoutAdmission.consumedAt</code></td>
+      </tr>
+      <tr>
+        <td>merge済み</td>
+        <td><code>mergedAt</code></td>
+      </tr>
+      <tr>
+        <td>completedだがReview／closeout待ち</td>
+        <td>保護。期限なし</td>
+      </tr>
+      <tr>
+        <td><code>running</code>、<code>verifying</code>、<code>needs_review</code></td>
+        <td>保護。期限なし</td>
+      </tr>
+      <tr>
+        <td><code>blocked</code>、<code>needs_human</code></td>
+        <td>保護。明示cancel／再開まで期限なし</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    stuck <code>running</code>をretentionが独自にterminalへ変更しない。既存のRun
+    recovery／timeout処理で terminalが確定してからretention対象にする。
+  </p>
+  <h3 id="section-115-payload-availabilityとcloseout">11.5 payload availabilityとcloseout</h3>
+  <ul>
+    <li>closeout前に必要なcurrent payloadは保護する。</li>
+    <li>closeout完了後はCloseout AdmissionとReceiptが歴史上の完了根拠になる。</li>
+    <li>payloadがpurged済みの未closeout Runは後からcommit可能にしない。</li>
+    <li>
+      purged Runを再開する場合は新しいimplementation Runを作成し、再Verificationと再Reviewを行う。
+    </li>
+    <li>payloadの物理的有無からEvidence freshnessを推測しない。</li>
+  </ul>
+  <h2 id="section-12-payload-storage">12. Payload storage</h2>
+  <h3 id="section-121-保存構造">12.1 保存構造</h3>
+  <p>
+    SQLiteにはpayload metadataだけを保存し、大容量本文は
+    <code>${NIGHTWORKERS_RUNTIME_DIR}/artifacts/evidence/</code>配下のcontent-addressed
+    storeへ保存する。
+  </p>
+  <pre><code class="language-ts">type EvidencePayload = {
+  id: string;
+  ownerKind:
+    | &quot;coding_agent&quot;
+    | &quot;verification&quot;
+    | &quot;review&quot;
+    | &quot;security&quot;;
+  ownerId: string;
+  subjectId: string | null;
+  kind: string;
+  contentDigest: string;
+  relativePath: string;
+  mediaType: string;
+  compression: &quot;gzip&quot; | &quot;none&quot;;
+  byteLength: number;
+  storedByteLength: number;
+  state: &quot;full&quot; | &quot;compacted&quot; | &quot;purging&quot; | &quot;purged&quot;;
+  createdAt: string;
+  purgedAt: string | null;
+};
+</code></pre>
+  <p>規則:</p>
+  <ul>
+    <li>DBへabsolute pathをauthorityとして保存しない。</li>
+    <li>
+      <code>relativePath</code>をruntime artifact rootへ解決し、realpathとsymlink escapeを検証する。
+    </li>
+    <li>書き込みはtemporary file、fsync、atomic renameの順に行う。</li>
+    <li>digestと実byte数を保存後に再検証する。</li>
+    <li>読み出し時もdigest mismatchをtyped failureにする。</li>
+    <li>同じdigestの物理fileをdeduplicateしてよいが、owner rowとsubject bindingは共有しない。</li>
+    <li>physical objectはactive ownerが一件もなくなった場合だけ削除する。</li>
+    <li>payload本文をapplication logへ出さない。</li>
+    <li>
+      core receiptに属するpayloadを削除した場合は、receiptの<code>payloadDigest</code>、
+      <code>payloadByteLength</code>、<code>payloadPurgedAt</code>を残し、payload metadata
+      rowは削除可能とする。
+    </li>
+    <li>
+      tool call、turn、activity event等のdetail-only payloadは、削除後にpayload metadata rowと
+      detail rowを残し続けない。削除件数、byte数、manifest digestをRun単位へ集約する。
+    </li>
+  </ul>
+  <h3 id="section-122-cleanup-state-machine">12.2 cleanup state machine</h3>
+  <p>filesystemとSQLiteを一つのtransactionにできないため、idempotentな二段階削除を行う。</p>
+  <pre><code class="language-text">full
+  -&gt; purging   DB transactionで削除対象をclaim
+  -&gt; file delete
+  -&gt; purged    core receiptまたはRun集計へdigest、byte length、purgedAtを反映
+  -&gt; compacted payload metadataとdetail-only rowを削除
+</code></pre>
+  <ul>
+    <li>crash後に<code>purging</code>が残った場合はstartup sweepが再開する。</li>
+    <li>fileが既にない場合もdigestとclaimが一致すればidempotent successとする。</li>
+    <li>DB更新前にfileだけを削除しない。</li>
+    <li><code>purging</code>中のpayloadはcloseout authorityにしない。</li>
+    <li>
+      <code>purged</code>はcleanup job内の中間状態として利用できるが、detail-only payload一件ごとの
+      tombstoneを永久保持しない。
+    </li>
+  </ul>
+  <h3 id="section-123-backup">12.3 backup</h3>
+  <ul>
+    <li>SQLite backupには基幹Ledgerとpayload metadataを含める。</li>
+    <li>完全なruntime backupを作る場合はpayload directoryとmanifestを同じsnapshotへ含める。</li>
+    <li>
+      SQLiteだけをrestoreしてpayload
+      fileがない場合、availabilityを<code>purged</code>または<code>missing</code>として
+      表示し、Evidence freshnessを勝手に<code>current</code>へ補正しない。
+    </li>
+  </ul>
+  <h2 id="section-13-cleanup-application">13. Cleanup application</h2>
+  <h3 id="section-131-cleanup-preview">13.1 Cleanup Preview</h3>
+  <pre><code class="language-http">POST /api/settings/data-retention/cleanup/preview
+</code></pre>
+  <p>response:</p>
+  <pre><code class="language-ts">type RetentionCleanupPreview = {
+  previewId: string;
+  settingsRevision: number;
+  policyDigest: string;
+  cutoffAt: string;
+  expiresAt: string;
+  databaseBytesBefore: number;
+  walBytesBefore: number;
+  deletable: {
+    payloads: number;
+    detailRows: number;
+    estimatedPayloadBytes: number;
+    estimatedDatabaseBytes: number;
+  };
+  protected: {
+    activeRuns: number;
+    reviewPendingRuns: number;
+    closeoutPendingRuns: number;
+    needsHumanRuns: number;
+  };
+  categories: Array&lt;{
+    kind: string;
+    records: number;
+    estimatedBytes: number;
+  }&gt;;
+};
+</code></pre>
+  <ul>
+    <li>previewはread-only。</li>
+    <li>raw本文、path、command、secretをresponseへ含めない。</li>
+    <li>preview有効期間は15分。</li>
+    <li>preview作成後にsettings revisionまたはcandidate setが変わればexecuteを拒否する。</li>
+  </ul>
+  <h3 id="section-132-immediate-cleanup">13.2 Immediate Cleanup</h3>
+  <pre><code class="language-http">POST /api/settings/data-retention/cleanup
+</code></pre>
+  <p>request:</p>
+  <pre><code class="language-ts">type ExecuteRetentionCleanup = {
+  previewId: string;
+  expectedSettingsRevision: number;
+  idempotencyKey: string;
+  reclaimDiskSpace: &quot;incremental&quot; | &quot;skip&quot;;
+};
+</code></pre>
+  <p>実行条件:</p>
+  <ol>
+    <li>server-side operator authorityを確認する。</li>
+    <li>idempotency receiptを確認する。</li>
+    <li>cleanup leaseを取得する。</li>
+    <li>preview ID、期限、settings revision、policy digestを確認する。</li>
+    <li>candidateを再計算し、preview範囲を超える削除をしない。</li>
+    <li>candidateごとにRun、Review、closeout、Git mutation状態を再確認する。</li>
+    <li>1,000件以下のbatchで<code>purging</code>へclaimする。</li>
+    <li>artifact fileを安全なruntime root内で削除する。</li>
+    <li>metadataを<code>purged</code>へ更新し、不要なdetail child rowを削除する。</li>
+    <li><code>PRAGMA foreign_key_check</code>相当の整合検査を実行する。</li>
+    <li>WAL checkpointと要求されたpage reclaimを実行する。</li>
+    <li>削除件数、byte数、保護件数、失敗を監査recordへ保存する。</li>
+    <li>
+      downstream mutationとdisk reclaimの結果を確認後にだけjobを<code>completed</code>にする。
+    </li>
+  </ol>
+  <p>
+    cleanup中に一部file削除が失敗した場合はjobを<code>partial</code>または<code>failed</code>にし、
+    未完了payloadを<code>purging</code>のまま再開可能にする。削除済みpayloadをrollbackで復元できるとは
+    表現しない。
+  </p>
+  <h3 id="section-133-scheduled-cleanup">13.3 Scheduled cleanup</h3>
+  <ul>
+    <li>
+      schedulerは固定<code>setInterval</code>ではなく、現在settingsから<code>nextRunAt</code>を再計算する。
+    </li>
+    <li>settings保存後にschedulerへreloadを通知する。</li>
+    <li>server起動時は未完了<code>purging</code> jobを先にreconcileする。</li>
+    <li>scheduled cleanupもImmediate Cleanupと同じapplication serviceを使う。</li>
+    <li>scheduled cleanupは内部previewを作成し、監査可能なpolicy snapshotを残す。</li>
+    <li>active sweepがある場合は同じPromiseへcoalesceする。</li>
+  </ul>
+  <h3 id="section-134-cleanup-audit">13.4 Cleanup audit</h3>
+  <p>
+    既存<code>runtime_retention_audit_events</code>を拡張するか、互換projectionを持つ
+    <code>retention_cleanup_jobs</code>を追加する。
+  </p>
+  <p>保存項目:</p>
+  <ul>
+    <li>trigger: <code>startup | scheduled | manual</code></li>
+    <li>status: <code>previewed | running | completed | partial | failed</code></li>
+    <li>settings revisionとpolicy digest</li>
+    <li>startedAt／finishedAt</li>
+    <li>rows／payloads／bytes deleted</li>
+    <li>protected counts</li>
+    <li>DB／WAL bytes before／after</li>
+    <li>checkpoint／vacuum result</li>
+    <li>error codeとredacted summary</li>
+    <li>idempotency key digest</li>
+  </ul>
+  <p>
+    cleanup job明細は<code>auditEventDays</code>で削除可能とし、最新cleanup日時と累積counterは
+    single-rowの<code>retention_state</code>へ保持する。監査eventを永久に追加し続けない。
+  </p>
+  <h2 id="section-14-sqlite-space-reclamation">14. SQLite space reclamation</h2>
+  <h3 id="section-141-通常sweep">14.1 通常sweep</h3>
+  <ul>
+    <li>batch DELETE後にWAL checkpointを行う。</li>
+    <li>
+      <code>page_count</code>、<code>freelist_count</code>、DB file size、WAL file
+      sizeを前後で記録する。
+    </li>
+    <li>毎回full <code>VACUUM</code>を行わない。</li>
+  </ul>
+  <h3 id="section-142-incremental-vacuum">14.2 Incremental vacuum</h3>
+  <ul>
+    <li>起動時に<code>auto_vacuum</code> capabilityを確認する。</li>
+    <li>新規DBは<code>INCREMENTAL</code>を有効にした状態で作成する。</li>
+    <li>
+      既存DBの切替はmaintenance migrationとして扱い、backup作成と空き容量確認後に一度だけ
+      必要なrebuildを行う。
+    </li>
+    <li>
+      libSQL／SQLite runtimeが安全に対応できない場合はcleanup自体を失敗させず、
+      <code>reclaimUnsupported</code>をstatusへ返す。
+    </li>
+  </ul>
+  <h3 id="section-143-full-optimization">14.3 Full optimization</h3>
+  <p>full <code>VACUUM</code>が必要な場合は「ストレージを最適化」という別の明示操作にする。</p>
+  <ul>
+    <li>active Run、queue worker、Git mutation、cleanup jobがない時だけ実行する。</li>
+    <li>必要なtemporary disk capacityを事前確認する。</li>
+    <li>server-side lockを取得する。</li>
+    <li>timeoutとprogressを表示する。</li>
+    <li>immediate cleanupの既定処理には含めない。</li>
+  </ul>
+  <h2 id="section-15-database-schema-plan">15. Database schema plan</h2>
+  <h3 id="section-151-新規table">15.1 新規table</h3>
+  <table>
+    <caption>
+      15.1 新規table
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">table</th>
+        <th scope="col">所有</th>
+        <th scope="col">目的</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>task_revision_snapshots</code></td>
+        <td>Task Operator</td>
+        <td>immutable Task revision</td>
+      </tr>
+      <tr>
+        <td><code>evidence_subject_snapshots</code></td>
+        <td>Evidence Ledger</td>
+        <td>Task、Run、workspace、source、verificationのbinding</td>
+      </tr>
+      <tr>
+        <td><code>final_response_evidence</code></td>
+        <td>Coding Agent</td>
+        <td>final response本文とcandidate revision</td>
+      </tr>
+      <tr>
+        <td><code>closeout_admissions</code></td>
+        <td>Git Closeout</td>
+        <td>immutable admissionとconsume／invalidate</td>
+      </tr>
+      <tr>
+        <td><code>evidence_payloads</code></td>
+        <td>Evidence Ledger</td>
+        <td>runtime artifact payload metadata</td>
+      </tr>
+      <tr>
+        <td><code>retention_cleanup_jobs</code></td>
+        <td>Runtime Retention</td>
+        <td>preview、execute、idempotency、監査</td>
+      </tr>
+      <tr>
+        <td><code>retention_state</code></td>
+        <td>Runtime Retention</td>
+        <td>last run、next run、累積counter</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-152-既存table拡張">15.2 既存table拡張</h3>
+  <table>
+    <caption>
+      15.2 既存table拡張
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">table</th>
+        <th scope="col">追加・変更</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>tasks</code></td>
+        <td><code>revision</code>、<code>current_revision_snapshot_id</code></td>
+      </tr>
+      <tr>
+        <td><code>task_runs</code></td>
+        <td>
+          <code>task_revision_snapshot_id</code
+          >、<code>task_digest</code>、<code>admission_subject_id</code>、<code>details_purged_at</code>、削除済み件数／byte数／manifest
+          digest
+        </td>
+      </tr>
+      <tr>
+        <td><code>verification_evidence_runs</code></td>
+        <td><code>subject_id</code>、typed receipt header、payload refs</td>
+      </tr>
+      <tr>
+        <td><code>verification_evidence_cases</code></td>
+        <td>payloadまたは期限削除可能detailとして分類</td>
+      </tr>
+      <tr>
+        <td><code>verification_checklist_items</code></td>
+        <td>statusをread model扱いにし、binding revisionを保存</td>
+      </tr>
+      <tr>
+        <td><code>review_sessions</code></td>
+        <td><code>target_subject_id</code>、<code>target_manifest_digest</code>、receipt ID</td>
+      </tr>
+      <tr>
+        <td><code>review_artifacts</code></td>
+        <td>raw JSONをpayloadへ分離</td>
+      </tr>
+      <tr>
+        <td><code>review_findings</code></td>
+        <td>subject／review receipt、resolution receipt refs</td>
+      </tr>
+      <tr>
+        <td><code>task_run_commit_records</code></td>
+        <td><code>closeout_admission_id</code>、admission revision</td>
+      </tr>
+      <tr>
+        <td><code>task_run_merge_records</code></td>
+        <td>merge preview binding digest、closeout admission ID</td>
+      </tr>
+      <tr>
+        <td><code>native_api_turns</code></td>
+        <td>large JSONをpayloadへ分離し、digest／availabilityを保持</td>
+      </tr>
+      <tr>
+        <td><code>native_api_tool_calls</code></td>
+        <td>arguments／result／model outputをpayloadへ分離</td>
+      </tr>
+      <tr>
+        <td><code>activity_artifacts</code></td>
+        <td>contentをpayloadへ分離</td>
+      </tr>
+      <tr>
+        <td><code>activity_events</code></td>
+        <td>大容量payloadをpayload refへ分離</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-153-fk方針">15.3 FK方針</h3>
+  <ul>
+    <li>
+      core receiptからpayloadへのFKは<code>ON DELETE SET NULL</code>または明示state
+      transitionとする。
+    </li>
+    <li>payloadからsubject、ownerへの参照は、core parent削除を引き起こさない方向にする。</li>
+    <li>automatic cleanupで<code>task_runs</code>をDELETEしない。</li>
+    <li>
+      Review receipt、Verification receipt、Closeout AdmissionからsubjectへのFKは
+      <code>ON DELETE RESTRICT</code>相当とする。
+    </li>
+    <li>Taskの明示削除だけが、既存の所有範囲に従いcoreをcascade削除できる。</li>
+  </ul>
+  <h3 id="section-154-index">15.4 Index</h3>
+  <p>最低限次を追加する。</p>
+  <ul>
+    <li>task revision: <code>(task_id, revision)</code> unique</li>
+    <li>subject: <code>(implementation_run_id, created_at)</code></li>
+    <li>
+      subject current lookup:
+      <code>(task_id, task_revision_id, implementation_run_id, source_state_hash)</code>
+    </li>
+    <li>receipt: <code>(subject_id, created_at)</code></li>
+    <li>payload cleanup: <code>(state, created_at)</code></li>
+    <li>payload owner: <code>(owner_kind, owner_id)</code></li>
+    <li>payload digest: <code>(content_digest)</code></li>
+    <li>closeout admission: <code>(implementation_run_id, status, revision)</code></li>
+    <li>cleanup job: <code>(status, created_at)</code></li>
+  </ul>
+  <p>retention queryは既存の時刻indexだけでなく、terminal stateとowner lookupを使う。</p>
+  <h2 id="section-16-migration-and-cutover">16. Migration and cutover</h2>
+  <h3 id="section-161-migration原則">16.1 Migration原則</h3>
+  <ul>
+    <li>migration前にruntime database backupを作成する。</li>
+    <li>schema bootstrapとDrizzle migrationを同じ契約へ保つ。</li>
+    <li>migration番号は実装時のjournalから採番する。</li>
+    <li>inline payloadを移す前にdigestとbyte lengthを計算する。</li>
+    <li>copy、digest検証、owner ref更新が完了するまで元columnをclearしない。</li>
+    <li>filesystem write失敗時は元SQLite本文を残す。</li>
+    <li>migrationは再実行可能なidempotency markerを持つ。</li>
+  </ul>
+  <h3 id="section-162-legacy-evidence">16.2 Legacy Evidence</h3>
+  <p>既存Evidenceは次に分類する。</p>
+  <ul>
+    <li>
+      十分なRun、source hash、verification document bindingがある:
+      <code>binding_version=1</code>へbackfill
+    </li>
+    <li>
+      RunはあるがTask revision snapshotがない:
+      migration時点のTaskを<code>legacy_snapshot</code>として結ぶ
+    </li>
+    <li>sourceまたはRunが一意に確定できない: <code>legacy_unbound</code></li>
+  </ul>
+  <p>
+    <code>legacy_unbound</code>はhistorical UIで表示できるが、新しいcloseout authorityにしない。
+    既存のtimestamp proximityだけでcurrent Evidenceへ昇格しない。
+  </p>
+  <h3 id="section-163-inline-payload-migration">16.3 Inline payload migration</h3>
+  <p>対象columnを段階的に移す。</p>
+  <ol>
+    <li>新規writeをpayload storeへdual-writeする。</li>
+    <li>payload readをpayload優先、legacy inline fallbackにする。</li>
+    <li>backfill workerでlegacy inline dataをpayload化する。</li>
+    <li>digest、byte length、read parityを検証する。</li>
+    <li>new writeからinline writeを停止する。</li>
+    <li>shadow cleanupで削除候補だけを計測する。</li>
+    <li>production cleanupを有効化する。</li>
+    <li>十分な互換期間後にlegacy fallbackを削除する。</li>
+  </ol>
+  <h3 id="section-164-初回cleanupの安全策">16.4 初回cleanupの安全策</h3>
+  <p>feature rollout直後に古い記録を無告知で削除しない。</p>
+  <ul>
+    <li>最初のreleaseはshadow previewのみとする。</li>
+    <li>設定画面へ対象件数、推定byte、導入予定日を表示する。</li>
+    <li>production deletionを有効化するreleaseで、既定7日を適用する。</li>
+    <li>manual immediate cleanupはproduction deletion有効化後だけ提供する。</li>
+    <li>cleanup実行前のpreviewは常に必要とする。</li>
+  </ul>
+  <h3 id="section-165-compatibility">16.5 Compatibility</h3>
+  <ul>
+    <li>Review manifest version 2 readerはhistorical表示用に維持する。</li>
+    <li>version 2からversion 3を推測生成してcloseoutしない。</li>
+    <li>
+      old checklist statusはread modelとして表示できるが、新しいadmissionではreceiptから再計算する。
+    </li>
+    <li>Native APIとCodex SDKの一方だけを先行してfinal response Evidence化しない。</li>
+  </ul>
+  <h2 id="section-17-api-plan">17. API plan</h2>
+  <h3 id="section-171-settings">17.1 Settings</h3>
+  <pre><code class="language-http">GET  /api/settings/general
+POST /api/settings/general
+</code></pre>
+  <ul>
+    <li><code>codingAgentFullRecordDays</code>をresponse／request schemaへ追加する。</li>
+    <li>optional legacy inputはnormalizeして7日を補う。</li>
+    <li>POST成功後にRetention Schedulerへsettings revision reload eventを渡す。</li>
+    <li>settings保存とcleanup実行を同一requestにしない。</li>
+  </ul>
+  <h3 id="section-172-retention-status">17.2 Retention status</h3>
+  <pre><code class="language-http">GET /api/settings/data-retention/status
+</code></pre>
+  <p>response:</p>
+  <ul>
+    <li>effective policy</li>
+    <li>settings revision</li>
+    <li>DB／WAL／payload directory size</li>
+    <li>last cleanup result</li>
+    <li>next scheduled cleanup</li>
+    <li>full／purging／purged payload counts</li>
+    <li>protected Run counts</li>
+    <li>incremental reclaim capability</li>
+  </ul>
+  <h3 id="section-173-cleanup-previewexecute">17.3 Cleanup preview／execute</h3>
+  <pre><code class="language-http">POST /api/settings/data-retention/cleanup/preview
+POST /api/settings/data-retention/cleanup
+GET  /api/settings/data-retention/cleanup/:jobId
+</code></pre>
+  <ul>
+    <li>OpenAPI schemaを定義する。</li>
+    <li>executeはidempotency key、settings revision、preview IDを必須にする。</li>
+    <li>long-running reclaimはjob status pollingとする。</li>
+    <li>error responseはraw pathやpayload本文を含めない。</li>
+  </ul>
+  <h3 id="section-174-evidence-query">17.4 Evidence query</h3>
+  <p>既存Run、Verification、Review、closeout responseへ次を追加する。</p>
+  <pre><code class="language-ts">{
+  subjectId: string | null;
+  freshness: EvidenceFreshness;
+  payloadAvailability: &quot;full&quot; | &quot;compacted&quot; | &quot;purging&quot; | &quot;purged&quot;;
+  retention: {
+    protected: boolean;
+    reason: string | null;
+    eligibleAt: string | null;
+  };
+}
+</code></pre>
+  <p>Frontendがevent順序やtimestampからstaleを推測しないよう、server projectionを正本にする。</p>
+  <h2 id="section-18-ui-plan">18. UI plan</h2>
+  <h3 id="section-181-settingsデータ管理">18.1 Settings「データ管理」</h3>
+  <p>設定画面へ独立した「データ管理」sectionを追加する。</p>
+  <p>表示:</p>
+  <ul>
+    <li>Coding Agent完全記録の保持期間</li>
+    <li>既定値7日</li>
+    <li>「基幹Evidence、final response、Git結果は自動削除されません」の説明</li>
+    <li>database size</li>
+    <li>WAL size</li>
+    <li>Evidence payload size</li>
+    <li>最終cleanup時刻と結果</li>
+    <li>次回cleanup予定</li>
+    <li>保護中record数</li>
+    <li>期限切れ候補数と推定削減量</li>
+  </ul>
+  <p>操作:</p>
+  <ul>
+    <li>保持期間の保存</li>
+    <li>「削除対象を確認」</li>
+    <li>「期限切れデータを今すぐ削除」</li>
+    <li>cleanup jobのprogress／retry</li>
+    <li>capabilityがある場合の「ストレージを最適化」</li>
+  </ul>
+  <h3 id="section-182-cleanup-confirmation">18.2 Cleanup confirmation</h3>
+  <p>確認dialogには次を表示する。</p>
+  <ul>
+    <li>cutoff</li>
+    <li>種別ごとの件数と推定byte</li>
+    <li>保護されるRun件数</li>
+    <li>基幹Ledgerが残ること</li>
+    <li>削除した完全記録は復元できないこと</li>
+    <li>設定変更だけでは削除されないこと</li>
+    <li>実行ボタン</li>
+  </ul>
+  <p>自由入力の確認文字列は不要とし、preview revisionによるserver-side確認を正本にする。</p>
+  <h3 id="section-183-evidence表示">18.3 Evidence表示</h3>
+  <p>Run timeline、Verification、Review、Git closeoutに共通badgeを表示する。</p>
+  <ul>
+    <li><code>Current</code></li>
+    <li><code>Stale</code></li>
+    <li><code>Different run</code></li>
+    <li><code>Failed</code></li>
+    <li><code>Missing</code></li>
+    <li><code>Details retained until YYYY-MM-DD</code></li>
+    <li><code>Details protected</code></li>
+    <li><code>Details deleted; receipt retained</code></li>
+  </ul>
+  <p>
+    <code>purged</code>を<code>missing Evidence</code>と同じ表示にしない。closeout済みhistorical
+    receiptは、 詳細削除後も「closeout時点ではcurrentだった」ことをCloseout Admissionから表示する。
+  </p>
+  <h3 id="section-184-closeout">18.4 Closeout</h3>
+  <ul>
+    <li>Git readinessだけでcommit buttonを有効化しない。</li>
+    <li>
+      Verification、Review、final response、finding、Security、staged diffの各条件を表示する。
+    </li>
+    <li><code>canCommit=false</code>のreason codeを個別に表示する。</li>
+    <li>stale原因がsource変更なら「再検証」、Review修正後なら「再Review」を案内する。</li>
+    <li>UI button状態はserverのCloseout Admission projectionへ従う。</li>
+  </ul>
+  <h2 id="section-19-implementation-phases">19. Implementation phases</h2>
+  <h3 id="phase-0-baselineと誤closeout回帰test">Phase 0: Baselineと誤closeout回帰test</h3>
+  <h4 id="実装">実装</h4>
+  <ol>
+    <li>現在のTask revision、Run、Verification、Review、closeout queryをfixture化する。</li>
+    <li>別Runの同一source hash Evidenceが採用されるscenarioを追加する。</li>
+    <li>Verification後にdiffが変わるscenarioを追加する。</li>
+    <li>Review後にsourceが変わるscenarioを追加する。</li>
+    <li>final response変更後に旧Reviewが残るscenarioを追加する。</li>
+    <li>target branch／target HEAD変更後に旧previewが残るscenarioを追加する。</li>
+    <li>
+      Review running／failed、stale Verification、blocking findingでも
+      <code>canCommit=true</code>になる既存expectationを失敗fixtureとして固定する。
+    </li>
+    <li>SQLite table別row count、page count、freelist、file sizeのbaseline helperを追加する。</li>
+  </ol>
+  <h4 id="主な対象">主な対象</h4>
+  <ul>
+    <li><code>tests/nightworkers-git-closeout.test.ts</code></li>
+    <li><code>tests/coding-agent-completion-readiness.test.ts</code></li>
+    <li><code>tests/coding-agent-evidence-check-query.test.ts</code></li>
+    <li><code>tests/services.review-files.test.ts</code></li>
+    <li><code>tests/mission-pilot-closeout.test.ts</code></li>
+    <li><code>tests/runtime-retention.service.test.ts</code></li>
+  </ul>
+  <h4 id="受け入れ条件">受け入れ条件</h4>
+  <ul>
+    <li>production変更前に各不整合を単一原因で再現できる。</li>
+    <li>closeout failureがGit failureではなくEvidence mismatchであることを確認できる。</li>
+    <li>baseline storage計測がisolated Vitest DBだけを対象にする。</li>
+  </ul>
+  <h3 id="phase-1-task-revisionとevidence-subject">Phase 1: Task revisionとEvidence Subject</h3>
+  <h4 id="実装-1">実装</h4>
+  <ol>
+    <li><code>tasks.revision</code>と<code>task_revision_snapshots</code>を追加する。</li>
+    <li>Task Operator mutationをrevision CASとsnapshot作成へ統一する。</li>
+    <li>Run開始時にTask revision snapshot IDとdigestを保存する。</li>
+    <li>
+      <code>EvidenceSubjectBinding</code> contractとcanonical digest
+      utilityを<code>agentsShare</code>へ追加する。
+    </li>
+    <li>
+      <code>evidence_subject_snapshots</code> repositoryをagent-independent moduleへ追加する。
+    </li>
+    <li>source snapshot確定時にcurrent subjectを作成する。</li>
+    <li>
+      Verification evidence queryを<code>subjectId</code>とcurrent implementation Runへ限定する。
+    </li>
+    <li>checklistをEvidenceから再計算するprojectionへ変更する。</li>
+  </ol>
+  <h4 id="主な対象-1">主な対象</h4>
+  <ul>
+    <li><code>api/db/schema-base.ts</code></li>
+    <li><code>api/db/schema-task-execution.ts</code></li>
+    <li><code>api/db/verification-schema.ts</code></li>
+    <li><code>api/db/*schema-bootstrap.ts</code></li>
+    <li><code>api/modules/taskOperator</code></li>
+    <li><code>api/modules/agentsShare</code></li>
+    <li><code>api/modules/evidenceLedger</code></li>
+    <li><code>api/modules/codingAgent/application</code></li>
+    <li><code>api/modules/codingAgent/verification</code></li>
+  </ul>
+  <h4 id="受け入れ条件-1">受け入れ条件</h4>
+  <ul>
+    <li>Task変更後に旧Run Evidenceが<code>stale</code>になる。</li>
+    <li>同じsource hashでも別Run Evidenceは<code>foreign</code>になる。</li>
+    <li>checklist rowを直接更新しても、receiptがなければcompletion checkを通らない。</li>
+    <li>read-only freshness queryはTask、Todo、checklist statusを変更しない。</li>
+  </ul>
+  <h3 id="phase-2-final-response-evidenceとreview-manifest-v3">
+    Phase 2: Final Response EvidenceとReview Manifest v3
+  </h3>
+  <h4 id="実装-2">実装</h4>
+  <ol>
+    <li><code>final_response_evidence</code>を追加する。</li>
+    <li>Native APIとCodex SDKのcandidate確定を同じapplication commandへ接続する。</li>
+    <li>candidate revision、content digest、readiness digest、subject IDを保存する。</li>
+    <li>Review Target Manifest version 3を追加する。</li>
+    <li>Review開始／完了時にsubject、Verification receipt、final responseを再確認する。</li>
+    <li>Review correctionを新しいimplementation Runのprovenanceへ結ぶ。</li>
+    <li>source修正後に元Reviewをcurrent扱いしない。</li>
+  </ol>
+  <h4 id="主な対象-2">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/application</code></li>
+    <li><code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/native-api-runner</code></li>
+    <li><code>api/modules/review/review-target-manifest.ts</code></li>
+    <li><code>api/modules/review/review-run.service.ts</code></li>
+    <li><code>api/modules/review/review-files.service.ts</code></li>
+    <li>Review persistence schema</li>
+  </ul>
+  <h4 id="受け入れ条件-2">受け入れ条件</h4>
+  <ul>
+    <li>両runtime laneが同じfinal response Evidence contractを使う。</li>
+    <li>final response変更後に旧Reviewが<code>stale</code>になる。</li>
+    <li>Reviewがsourceを直接変更しない。</li>
+    <li>rework後は新Verificationと新Reviewなしでcloseoutできない。</li>
+  </ul>
+  <h3 id="phase-3-closeout-admission">Phase 3: Closeout Admission</h3>
+  <h4 id="実装-3">実装</h4>
+  <ol>
+    <li><code>api/modules/gitCloseout</code>と<code>closeout_admissions</code>を追加する。</li>
+    <li>normal closeoutとMission Pilot closeoutを同じadmission evaluatorへ接続する。</li>
+    <li>
+      Git mutation lock内でTask revision、subject、Verification、Review、Security、 finding、final
+      response、staged diffを再取得する。
+    </li>
+    <li><code>canCommit</code>を全required conditionの論理積へ変更する。</li>
+    <li>commit／merge commandへadmission IDとexpected revisionを要求する。</li>
+    <li>hook mutation後にsourceとstaged diffを再計算する。</li>
+    <li>mutationがあればadmissionをinvalidateし、再Verificationへ戻す。</li>
+    <li>
+      merge preview bindingをtarget branch、target HEAD、strategy、policy revision、 CI
+      digestへ拡張する。
+    </li>
+  </ol>
+  <h4 id="主な対象-3">主な対象</h4>
+  <ul>
+    <li><code>api/modules/gitCloseout</code></li>
+    <li><code>api/modules/nightworkers/nightworkers.git-closeout.service.ts</code></li>
+    <li><code>api/modules/nightworkers/nightworkers.git-merge.service.ts</code></li>
+    <li><code>api/modules/missionPilot/mission-pilot-closeout.service.ts</code></li>
+    <li><code>api/modules/review/review-closeout-evidence.service.ts</code></li>
+    <li><code>tests/nightworkers-git-closeout.test.ts</code></li>
+  </ul>
+  <h4 id="受け入れ条件-3">受け入れ条件</h4>
+  <ul>
+    <li>Review running／failedで<code>canCommit=false</code>。</li>
+    <li>stale Verificationで<code>canCommit=false</code>。</li>
+    <li>unresolved blocking findingで<code>canCommit=false</code>。</li>
+    <li>Git lock取得後にsourceが変わればcommitしない。</li>
+    <li>merge target／HEAD変更後に旧previewを実行できない。</li>
+    <li>normal pathとMission Pilot pathが同じ不変条件を満たす。</li>
+  </ul>
+  <h3 id="phase-4-full-fidelity-payload分離">Phase 4: Full-fidelity payload分離</h3>
+  <h4 id="実装-4">実装</h4>
+  <ol>
+    <li><code>evidence_payloads</code> schemaとfilesystem payload storeを追加する。</li>
+    <li>runtime artifact root検証、atomic write、digest検証を実装する。</li>
+    <li>Run log、diff、turn history、tool payload、activity payloadを順次分離する。</li>
+    <li>Verification raw output、case detail、Review artifact raw JSONを分離する。</li>
+    <li>core receiptにpayload digest、byte length、availabilityを残す。</li>
+    <li>legacy inline fallbackを持つreaderを追加する。</li>
+    <li>idempotent backfill workerとparity checkを追加する。</li>
+    <li>backup manifestへpayload directoryを追加する。</li>
+  </ol>
+  <h4 id="主な対象-4">主な対象</h4>
+  <ul>
+    <li><code>api/modules/evidenceLedger</code></li>
+    <li><code>api/modules/codingAgent</code></li>
+    <li><code>api/modules/review</code></li>
+    <li><code>api/services/runtime-retention</code></li>
+    <li><code>api/runtime/paths.ts</code></li>
+    <li>DB schema／bootstrap／migration</li>
+    <li>runtime backup</li>
+  </ul>
+  <h4 id="受け入れ条件-4">受け入れ条件</h4>
+  <ul>
+    <li>新規大容量payloadがSQLite inline列へ重複保存されない。</li>
+    <li>payload fileのdigest mismatchを検出できる。</li>
+    <li>payload write失敗時にcore receiptだけを成功扱いにしない。</li>
+    <li>legacy dataを失わずに新readerへ移行できる。</li>
+    <li>arbitrary pathやsymlink escapeを削除対象にできない。</li>
+  </ul>
+  <h3 id="phase-5-retention-settingsとcleanup-backend">
+    Phase 5: Retention settingsとcleanup backend
+  </h3>
+  <h4 id="実装-5">実装</h4>
+  <ol>
+    <li><code>codingAgentFullRecordDays=7</code>をbackend／frontend defaultへ追加する。</li>
+    <li>route schemaを1〜365日の可変値へ変更する。</li>
+    <li>settings revisionとscheduler reloadを接続する。</li>
+    <li>retention participant contractを追加する。</li>
+    <li>eligibility queryと保護条件を実装する。</li>
+    <li>cleanup preview／execute／status APIを追加する。</li>
+    <li>cleanup job、idempotency、lease、crash recoveryを実装する。</li>
+    <li><code>purging -&gt; purged</code> state machineを実装する。</li>
+    <li>DB／WAL／payload bytesと削除結果を監査する。</li>
+    <li>foreign key check、checkpoint、incremental reclaim capabilityを接続する。</li>
+  </ol>
+  <h4 id="主な対象-5">主な対象</h4>
+  <ul>
+    <li><code>api/services/settings/general-settings.ts</code></li>
+    <li><code>api/routes/settings-route-definitions.ts</code></li>
+    <li><code>api/routes/settings.ts</code></li>
+    <li><code>api/services/runtime-retention</code></li>
+    <li><code>api/modules/codingAgent/retention</code></li>
+    <li><code>api/modules/review/retention</code></li>
+    <li><code>api/modules/evidenceLedger</code></li>
+    <li><code>api/server.ts</code></li>
+  </ul>
+  <h4 id="受け入れ条件-5">受け入れ条件</h4>
+  <ul>
+    <li>defaultが7日。</li>
+    <li>設定保存だけでは削除されない。</li>
+    <li>保持期間変更後にschedulerがserver再起動なしで更新される。</li>
+    <li>active／Review待ち／closeout待ち／needs_human Runは削除されない。</li>
+    <li>expired terminal Runのpayloadだけが削除される。</li>
+    <li>manual executeはpreview、revision、idempotency keyなしでは動かない。</li>
+    <li>cleanup後もCloseout AdmissionとReceipt queryが成立する。</li>
+  </ul>
+  <h3 id="phase-6-settings-uiとevidence表示">Phase 6: Settings UIとEvidence表示</h3>
+  <h4 id="実装-6">実装</h4>
+  <ol>
+    <li>設定画面へ「データ管理」sectionを追加する。</li>
+    <li>保持期間field、説明、size、last／next cleanupを表示する。</li>
+    <li>cleanup preview dialogを追加する。</li>
+    <li>immediate cleanup job progressと結果を表示する。</li>
+    <li>Evidence freshnessとpayload availability badgeを追加する。</li>
+    <li>closeout buttonをserver admissionへ接続する。</li>
+    <li>purged historical recordとmissing current Evidenceを区別する。</li>
+  </ol>
+  <h4 id="主な対象-6">主な対象</h4>
+  <ul>
+    <li><code>src/modules/settings</code></li>
+    <li><code>src/modules/codingAgent</code></li>
+    <li><code>src/modules/review</code></li>
+    <li>NightWorkers timeline consumer</li>
+    <li>i18n resource</li>
+    <li>frontend tests</li>
+  </ul>
+  <h4 id="受け入れ条件-6">受け入れ条件</h4>
+  <ul>
+    <li>7日が初期表示され、1〜365日を保存できる。</li>
+    <li>cleanup前に対象件数と推定byteが表示される。</li>
+    <li>保護中recordを削除対象として表示しない。</li>
+    <li>cleanup完了後にsizeとavailabilityが再取得される。</li>
+    <li>keyboard操作、focus、screen reader labelを含む。</li>
+  </ul>
+  <h3 id="phase-7-shadow-rolloutproduction-cleanuplegacy撤去">
+    Phase 7: Shadow rollout、production cleanup、legacy撤去
+  </h3>
+  <h4 id="実装-7">実装</h4>
+  <ol>
+    <li>production相当databaseでshadow previewを実行する。</li>
+    <li>query latency、candidate件数、protected件数、推定削減量を記録する。</li>
+    <li>auto deleteを無効のまま1 release観測する。</li>
+    <li>cleanup production flagを有効化する。</li>
+    <li>scheduled cleanupとmanual cleanupのcanaryを実行する。</li>
+    <li>payload read parityが安定した後にlegacy inline writeを停止する。</li>
+    <li>十分な互換期間後にlegacy fallbackとunused columnを別migrationで削除する。</li>
+  </ol>
+  <h4 id="受け入れ条件-7">受け入れ条件</h4>
+  <ul>
+    <li>shadow previewと実削除のcandidate差分が説明できる。</li>
+    <li>closeout中または未完了Evidenceの削除が0件。</li>
+    <li>cleanup partial failureから再実行して収束する。</li>
+    <li>DB／WAL／payload disk usageが期待どおり減る。</li>
+    <li>legacy reader撤去前にfallback hitが0である。</li>
+  </ul>
+  <h2 id="section-20-test-plan">20. Test plan</h2>
+  <h3 id="section-201-unit">20.1 Unit</h3>
+  <ul>
+    <li>canonical Task revision digestがfield順に依存しない。</li>
+    <li>Evidence SubjectのRun、source、document比較。</li>
+    <li><code>current / stale / foreign / failed / missing</code>の各分岐。</li>
+    <li>retention anchorとterminal／protected state。</li>
+    <li>payload relative pathとsymlink escape拒否。</li>
+    <li>preview policy digest。</li>
+    <li>merge preview binding digest。</li>
+    <li>final response candidate revision比較。</li>
+  </ul>
+  <h3 id="section-202-repositoryschema">20.2 Repository／schema</h3>
+  <ul>
+    <li>Task revision snapshotがappend-only。</li>
+    <li>current Task revisionとのCAS。</li>
+    <li>subjectからtyped receiptを追跡できる。</li>
+    <li>payload DELETEがcore receiptをcascade削除しない。</li>
+    <li><code>task_runs</code>をautomatic cleanupが削除しない。</li>
+    <li>indexesがeligibility queryへ使われる。</li>
+    <li>migration再実行が重複rowを作らない。</li>
+    <li><code>PRAGMA foreign_key_check</code>が空。</li>
+  </ul>
+  <h3 id="section-203-verificationreviewcloseout-matrix">
+    20.3 Verification／Review／Closeout matrix
+  </h3>
+  <table>
+    <caption>
+      20.3 Verification／Review／Closeout matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Scenario</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>同じRun、同じsource、passed Verification</td>
+        <td>current</td>
+      </tr>
+      <tr>
+        <td>別Run、同じsource hash</td>
+        <td>foreign</td>
+      </tr>
+      <tr>
+        <td>同じRunでdiff変更</td>
+        <td>old Verification stale</td>
+      </tr>
+      <tr>
+        <td>Verification後にverification document変更</td>
+        <td>old Verification stale</td>
+      </tr>
+      <tr>
+        <td>final response変更</td>
+        <td>old Review stale</td>
+      </tr>
+      <tr>
+        <td>Review修正で新Run作成</td>
+        <td>元Run Evidenceを新Runへ継承しない</td>
+      </tr>
+      <tr>
+        <td>rework後にVerification未実行</td>
+        <td>canCommit false</td>
+      </tr>
+      <tr>
+        <td>rework後にReview未実行</td>
+        <td>canCommit false</td>
+      </tr>
+      <tr>
+        <td>blocking finding未解決</td>
+        <td>canCommit false</td>
+      </tr>
+      <tr>
+        <td>Review running／failed</td>
+        <td>canCommit false</td>
+      </tr>
+      <tr>
+        <td>Security requiredでstale</td>
+        <td>canCommit false</td>
+      </tr>
+      <tr>
+        <td>hookがstaged diff変更</td>
+        <td>admission invalidated</td>
+      </tr>
+      <tr>
+        <td>target branch変更</td>
+        <td>preview invalidated</td>
+      </tr>
+      <tr>
+        <td>target HEAD変更</td>
+        <td>preview invalidated</td>
+      </tr>
+      <tr>
+        <td>closeout済みpayload purged</td>
+        <td>historical closeout query成功</td>
+      </tr>
+      <tr>
+        <td>closeout前payload purged</td>
+        <td>fail-close、再Run要求</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-204-retention-matrix">20.4 Retention matrix</h3>
+  <table>
+    <caption>
+      20.4 Retention matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Scenario</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>terminalから6日23時間</td>
+        <td>full</td>
+      </tr>
+      <tr>
+        <td>terminalから7日超</td>
+        <td>cleanup candidate</td>
+      </tr>
+      <tr>
+        <td>30日前のrunning Run</td>
+        <td>protected</td>
+      </tr>
+      <tr>
+        <td>30日前のneeds_human Run</td>
+        <td>protected</td>
+      </tr>
+      <tr>
+        <td>closeout待ちcompleted Run</td>
+        <td>protected</td>
+      </tr>
+      <tr>
+        <td>failed Runから8日</td>
+        <td>candidate</td>
+      </tr>
+      <tr>
+        <td>closeout済みから8日</td>
+        <td>payload purged、receipt retained</td>
+      </tr>
+      <tr>
+        <td>retentionを7日から30日へ変更</td>
+        <td>未削除payloadのeligible date延長</td>
+      </tr>
+      <tr>
+        <td>retentionを30日から7日へ変更</td>
+        <td>保存だけでは削除しない</td>
+      </tr>
+      <tr>
+        <td>preview後にsettings変更</td>
+        <td>execute 409</td>
+      </tr>
+      <tr>
+        <td>同じidempotency keyで再実行</td>
+        <td>同一結果</td>
+      </tr>
+      <tr>
+        <td>cleanup中にprocess crash</td>
+        <td>startupでpurgingを再開</td>
+      </tr>
+      <tr>
+        <td>shared physical digestにactive ownerあり</td>
+        <td>fileを削除しない</td>
+      </tr>
+      <tr>
+        <td>fileが既にないpurging row</td>
+        <td>idempotentにpurgedへ収束</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-205-frontend">20.5 Frontend</h3>
+  <ul>
+    <li>default 7日。</li>
+    <li>invalid retention dayを保存できない。</li>
+    <li>previewなしでは実行buttonを出さない。</li>
+    <li>confirmationに非復元性と基幹保持を表示する。</li>
+    <li>protected countを表示する。</li>
+    <li>progress、partial、failed、completedを表示する。</li>
+    <li>purgedとmissingを区別する。</li>
+    <li>stale reasonを表示する。</li>
+    <li>closeout buttonがadmissionに従う。</li>
+  </ul>
+  <h3 id="section-206-e2e">20.6 E2E</h3>
+  <ol>
+    <li>Task作成。</li>
+    <li>implementation Run実行。</li>
+    <li>Verification保存。</li>
+    <li>final response保存。</li>
+    <li>Review完了。</li>
+    <li>source変更によりEvidenceがstaleになることを確認。</li>
+    <li>rework Run、再Verification、再Review。</li>
+    <li>Closeout Admissionとcommit。</li>
+    <li>clockを7日超へ進める。</li>
+    <li>Settingsからpreview。</li>
+    <li>immediate cleanup。</li>
+    <li>
+      完全記録がpurgedになり、final response、Review verdict、Verification summary、 commit
+      SHAが残ることを確認。
+    </li>
+  </ol>
+  <p>別scenarioで、Review待ちRunが7日超でもcleanupされないことを確認する。</p>
+  <h2 id="section-21-verification-commands">21. Verification commands</h2>
+  <p>各Phaseでtargeted testを実行し、最終的に次を実行する。</p>
+  <pre><code class="language-bash">bun run test -- tests/coding-agent-completion-readiness.test.ts
+bun run test -- tests/coding-agent-evidence-check-query.test.ts
+bun run test -- tests/nightworkers-git-closeout.test.ts
+bun run test -- tests/mission-pilot-closeout.test.ts
+bun run test -- tests/runtime-retention.service.test.ts
+bun run test -- tests/routes.settings-general.test.ts
+bun run test -- tests/settings-panels-render.test.tsx
+bun run typecheck
+bun run check:architecture
+bun run check:docs
+bun run verify
+</code></pre>
+  <p>追加予定test:</p>
+  <pre><code class="language-text">tests/task-revision-snapshot.test.ts
+tests/evidence-subject-binding.test.ts
+tests/final-response-evidence.test.ts
+tests/review-target-manifest-v3.test.ts
+tests/closeout-admission.test.ts
+tests/evidence-payload-store.test.ts
+tests/evidence-retention.service.test.ts
+tests/routes.data-retention.test.ts
+tests/settings-data-retention-panel.test.tsx
+tests/e2e/evidence-retention.spec.ts
+</code></pre>
+  <p>
+    SQLite file sizeのassertionはfilesystemとSQLite runtimeの差で不安定になり得るため、
+    通常testではrow count、payload byte count、<code>freelist_count</code>、checkpoint
+    resultを正本にする。 file size縮小はdesktop integration testで許容範囲を持って確認する。
+  </p>
+  <h2 id="section-22-observability">22. Observability</h2>
+  <h3 id="section-221-metrics">22.1 Metrics</h3>
+  <ul>
+    <li>Evidence freshness status count</li>
+    <li>stale reason count</li>
+    <li>closeout admission created／invalidated／consumed</li>
+    <li>invalidation reason count</li>
+    <li>full／purging／purged payload count</li>
+    <li>payload bytes by kind</li>
+    <li>protected payload count</li>
+    <li>cleanup candidate／deleted／failed count</li>
+    <li>cleanup duration</li>
+    <li>DB／WAL／artifact bytes before／after</li>
+    <li>payload read fallback hit</li>
+    <li>legacy unbound evidence count</li>
+  </ul>
+  <h3 id="section-222-structured-events">22.2 Structured events</h3>
+  <ul>
+    <li><code>evidence.subject_created</code></li>
+    <li><code>evidence.receipt_recorded</code></li>
+    <li><code>evidence.became_stale</code></li>
+    <li><code>final_response.recorded</code></li>
+    <li><code>review.manifest_invalidated</code></li>
+    <li><code>closeout.admission_created</code></li>
+    <li><code>closeout.admission_invalidated</code></li>
+    <li><code>closeout.admission_consumed</code></li>
+    <li><code>retention.cleanup_previewed</code></li>
+    <li><code>retention.cleanup_started</code></li>
+    <li><code>retention.cleanup_completed</code></li>
+    <li><code>retention.cleanup_partial</code></li>
+    <li><code>retention.cleanup_failed</code></li>
+    <li><code>retention.payload_purged</code></li>
+  </ul>
+  <p>event payloadへraw evidence、command output、absolute path、secretを入れない。</p>
+  <h2 id="section-23-failure-recovery">23. Failure recovery</h2>
+  <h3 id="section-231-evidence-write-failure">23.1 Evidence write failure</h3>
+  <ul>
+    <li>
+      Receiptとpayloadの両方が必要な操作は、payload writeとdigest確認後にReceiptをcommitする。
+    </li>
+    <li>Receiptだけが先に作られた場合は<code>missing</code>としてfail-closeする。</li>
+    <li>provider本文は既存のruntime resultに保持し、固定本文へ差し替えない。</li>
+  </ul>
+  <h3 id="section-232-review-mismatch">23.2 Review mismatch</h3>
+  <ul>
+    <li>Review完了時にmanifest mismatchを検出した場合はReview receiptをcurrent承認にしない。</li>
+    <li>raw Review結果はhistorical payloadとして保存できる。</li>
+    <li>新しいsubjectに対するReviewを要求する。</li>
+  </ul>
+  <h3 id="section-233-closeout-mismatch">23.3 Closeout mismatch</h3>
+  <ul>
+    <li>admission作成後のTask、source、finding、staged diff変化でadmissionをinvalidateする。</li>
+    <li>commit command failure後に同じadmissionを無条件再利用しない。</li>
+    <li>repository stateを再取得し、新revisionのadmissionを作る。</li>
+  </ul>
+  <h3 id="section-234-cleanup-partial-failure">23.4 Cleanup partial failure</h3>
+  <ul>
+    <li><code>purging</code> rowを残し、startupまたはmanual retryで再開する。</li>
+    <li>完了済みfile deleteを再実行しても失敗しない。</li>
+    <li>cleanup jobは未確認のdownstream mutationが残る間<code>completed</code>にしない。</li>
+    <li>基幹receiptをrollbackのために削除しない。</li>
+  </ul>
+  <h3 id="section-235-disk-pressure">23.5 Disk pressure</h3>
+  <ul>
+    <li>payload write前にruntime volumeの空き容量を確認する。</li>
+    <li>disk full時はEvidence保存を成功扱いにしない。</li>
+    <li>cleanupは空き容量が少なくてもbatch deleteを継続できる設計にする。</li>
+    <li>full VACUUMに必要な追加容量がなければ拒否し、通常cleanupだけを行う。</li>
+  </ul>
+  <h2 id="section-24-rollout">24. Rollout</h2>
+  <h3 id="stage-1-integrity-fail-close">Stage 1: Integrity fail-close</h3>
+  <ul>
+    <li>Task revision、subject、Verification Run binding</li>
+    <li>final response Evidence</li>
+    <li>Review Manifest v3</li>
+    <li>Closeout Admission</li>
+    <li><code>canCommit</code>のfail-close</li>
+  </ul>
+  <p>retention削除はまだ有効にしない。</p>
+  <h3 id="stage-2-payload-dual-write">Stage 2: Payload dual-write</h3>
+  <ul>
+    <li>runtime artifact payload store</li>
+    <li>new write dual-write</li>
+    <li>reader fallback</li>
+    <li>parity metric</li>
+    <li>legacy backfill</li>
+  </ul>
+  <h3 id="stage-3-shadow-retention">Stage 3: Shadow retention</h3>
+  <ul>
+    <li>default 7日設定</li>
+    <li>status／preview API</li>
+    <li>settings UI</li>
+    <li>candidate計測</li>
+    <li>deletion disabled</li>
+  </ul>
+  <h3 id="stage-4-manual-cleanup-canary">Stage 4: Manual cleanup canary</h3>
+  <ul>
+    <li>少数のterminal／closeout済みRunでmanual cleanup</li>
+    <li>Receipt、Review、closeout query確認</li>
+    <li>DB／WAL／artifact bytes確認</li>
+    <li>crash recovery確認</li>
+  </ul>
+  <h3 id="stage-5-scheduled-cleanup">Stage 5: Scheduled cleanup</h3>
+  <ul>
+    <li>production deletion有効化</li>
+    <li>startup／scheduled cleanup</li>
+    <li>dynamic scheduler reload</li>
+    <li>incremental reclaim</li>
+  </ul>
+  <h3 id="stage-6-legacy-removal">Stage 6: Legacy removal</h3>
+  <ul>
+    <li>fallback hit 0を確認</li>
+    <li>inline write停止</li>
+    <li>legacy column cleanup</li>
+    <li>obsolete timestamp-based closeout resolver撤去</li>
+  </ul>
+  <p>各Stageは前StageのVerification成功と監査結果確認後に進める。</p>
+  <h2 id="section-25-risks-and-mitigations">25. Risks and mitigations</h2>
+  <table>
+    <caption>
+      25. Risks and mitigations
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Risk</th>
+        <th scope="col">Mitigation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>別Run Evidenceの誤採用</td>
+        <td>subjectへimplementation Run IDを必須化し、queryをsubject IDで限定</td>
+      </tr>
+      <tr>
+        <td>Task変更の見落とし</td>
+        <td>Task Operatorでrevision CASとsnapshotを一元化</td>
+      </tr>
+      <tr>
+        <td>Review修正後の再検証漏れ</td>
+        <td>修正を新Run化し、source変更で旧subjectをstale化</td>
+      </tr>
+      <tr>
+        <td>final responseだけ古い</td>
+        <td>candidate revisionとcontent digestをReview manifestへ含める</td>
+      </tr>
+      <tr>
+        <td>closeout直前のsource変更</td>
+        <td>Git mutation lock内でadmissionを再計算</td>
+      </tr>
+      <tr>
+        <td>cleanupによるcascade削除</td>
+        <td>core／payload分離、automatic cleanupで親Runを削除しない</td>
+      </tr>
+      <tr>
+        <td>7日経過で進行中作業が壊れる</td>
+        <td>current／pending Evidenceを保護</td>
+      </tr>
+      <tr>
+        <td>needs_humanが永久保護される</td>
+        <td>retentionは状態を変えず、UIから明示cancel／resumeを促す</td>
+      </tr>
+      <tr>
+        <td>DELETE後もDB fileが縮まらない</td>
+        <td>WAL checkpoint、incremental vacuum、別操作のfull optimization</td>
+      </tr>
+      <tr>
+        <td>filesystemとDBの不整合</td>
+        <td><code>full -&gt; purging -&gt; purged</code>のidempotent state machine</td>
+      </tr>
+      <tr>
+        <td>deduplicateがcross-run再利用に見える</td>
+        <td>physical objectとlogical Evidence ownerを分離</td>
+      </tr>
+      <tr>
+        <td>設定短縮で大量削除</td>
+        <td>保存と削除を分離し、previewを必須化</td>
+      </tr>
+      <tr>
+        <td>migration途中のdata loss</td>
+        <td>copy、digest parity、ref更新後にのみlegacy clear</td>
+      </tr>
+      <tr>
+        <td>cleanup audit自体が増え続ける</td>
+        <td>auditEventDaysで明細削除し、single-row summaryだけ残す</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-26-completion-criteria">26. Completion criteria</h2>
+  <p>本計画は次をすべて満たした場合に完了とする。</p>
+  <ol>
+    <li>Task revisionからGit closeoutまで同一subjectを追跡できる。</li>
+    <li>別Run Evidenceがcurrent Runの完了根拠にならない。</li>
+    <li>diff変更でVerification、Review、final response、admissionがstaleになる。</li>
+    <li>Review修正後に再Verificationと再Reviewなしでcloseoutできない。</li>
+    <li>merge target／HEAD／strategy／policy変更でpreviewが無効化される。</li>
+    <li>normal closeoutとMission Pilot closeoutが同じadmission不変条件を使う。</li>
+    <li>final responseが型付きEvidenceとしてReviewとcloseoutへ含まれる。</li>
+    <li>Coding Agent完全記録の既定保持期間が7日。</li>
+    <li>設定画面から1〜365日に変更できる。</li>
+    <li>設定保存だけでは削除されない。</li>
+    <li>preview後に期限切れ記録を直ちにcleanupできる。</li>
+    <li>active、Review待ち、再検証待ち、closeout待ち、needs_human記録をcleanupしない。</li>
+    <li>cleanup後も基幹Receipt、final response、Review verdict、commit／merge SHAを読める。</li>
+    <li>cleanupのpartial failureから再実行して収束できる。</li>
+    <li>SQLite、WAL、payload directoryの削減結果を観測できる。</li>
+    <li>migrationでlegacy dataを失わず、legacy unbound Evidenceをcloseout authorityにしない。</li>
+    <li>targeted test、typecheck、architecture check、docs check、全体verifyが成功する。</li>
+    <li>未確認のdownstream mutationを残したworker jobを完了扱いにしない。</li>
+  </ol>
+  <h2 id="section-27-推奨着手順">27. 推奨着手順</h2>
+  <p>最初の実装PRは次に限定する。</p>
+  <ol>
+    <li>Phase 0の回帰test。</li>
+    <li>Task revision snapshot。</li>
+    <li>Evidence Subject contractとpersistence。</li>
+    <li>Verification queryのcurrent Run限定。</li>
+    <li>normal closeoutの<code>canCommit</code>をReview／Verification／findingでfail-close。</li>
+  </ol>
+  <p>
+    このPRではpayload移行やcleanupをまだ有効化しない。Evidence authorityを固定してから、
+    後続PRでfinal response、Review Manifest v3、Closeout Admission、payload分離、retentionの順に
+    進める。
+  </p>
+</article>

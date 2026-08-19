@@ -1,0 +1,271 @@
+<article lang="ja">
+  <h1 id="mission-pilot-autonomous-agent-hardening-execution-log">
+    Mission Pilot Autonomous Agent Hardening Execution Log
+  </h1>
+  <h2 id="luna-handoff-2026-07-16-1158-jst">Luna Handoff 2026-07-16 11:58 JST</h2>
+  <ul>
+    <li>Plan: <code>spec/docs/mission-pilot-autonomous-agent-hardening-plan.html</code></li>
+    <li>Baseline commit: <code>4309d798</code> plus the pre-existing working tree listed below</li>
+    <li>
+      Worktree policy: pre-existing changes are preserved; only task-owned hunks will be staged if
+      commits are requested later.
+    </li>
+    <li>
+      Baseline Mission Pilot tests:
+      <code
+        >node scripts/run-vitest.mjs run tests/mission-pilot-*.test.ts
+        tests/pilot-thought-dock.test.tsx</code
+      >
+      — 25 files, 141 tests passed.
+    </li>
+    <li>
+      Baseline typecheck:
+      <code>node node_modules/@typescript/native/bin/tsc --noEmit --singleThreaded</code> — passed.
+    </li>
+    <li>
+      Baseline semantic-control check:
+      <code>node scripts/check-coding-agent-semantic-control.mjs</code> — passed.
+    </li>
+    <li>Baseline failures: none in the commands above.</li>
+    <li>Database migrations added: none yet.</li>
+  </ul>
+  <h3 id="pre-existing-working-tree-changes">Pre-existing working-tree changes</h3>
+  <ul>
+    <li><code>AGENTS.md</code></li>
+    <li><code>api/modules/missionPilot/agent/mission-pilot-agent-session.repository.ts</code></li>
+    <li><code>api/modules/missionPilot/agent/mission-pilot-task-event.repository.ts</code></li>
+    <li><code>api/modules/missionPilot/mission-pilot-questionnaire-projection.ts</code></li>
+    <li><code>api/modules/missionPilot/mission-pilot-questionnaire.service.ts</code></li>
+    <li><code>api/modules/missionPilot/mission-pilot.service.ts</code></li>
+    <li><code>api/modules/nightworkers/nightworkers.workbench-message.service.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/e2e-fixture-runtime.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/ledger-sink.ts</code></li>
+    <li><code>spec/docs/mission-pilot-persistent-agent-refactor-plan.html</code></li>
+    <li><code>tests/mission-pilot-agent-questionnaire.test.ts</code></li>
+    <li><code>tests/nightworkers-workbench-routes/routes-workbench-04.test.ts</code></li>
+    <li><code>tests/universal-task-creation.test.ts</code></li>
+    <li>
+      <code>api/modules/missionPilot/agent/mission-pilot-agent-active-registry.ts</code> (untracked)
+    </li>
+    <li><code>api/modules/nightworkers/nightworkers.task-message-events.ts</code> (untracked)</li>
+    <li><code>spec/docs/mission-pilot-autonomous-agent-hardening-plan.html</code> (untracked)</li>
+  </ul>
+  <h2 id="checkpoint-ledger">Checkpoint ledger</h2>
+  <table>
+    <caption>
+      Checkpoint ledger
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">Status</th>
+        <th scope="col">Commit</th>
+        <th scope="col">Verification</th>
+        <th scope="col">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>H0</td>
+        <td>passed</td>
+        <td>—</td>
+        <td>Baseline commands above</td>
+        <td>
+          Existing working tree retained; fail-first characterization follows per work package.
+        </td>
+      </tr>
+      <tr>
+        <td>H1</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>ownership firewall unit/regression suite</td>
+        <td>
+          Agent session DB row is the common ownership source and legacy recovery entry points skip
+          it.
+        </td>
+      </tr>
+      <tr>
+        <td>H2</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td><code>mission-pilot-agent-run-provenance</code>, Task status sovereignty tests</td>
+        <td>
+          Implementation, Test, Review, and Queue Run paths carry the same Agent provenance;
+          terminal Task state and newer active Runs are protected by CAS.
+        </td>
+      </tr>
+      <tr>
+        <td>H3</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>action idempotency crash/reconcile tests</td>
+        <td>
+          Equivalent mutations share a receipt; Run, Queue, Task message, Questionnaire, Task state,
+          and Git resources are reconciled after interruption.
+        </td>
+      </tr>
+      <tr>
+        <td>H4</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>Agent runtime/hardening contract tests</td>
+        <td>Current-step context and action registry are rebuilt before each provider decision.</td>
+      </tr>
+      <tr>
+        <td>H5</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>completion/hardening/E2E tests</td>
+        <td>Visible assistant/wait/finish projection and explicit finish gate are active.</td>
+      </tr>
+      <tr>
+        <td>H6</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>provider retry + Questionnaire failure tests</td>
+        <td>
+          Retry is persisted as a future event and resumed by a later wake; Stop consumes retry
+          events; async Questionnaire failure remains Agent-owned.
+        </td>
+      </tr>
+      <tr>
+        <td>H7</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>repeated-repair E2E</td>
+        <td>
+          Two distinct failed attempts are read before a third successful repair; no fixed
+          repair-count branch exists in production.
+        </td>
+      </tr>
+      <tr>
+        <td>H8</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>completion race/user interruption tests</td>
+        <td>Explicit Task completion/archive and visible user wait contracts are preserved.</td>
+      </tr>
+      <tr>
+        <td>H9</td>
+        <td>passed</td>
+        <td>working tree</td>
+        <td>
+          31 files/170 tests; 9 combined Mission Pilot E2Es; <code>verify:base</code>; architecture;
+          docs
+        </td>
+        <td>
+          Autonomous, repeated repair, runtime reconstruction, user interruption, Questionnaire
+          regression, and existing Mission Pilot gates pass.
+        </td>
+      </tr>
+      <tr>
+        <td>H10</td>
+        <td>pending</td>
+        <td>—</td>
+        <td>—</td>
+        <td>Observation window required after release gate.</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="hardening-completion-verification-2026-07-16">
+    Hardening completion verification 2026-07-16
+  </h2>
+  <ul>
+    <li>Mission Pilot regression: 31 files, 170 tests passed.</li>
+    <li>
+      Combined Mission Pilot E2E: 9 scenarios passed, including autopilot, Questionnaire submission
+      failure, pre-queue handoff, archive flow, trace separation, repeated repair, expired-runtime
+      reconstruction, and user interruption.
+    </li>
+    <li>A1: autopilot E2E passed.</li>
+    <li>
+      A2: shared provenance contract for Implementation/Test/Review/Queue passed; existing
+      procedural transition regression tests remained green.
+    </li>
+    <li>
+      A3/A4: repeated repair E2E created two failed Runs with distinct repair requests before
+      successful completion.
+    </li>
+    <li>
+      A5: Questionnaire submission failure stayed <code>playing</code> and preserved the failure
+      body in <code>questionnaire.submission_failed</code>.
+    </li>
+    <li>A6: visible user question/wait/resume E2E passed.</li>
+    <li>
+      A7: crash-after-message-mutation reconciliation produced one resource and one canonical
+      succeeded receipt; equivalent retry reused the receipt.
+    </li>
+    <li>
+      A8: provider fallback, persisted retry event, third-attempt cap, and Stop cancellation passed.
+    </li>
+    <li>
+      A9: E2E expired a synthetic in-flight runtime lease, ran startup reconciliation, resumed the
+      same conversation, and completed without legacy phase work.
+    </li>
+    <li>
+      A10: delayed terminal callbacks preserved explicit <code>completed</code> state and did not
+      overwrite a newer active Run.
+    </li>
+    <li>
+      A production bootstrap ordering defect found during Questionnaire E2E was fixed:
+      <code>mission_pilot_action_key</code> is now ensured after the raw
+      <code>design_questionnaire_sessions</code> table creation, so fresh databases and existing
+      databases follow the same initialization path.
+    </li>
+    <li>
+      The task-action unavailable metadata and review input contracts were extracted from oversized
+      implementation files; <code>bun run check:architecture</code> passes with the resulting
+      source-size and module-boundary limits.
+    </li>
+    <li>
+      <code>bun run verify:base</code> passed: tracked-artifact check, architecture, typecheck,
+      lint, and supervisor regression all passed.
+    </li>
+    <li>
+      <code>bun run check:docs</code>,
+      <code>node scripts/check-coding-agent-semantic-control.mjs</code>, and
+      <code>git diff --check</code> passed.
+    </li>
+    <li>
+      H10 remains intentionally deferred: the plan requires an observation window after the release
+      gate and explicitly prohibits running that checkpoint on the same night.
+    </li>
+    <li>
+      No commit was created by this implementation pass; checkpoint rows refer to the current
+      working tree.
+    </li>
+  </ul>
+  <h2 id="review-remediation-2026-07-16">Review remediation 2026-07-16</h2>
+  <ul>
+    <li>
+      Codex Mission Pilot tool turns now use a temporary isolated <code>CODEX_HOME</code>, copying
+      only <code>auth.json</code> with mode <code>0600</code>. This prevents user MCP/plugin
+      configuration from entering the Mission Pilot decision lane; the ineffective
+      <code>features.mcp=false</code> assumption was removed.
+    </li>
+    <li>
+      <code>questionnaire.submit</code> is unavailable to the Mission Pilot agent. Draft save starts
+      the existing 20-second intervention UI, and submission remains on the timeout/user/resume
+      application path.
+    </li>
+    <li>
+      Exceptions after a mutation receipt is claimed are persisted as <code>outcome_unknown</code>,
+      preventing an unverified retry from duplicating a possibly completed side effect.
+    </li>
+    <li>
+      Immediate and future wake scheduling use per-session generation guards. Stop invalidates DB
+      lookups and timer callbacks already in flight and consumes persisted provider-retry events.
+    </li>
+    <li>
+      Stale Run recovery applies Mission Pilot Task-status projection only to Agent-owned sessions;
+      normal Task recovery retains the pre-existing direct status update.
+    </li>
+    <li>Focused regression: 6 files, 39 tests passed.</li>
+    <li>Full regression: 316 files, 1,959 tests passed.</li>
+    <li>
+      <code>bun run typecheck</code>, <code>bun run lint</code>,
+      <code>bun run check:architecture</code>, and <code>git diff --check</code> passed.
+    </li>
+    <li>Development server ports remained closed during review.</li>
+  </ul>
+</article>

@@ -1,0 +1,1449 @@
+<article lang="ja">
+  <h1 id="mission-pilot-pure-typescript-boundary-separation-and-stabilization-implementation-plan">
+    Mission Pilot Pure TypeScript Boundary Separation and Stabilization Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>implemented</code></li>
+    <li>Implementation status: <code>completed</code></li>
+    <li>Baseline commit: <code>f11c83bf050b73640ac334c14ec7f38e0697252f</code></li>
+    <li>Last updated: 2026-07-31</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Package target: <code>packages/mission-pilot</code></li>
+    <li>TypeScript alias namespace: <code>@nightworkers/mission-pilot/*</code></li>
+    <li>Coding Agent location: unchanged</li>
+    <li>Coding Agent production changes allowed by this plan: none</li>
+  </ul>
+  <p>
+    この文書は、Mission PilotをNightWorkers本体からPure TypeScript境界へ分離し、Coding
+    AgentをMission Pilotなしで常に単体起動できる状態を維持したまま、Mission
+    Pilotを人間ユーザーと同じ公開操作だけで動かし直すための実装正本である。<code>packages/mission-pilot</code>は独立npm
+    projectではなく、root toolchainで型検査・buildされるsource boundaryである。
+  </p>
+  <p>
+    2026-07-31の設計修正により、Mission Pilot境界は独自の<code>package.json</code>、Drizzle
+    instance、LibSQL clientを持たない。SQLite
+    schema、bootstrap、transaction、repositoryはNightWorkers本体の<code>api/modules/missionPilot/persistence</code>が所有し、<code>api/composition/mission-pilot</code>だけが取得できる非HTTP
+    capabilityをpackageへ注入する。本修正は、複数DB clientによる同時書込み競合と、汎用DB
+    endpoint化による権限拡大を防ぐため、以降の旧workspace/package-owned persistence記述に優先する。
+  </p>
+  <p>
+    古い計画のうち、Mission
+    Pilotを<code>api/modules/missionPilot</code>、<code>src/modules/missionPilot</code>、<code>shared/modules/missionPilot</code>へ置くという配置方針は、この文書で置き換える。責務境界、構造的provenance、Task
+    Operatorの利用、Coding Agent単体動作、Plan
+    ModeのAgent非依存性に関する既存ルールは維持し、より強く検査する。
+  </p>
+  <h2 id="section-1-executive-decision">1. Executive Decision</h2>
+  <p>
+    採用する構成は、NightWorkers本体を現在のrepository rootに残し、Mission
+    Pilotのbehavior/UI/contractsを同一repository内のPure TypeScript source
+    boundaryへ移す構成とする。SQLite persistenceだけはNightWorkers本体のrole moduleに残す。
+  </p>
+  <pre><code class="language-text">nightWorkers/
+  api/
+    modules/
+      missionPilot/
+        persistence/      # SQLite schema/bootstrap/repositoryと非HTTP capability
+      codingAgent/        # 現状維持。Mission Pilot対応では変更しない
+      planMode/           # Plan Modeの正本。Agentをimportしない
+      taskOperator/       # ユーザーとMission Pilotが共有する公開resource/action
+      nightworkers/       # Agent非依存のTask正本
+    composition/
+      mission-pilot/      # packageをhostへ接続する唯一のbackend composition
+
+  src/
+    modules/
+      codingAgent/        # 現状維持。Mission Pilot対応では変更しない
+      planMode/           # Agentをimportしない
+      nightworkers/       # Agent非依存UI
+    composition/
+      mission-pilot/      # packageをhostへ接続する唯一のfrontend composition
+
+  packages/
+    mission-pilot/
+      src/
+        contracts/
+        backend/
+        frontend/
+        testing/
+</code></pre>
+  <p>
+    repositoryを完全分離しない理由は、Task Operator、realtime、認証、DB、SystemContext、UI
+    compositionを同一変更で検証しやすくするためである。ただし、単にディレクトリを<code>packages/</code>へ移すだけでは境界にならない。root
+    TypeScript alias、依存方向、composition root、静的検査、runtime failure
+    isolationを同時に導入する。
+  </p>
+  <p>別repository化は、このpackage境界で次の条件が満たせなくなった場合だけ再検討する。</p>
+  <ul>
+    <li>独立したrelease cadenceが必要になった。</li>
+    <li>独立したaccess controlまたは機密境界が必要になった。</li>
+    <li>NightWorkersと別versionのMission Pilotを複数組み合わせる必要が生じた。</li>
+    <li>package exportだけでは循環依存を防止できない外部consumerが生じた。</li>
+  </ul>
+  <p>
+    現時点では、別repository化による開発・schema migration・E2E coordinationの負担が利益を上回る。
+  </p>
+  <h2 id="section-2-non-negotiable-invariants">2. Non-Negotiable Invariants</h2>
+  <h3 id="section-21-coding-agent">2.1 Coding Agent</h3>
+  <ul>
+    <li><code>api/modules/codingAgent/**</code>を変更しない。</li>
+    <li><code>src/modules/codingAgent/**</code>を変更しない。</li>
+    <li><code>shared/modules/codingAgent/**</code>を変更しない。</li>
+    <li>
+      Coding Agentのroute、service、repository、runtime、public indexをMission Pilot
+      packageからimportしない。
+    </li>
+    <li>
+      Coding Agentの起動をMission Pilot session、handoff、desired state、phase、routing
+      revision、package bootstrap成功へ依存させない。
+    </li>
+    <li>
+      ユーザー直結Coding Agentは、Mission
+      Pilotが未起動、停止、DB初期化失敗、runtime停止のいずれでも、Task intake、Plan
+      Mode判定、repository調査、実装、command実行、検証、完了報告まで単体で完結する。
+    </li>
+    <li>
+      Coding AgentのPlan Mode起動、questionnaire生成、repository調査、技術選択をMission
+      Pilotへ移さない。
+    </li>
+    <li>
+      Coding Agentは単一runtimeを維持し、Mission Pilot対応用mode、tool
+      allowlist、固定workflowを追加しない。
+    </li>
+  </ul>
+  <p>
+    この計画の実装中にCoding Agent production
+    codeの変更が必要に見えた場合、そのcheckpointを停止する。変更理由、Coding
+    Agentを変更しない代替案、Task
+    Operatorまたはcompositionで解決できない根拠を先に文書化し、ユーザーの明示承認なしには進めない。
+  </p>
+  <h3 id="section-22-mission-pilot">2.2 Mission Pilot</h3>
+  <ul>
+    <li>
+      Mission
+      Pilotは「人間ユーザーに許可された操作を代行するAI」であり、ユーザーより強い権限や専用能力を持たない。
+    </li>
+    <li>folder、filesystem、Git HEAD、worktree、repository内容を読まない。</li>
+    <li>
+      shell、filesystem、Git、Coding Agent repository toolに相当するportをpackageへ定義しない。
+    </li>
+    <li>Task Operatorの公開resourceを読み、公開actionを実行する。</li>
+    <li>
+      専用のQuestionnaire API、Plan routing API、Artifact API、Coding Agent内部APIを作らない。
+    </li>
+    <li>ユーザー操作との差は、principalと構造的provenanceだけに限定する。</li>
+    <li>ユーザー文言、error message、task titleをkeywordまたは正規表現で分類しない。</li>
+    <li>
+      Mission Pilotが稼働中でも、ユーザーのQuestionnaire回答、Artifact選択、停止操作を無効化しない。
+    </li>
+  </ul>
+  <h3 id="section-23-plan-mode">2.3 Plan Mode</h3>
+  <ul>
+    <li>正本は<code>api/modules/planMode</code>が所有する。</li>
+    <li>
+      <code>api/modules/planMode/**</code>と<code>src/modules/planMode/**</code>はMission Pilot
+      packageをimportしない。
+    </li>
+    <li>
+      Mission Pilot packageはPlan Mode route、service、repository、reader/writer portを所有しない。
+    </li>
+    <li>
+      Mission PilotはPlan Mode状態をTask Operator resourceから読み、Task Operator
+      actionを通じてだけ更新する。
+    </li>
+    <li>
+      Questionnaire回答後のArtifact推薦、include/omit、必要・不要の理由、task-keyed
+      routing、<code>plan_mode.routing_changed</code>は、人間回答とMission
+      Pilot代理回答で同一処理を通る。
+    </li>
+  </ul>
+  <h3 id="section-24-host-and-package">2.4 Host and package</h3>
+  <ul>
+    <li>packageには<code>package.json</code>と専用<code>tsconfig.json</code>を置かない。</li>
+    <li>packageはNightWorkersのprivate moduleを相対importしない。</li>
+    <li>NightWorkers本体はpackageの明示exportだけをimportする。</li>
+    <li>
+      backendでは<code>api/composition/mission-pilot/**</code>、frontendでは<code>src/composition/mission-pilot/**</code>だけがhost
+      contractとpackageを同時に知る。
+    </li>
+    <li>old pathからpackageへのcompatibility re-exportを残さない。</li>
+    <li>package停止または初期化失敗を、Coding AgentまたはTask APIの停止理由にしない。</li>
+    <li>production listener、timer、reconciliation loopをold pathとpackageで二重起動しない。</li>
+    <li>packageはDrizzle、LibSQL client、DB schema、DB handleをimportしない。</li>
+    <li>
+      SQLite操作は、compositionが注入した固定operation allowlistの非HTTP capabilityだけを使う。
+    </li>
+    <li>capabilityは任意SQL、table名、DB transaction objectを入力として受け取らない。</li>
+    <li>
+      capability factoryをimportできるproduction
+      codeは<code>api/composition/mission-pilot/mission-pilot-runtime-bindings.ts</code>だけとする。
+    </li>
+  </ul>
+  <h2 id="section-3-current-state-findings">3. Current-State Findings</h2>
+  <h3 id="section-31-coding-agent劣化を起こしうる構造">3.1 Coding Agent劣化を起こしうる構造</h3>
+  <p>
+    基準コミットでは、Coding Agent moduleがMission Pilotを直接importしていなくても、Coding
+    Agentへ至る上流のTask作成・Task表現・server startupがMission Pilotと結合している。
+  </p>
+  <ul>
+    <li>
+      <code>api/modules/nightworkers/nightworkers.task-creation.service.ts</code
+      >の<code>createTaskWithMissionPilot</code>が、全Task作成時にMission Pilot
+      sessionを同一transactionで作る。
+    </li>
+    <li>
+      <code>api/modules/nightworkers/nightworkers.basic.service.ts</code>がMission Pilot
+      sessionを持たないTaskを異常として扱う。
+    </li>
+    <li>core Task routeが<code>taskWithMissionPilotSchema</code>を返す。</li>
+    <li>
+      <code>shared/schemas/mission-planner.schema.ts</code
+      >、<code>task-generation.schema.ts</code>、<code>quality.schema.ts</code>もMission
+      Pilot付きTaskを要求する。
+    </li>
+    <li>
+      <code>api/db/client.ts</code>がMission Pilot schemaを常時importし、core
+      <code>db</code> schemaへ混ぜる。
+    </li>
+    <li>
+      <code>api/server.ts</code>がMission Pilot startup reconciliationとQuestionnaire
+      timerを直接起動する。
+    </li>
+    <li>
+      frontendのcore realtime hookが<code>mission_pilot.updated</code>を直接処理し、Task
+      cache内の<code>missionPilot</code>を更新する。
+    </li>
+  </ul>
+  <p>
+    この構造では、Mission Pilotのsession作成、schema、startup、realtime、Task
+    projectionのどれかが壊れると、Mission Pilotを使っていないCoding
+    Agent起動まで影響を受ける。問題はCoding Agent内部ロジックではなく、Coding Agentの外側にあるcore
+    application経路がMission Pilotを必須構成にしていることである。
+  </p>
+  <p>
+    したがって、再実装で直すべき場所はCoding Agentではない。Task正本、host composition、Mission
+    Pilot package、Task projection、DB ownership、frontend cacheの依存方向を直す。
+  </p>
+  <h3 id="section-32-package化を妨げる現在の依存">3.2 package化を妨げる現在の依存</h3>
+  <p>Mission Pilot production codeは現在、少なくとも次の場所に分散している。</p>
+  <ul>
+    <li><code>api/modules/missionPilot/**</code></li>
+    <li><code>src/modules/missionPilot/**</code></li>
+    <li><code>shared/modules/missionPilot/**</code></li>
+    <li><code>api/db/mission-pilot-schema.ts</code></li>
+    <li><code>api/db/mission-pilot-agent-schema.ts</code></li>
+    <li><code>api/db/mission-pilot-schema-bootstrap.ts</code></li>
+    <li><code>api/app.ts</code></li>
+    <li><code>api/server.ts</code></li>
+    <li>core Task route/schema/service</li>
+    <li>generic realtime broker内のrole名付き登録</li>
+    <li>frontend core realtime hook</li>
+    <li>SystemContext catalog/binding</li>
+    <li>architecture scripts、ontology、fixtures、live tests</li>
+  </ul>
+  <p>そのため、package化はfile moveだけでは完了しない。特に次の3点を先に解消する。</p>
+  <ol>
+    <li>core TaskがMission Pilot sessionを必須とする状態。</li>
+    <li>packageがNightWorkers private moduleを直接importしないためのhost port。</li>
+    <li>core DB clientとpackage DB schemaの分離。</li>
+  </ol>
+  <h3 id="section-33-基準線で先に修正するtest-fixture">3.3 基準線で先に修正するtest fixture</h3>
+  <p>
+    <code>tests/nightworkers-workbench-routes/routes-workbench-04.test.ts</code>の
+    <code>starts the standalone Plan Mode Artifact while Mission Pilot is stopped</code>
+    は、Questionnaire choiceのfixtureを次の旧形式で返している。
+  </p>
+  <pre><code class="language-ts">options: [&quot;API&quot;, &quot;UI&quot;]
+</code></pre>
+  <p>
+    現在の正本schemaは、少なくとも<code>label</code>と<code>recommended</code>を持つobject形式を要求する。このためstructured
+    output repairが1回増え、testは2回のLLM callを期待しながら実際には3回となる。
+  </p>
+  <p>
+    Phase 0でfixtureを現行schemaへ合わせる。この変更はCoding Agent production
+    codeの修正ではなく、基準線testのcharacterization修正である。ここを曖昧にしたままpackage実装へ進むと、既存のfixture不整合と新しい回帰を区別できない。
+  </p>
+  <h2 id="section-4-target-dependency-model">4. Target Dependency Model</h2>
+  <p>依存方向は次の一方向に固定する。</p>
+  <pre><code class="language-text">NightWorkers composition root
+  ├── imports NightWorkers public application contracts
+  ├── imports @nightworkers/mission-pilot explicit exports
+  ├── constructs MissionPilotHostPorts
+  └── acquires the private Mission Pilot persistence capability
+          │
+          ▼
+@nightworkers/mission-pilot
+  ├── owns Mission Pilot behavior, contracts, and UI
+  ├── calls injected user-equivalent host ports
+  ├── requests named persistence operations through the injected capability
+  └── never imports NightWorkers private modules
+
+NightWorkers core Mission Pilot persistence
+  ├── owns the single Drizzle/libSQL path and transactions
+  ├── exposes no HTTP route
+  ├── accepts named semantic operations only
+  └── is injected only by the Mission Pilot composition root
+
+Coding Agent ──X──&gt; Mission Pilot package
+Plan Mode    ──X──&gt; Mission Pilot package
+Mission Pilot package ──X──&gt; Coding Agent
+Mission Pilot package ──X──&gt; Plan Mode internals
+</code></pre>
+  <p>
+    packageからhostへのcallbackは、packageが定義するcapability interfaceをcomposition
+    rootが実装する依存性注入とする。packageから<code>api/**</code>または<code>src/**</code>へのsource
+    importは許可しない。
+  </p>
+  <p>
+    これはTask Operator contractの複製を意味しない。package側のportは、公開resource
+    queryと公開action commandをtransportする薄いinterfaceだけを定義し、action
+    payloadの正本検証、権限、revision、idempotency、実行はNightWorkersのTask Operatorが所有する。
+  </p>
+  <h2 id="section-5-pure-typescript-boundary-design">5. Pure TypeScript Boundary Design</h2>
+  <h3 id="section-51-root-typescript-resolution">5.1 Root TypeScript resolution</h3>
+  <p>
+    root <code>package.json</code>へworkspace設定や<code>@nightworkers/mission-pilot</code>
+    dependencyを追加しない。root
+    <code>tsconfig.json</code
+    >は<code>packages/mission-pilot/src/**/*</code>を検査対象に含め、次の完全一致aliasだけを公開surfaceとして解決する。
+  </p>
+  <h3 id="section-52-public-alias-surface">5.2 Public alias surface</h3>
+  <ul>
+    <li><code>@nightworkers/mission-pilot/contracts</code></li>
+    <li><code>@nightworkers/mission-pilot/backend</code></li>
+    <li><code>@nightworkers/mission-pilot/frontend</code></li>
+    <li><code>@nightworkers/mission-pilot/testing</code></li>
+    <li><code>@nightworkers/mission-pilot/frontend.css</code></li>
+  </ul>
+  <p>禁止事項:</p>
+  <ul>
+    <li>
+      <code>packages/mission-pilot/package.json</code
+      >と<code>packages/mission-pilot/tsconfig.json</code>。
+    </li>
+    <li><code>&quot;.&quot;</code>のbroad export。</li>
+    <li>internal directoryのwildcard export。</li>
+    <li>repository、DB schema、prompt、service classの個別export。</li>
+    <li>package内部fileへのdeep import。</li>
+    <li><code>api/**</code>、<code>src/**</code>、<code>shared/**</code>へのrelative import。</li>
+    <li>Coding Agent SDKまたはfilesystem/Git libraryのdependency追加。</li>
+  </ul>
+  <h3 id="section-53-package-layout">5.3 Package layout</h3>
+  <pre><code class="language-text">packages/mission-pilot/
+  AGENTS.md
+  src/
+    contracts/
+      principal.ts
+      provenance.ts
+      session.ts
+      realtime.ts
+      host-ports.ts
+      index.ts
+
+    backend/
+      application/
+        mission-pilot-runtime.ts
+        mission-pilot-session.service.ts
+        mission-pilot-initial-prompt.service.ts
+        mission-pilot-questionnaire.service.ts
+        mission-pilot-task-operator.service.ts
+        mission-pilot-continuation.service.ts
+      domain/
+        session-state.ts
+        decision.ts
+        conversation.ts
+      persistence-port.ts
+      routes/
+        mission-pilot.routes.ts
+      prompts/
+      index.ts
+
+    frontend/
+      client/
+      components/
+      hooks/
+      i18n/
+      styles.css
+      index.ts
+
+    testing/
+      fixtures/
+      fakes/
+      index.ts
+</code></pre>
+  <p><code>AGENTS.md</code>には、少なくとも次をpackage-local ruleとして置く。</p>
+  <ul>
+    <li>repository、filesystem、Git、shellへアクセスしない。</li>
+    <li>Coding Agent、Plan Mode、NightWorkers repositoryをimportしない。</li>
+    <li>user-equivalent Task Operator action以外の業務副作用を作らない。</li>
+    <li>prompt文言は日本語を維持する。</li>
+    <li>keyword/error text分類を作らない。</li>
+    <li>structured principal/provenanceを必須にする。</li>
+    <li>package外importはthird-party dependencyに限定する。</li>
+  </ul>
+  <h2 id="section-6-explicit-package-exports">6. Explicit Package Exports</h2>
+  <h3 id="section-61-nightworkersmission-pilotcontracts">
+    6.1 <code>@nightworkers/mission-pilot/contracts</code>
+  </h3>
+  <p>公開してよいもの:</p>
+  <ul>
+    <li><code>MissionPilotPrincipal</code></li>
+    <li><code>MissionPilotProvenance</code></li>
+    <li><code>MissionPilotControlSummary</code></li>
+    <li><code>MissionPilotRealtimeEvent</code></li>
+    <li><code>MissionPilotHostPorts</code></li>
+    <li><code>MissionPilotFrontendClient</code></li>
+    <li>public route request/response schema</li>
+  </ul>
+  <p>公開しないもの:</p>
+  <ul>
+    <li>repository interface</li>
+    <li>DB row type</li>
+    <li>domain aggregate</li>
+    <li>LLM prompt</li>
+    <li>continuation decision内部型</li>
+    <li>lifecycle state machine内部event</li>
+  </ul>
+  <h3 id="section-62-nightworkersmission-pilotbackend">
+    6.2 <code>@nightworkers/mission-pilot/backend</code>
+  </h3>
+  <p>公開APIは少数のfactoryに限定する。</p>
+  <pre><code class="language-ts">export function createMissionPilotRouter(
+  dependencies: MissionPilotBackendDependencies,
+): Hono;
+
+export async function bootstrapMissionPilotStorage(
+  dependencies: MissionPilotStorageDependencies,
+): Promise&lt;void&gt;;
+
+export async function startMissionPilotRuntime(
+  dependencies: MissionPilotRuntimeDependencies,
+): Promise&lt;{ stop(): Promise&lt;void&gt; }&gt;;
+</code></pre>
+  <p>
+    <code>startMissionPilotRuntime</code>はlistener、reconciliation、due-action
+    timerを一度だけ登録し、返した<code>stop</code>ですべて解除できるようにする。module
+    import時のside effectは禁止する。
+  </p>
+  <h3 id="section-63-nightworkersmission-pilotfrontend">
+    6.3 <code>@nightworkers/mission-pilot/frontend</code>
+  </h3>
+  <p>
+    公開APIは、host内部型を知らない自己完結したcomponent、hook、client factory、realtime
+    handlerに限定する。
+  </p>
+  <pre><code class="language-ts">export function createMissionPilotClient(...): MissionPilotFrontendClient;
+export function createMissionPilotRealtimeHandler(...): RealtimeExtensionHandler;
+export function MissionPilotControl(props: { taskId: string; client: MissionPilotFrontendClient }): JSX.Element;
+export function MissionPilotTimelineCard(...): JSX.Element;
+</code></pre>
+  <p>
+    package componentは<code>NightWorkersShell</code>、<code>ThreadMessage</code>、workbench route
+    state、core
+    Task型をimportしない。hostから渡す値は<code>taskId</code>、表示slot、callback等の最小view
+    contractにする。
+  </p>
+  <h2 id="section-7-host-ports">7. Host Ports</h2>
+  <p>
+    <code>MissionPilotHostPorts</code>は、Mission
+    Pilotが人間ユーザー相当の操作をするために必要な能力だけを表す。
+  </p>
+  <pre><code class="language-ts">interface MissionPilotHostPorts {
+  taskOperator: {
+    query(input: PublicResourceQuery): Promise&lt;PublicResourceResult&gt;;
+    execute(input: PublicActionCommand): Promise&lt;PublicActionResult&gt;;
+  };
+  taskIntake: {
+    submitUserMessage(input: UserTaskIntakeCommand): Promise&lt;UserTaskIntakeResult&gt;;
+  };
+  events: {
+    subscribe(listener: PublicApplicationEventListener): Unsubscribe;
+  };
+  realtime: {
+    publish(event: MissionPilotRealtimeEvent): Promise&lt;void&gt;;
+  };
+  systemContext: {
+    resolve(input: SystemContextResolveInput): Promise&lt;ResolvedSystemContext&gt;;
+  };
+  structuredLlm: {
+    generate(input: StatelessStructuredGenerationInput): Promise&lt;StructuredGenerationResult&gt;;
+  };
+  authorization: {
+    assertTaskAction(input: TaskActionAuthorizationInput): Promise&lt;void&gt;;
+  };
+  clock: Clock;
+  ids: IdGenerator;
+  logger: Logger;
+}
+</code></pre>
+  <p>port名が同じでも、Mission Pilot専用の裏口を実装してはならない。</p>
+  <ul>
+    <li><code>taskOperator.query</code>はTask Operator公開resource queryへそのまま接続する。</li>
+    <li><code>taskOperator.execute</code>はTask Operator公開action commandへそのまま接続する。</li>
+    <li>
+      <code>taskIntake.submitUserMessage</code>は人間UIが初期Promptを送るものと同じTask intake
+      commandへ接続する。
+    </li>
+    <li><code>events.subscribe</code>はtyped public application eventだけを配信する。</li>
+    <li><code>structuredLlm.generate</code>はstateless provider callに限定する。</li>
+    <li><code>authorization</code>は人間ユーザーと同じtask access policyを使う。</li>
+  </ul>
+  <p>禁止するport例:</p>
+  <ul>
+    <li><code>inspectRepository</code></li>
+    <li><code>readWorktree</code></li>
+    <li><code>getGitHead</code></li>
+    <li><code>startCodingAgentPlanMode</code></li>
+    <li><code>updatePlanModeRoutingDirectly</code></li>
+    <li><code>writeArtifactRepository</code></li>
+    <li><code>forceQuestionnaireAnswer</code></li>
+    <li><code>getMissionPilotOnlyTaskState</code></li>
+  </ul>
+  <h2 id="section-8-core-task-decoupling">8. Core Task Decoupling</h2>
+  <h3 id="section-81-neutral-task">8.1 Neutral Task</h3>
+  <p>
+    core Task responseから必須の<code>missionPilot</code> fieldを外す。TaskはMission Pilot
+    sessionが存在しなくても正当である。
+  </p>
+  <p>廃止対象:</p>
+  <ul>
+    <li><code>taskWithMissionPilotSchema</code></li>
+    <li><code>createTaskWithMissionPilot</code></li>
+    <li>Task作成時のMission Pilot session同時作成</li>
+    <li>Mission Pilot session不在をTask異常とするassertion</li>
+  </ul>
+  <p>置換後:</p>
+  <ul>
+    <li>全Task作成元はAgent非依存の<code>createTask</code>だけを使用する。</li>
+    <li>
+      <code>mission-planner</code
+      >、<code>taskGeneration</code>、<code>project-evaluation</code>、<code>quality</code>もneutral
+      Taskを返す。
+    </li>
+    <li>core Task list/get/update responseはneutral Task schemaを返す。</li>
+    <li>Mission Pilot control stateはpackage routeから別queryで取得する。</li>
+  </ul>
+  <h3 id="section-82-lazy-session-creation">8.2 Lazy session creation</h3>
+  <p>
+    Mission Pilot
+    sessionは、ユーザーがPlayを実行した時にpackageが固定operationを要求し、NightWorkers core
+    repositoryがidempotentに作る。
+  </p>
+  <pre><code class="language-text">POST Mission Pilot Play
+  -&gt; human authorization
+  -&gt; read Task through public resource
+  -&gt; get existing session by taskId
+  -&gt; if absent, create exactly one session
+  -&gt; transition stopped/idle -&gt; playing
+  -&gt; submit initial prompt only when lifecycle requires it
+</code></pre>
+  <p>要件:</p>
+  <ul>
+    <li>Taskごとにactive sessionは最大1つ。</li>
+    <li>同時Playはunique constraintとidempotency keyで同じsessionへ収束する。</li>
+    <li>既存sessionは移行後も同じIDと履歴を保持する。</li>
+    <li>Task作成transactionとMission Pilot session transactionを分離する。</li>
+    <li>session作成失敗はPlayだけを失敗させ、Task、Coding Agent、Plan Modeを失敗させない。</li>
+    <li>Stop中またはsession未作成でも、Coding Agent直結Runを許可する。</li>
+  </ul>
+  <h3 id="section-83-atomic-apiui-cutover">8.3 Atomic API/UI cutover</h3>
+  <p>
+    core Taskから<code>missionPilot</code>を外す変更と、frontendがpackage control
+    queryを使う変更は同一checkpointで切り替える。旧Task
+    fieldと新queryをproductionで長期間dual-readしない。
+  </p>
+  <p>
+    既存client compatibilityが必要なら、versioned
+    responseを1releaseだけ用意するのではなく、同じrepository内の全callerを同一commitで更新する。外部公開互換性が確認された場合のみ、削除期限付きのadapterを別途承認する。
+  </p>
+  <h2 id="section-9-persistence-ownership-and-migration">9. Persistence Ownership and Migration</h2>
+  <h3 id="section-91-nightworkers-owned-persistence-capability">
+    9.1 NightWorkers-owned persistence capability
+  </h3>
+  <p>
+    Mission Pilot schema、agent
+    schema、bootstrap、repositoryは<code>api/modules/missionPilot/persistence</code>が所有する。<code>api/db/client.ts</code>の単一Drizzle
+    instanceへschemaを統合し、Mission Pilot packageに別clientを作らない。
+  </p>
+  <p>
+    packageが利用できるのは<code>executeMissionPilotPersistence({ operation, args })</code
+    >のin-process callbackだけである。operationはcompile-time listとcore handler
+    mapの両方で固定し、任意SQL、table名、DB
+    client、transactionを受け付けない。このcallbackはHTTP、OpenAPI、router、public backend
+    indexへ公開しない。
+  </p>
+  <p>
+    Mission Pilot tableは現在のphysical table名とdataを維持する。境界移動を理由に破壊的renameやdata
+    copyを行わない。
+  </p>
+  <h3 id="section-92-cross-domain-references">9.2 Cross-domain references</h3>
+  <p>
+    package内のTask、Run、Questionnaire、Artifact IDはopaque identifierとして扱う。packageはcore
+    tableをjoinまたは直接readしない。整合性に必要なjoin/read/writeはNightWorkers persistence
+    operationの内部だけで実行する。
+  </p>
+  <p>
+    物理foreign keyが既に存在する場合、bootstrap
+    SQLで既存constraintを維持してよい。ただし、業務判断のためのcross-domain queryはTask Operator
+    resourceを使う。
+  </p>
+  <h3 id="section-93-leaked-role-named-core-columns">9.3 Leaked role-named core columns</h3>
+  <p>core側に残っているrole名付きphysical columnは、Agent非依存名へ段階移行する。</p>
+  <table>
+    <caption>
+      9.3 Leaked role-named core columns
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current physical column</th>
+        <th scope="col">Current application meaning</th>
+        <th scope="col">Target physical column</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>implementation_queue_entries.mission_pilot_admission_key</code></td>
+        <td>source command identity</td>
+        <td><code>source_command_key</code></td>
+      </tr>
+      <tr>
+        <td><code>implementation_queue_entries.mission_pilot_agent_json</code></td>
+        <td>request provenance</td>
+        <td><code>request_provenance_json</code></td>
+      </tr>
+      <tr>
+        <td><code>design_questionnaire_sessions.mission_pilot_action_key</code></td>
+        <td>command idempotency</td>
+        <td><code>command_idempotency_key</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>migration手順:</p>
+  <ol>
+    <li>新columnをadditiveに追加する。</li>
+    <li>旧columnからbackfillする。</li>
+    <li>nullability、index、unique条件を検証する。</li>
+    <li>application read/writeを同一checkpointで新columnへ切り替える。</li>
+    <li>migration期間中もsemantic dual-writeは行わない。</li>
+    <li>旧column削除は別releaseのcleanupへ送る。</li>
+  </ol>
+  <p>property名が既に中立なら、それを維持する。</p>
+  <h3 id="section-94-provenance-migration">9.4 Provenance migration</h3>
+  <p>
+    role非依存のtrace provenance migrationとMission Pilot table固有のbackfillはNightWorkers
+    coreに置く。package bootstrapは存在しない。
+  </p>
+  <p>
+    historical Plan Mode migrationが旧Mission Pilot tableの存在確認を行う場合は、runtime
+    dependencyではなく過去data救済として例外を明示する。新しいruntime
+    read/writeをそのmigrationへ追加しない。
+  </p>
+  <h3 id="section-95-failure-isolation">9.5 Failure isolation</h3>
+  <p>起動順は次とする。</p>
+  <ol>
+    <li>core DB bootstrapを完了する。</li>
+    <li>core HTTP appとCoding Agentに必要なserviceを構成する。</li>
+    <li>NightWorkers coreのMission Pilot storageを初期化する。</li>
+    <li>成功した場合だけMission Pilot router/runtimeをavailableにする。</li>
+    <li>
+      package初期化に失敗した場合はMission Pilot controlをunavailableとして記録し、core TaskとCoding
+      Agentは起動を続ける。
+    </li>
+  </ol>
+  <p>
+    Mission Pilot storage failureをprocess全体のfatal errorへ昇格させない。ただしmigration
+    corruptionやdata lossを黙って無視せず、Mission Pilot endpointはtyped
+    <code>503</code>を返し、operator logへ構造化errorを残す。
+  </p>
+  <h2 id="section-10-backend-composition">10. Backend Composition</h2>
+  <p>backendの接続は<code>api/composition/mission-pilot/**</code>だけで行う。</p>
+  <p>推奨構成:</p>
+  <pre><code class="language-text">api/composition/mission-pilot/
+  mission-pilot-host-ports.ts
+  mission-pilot-runtime-composition.ts
+  mission-pilot-router-composition.ts
+  index.ts
+</code></pre>
+  <p>このdirectoryの責務:</p>
+  <ul>
+    <li>NightWorkers公開application command/eventをpackage portへadaptする。</li>
+    <li>DB client、logger、clock、ID generatorを注入する。</li>
+    <li>package routerをHono appへmountする。</li>
+    <li>package runtimeをstart/stopする。</li>
+    <li>runtime unavailable状態をcoreから隔離する。</li>
+  </ul>
+  <p>このdirectoryに置いてはいけないもの:</p>
+  <ul>
+    <li>Mission Pilotの意味判断。</li>
+    <li>questionnaire選択。</li>
+    <li>artifact routing判断。</li>
+    <li>continuation判断。</li>
+    <li>DB query。</li>
+    <li>Coding Agent direct call。</li>
+    <li>user/error keyword分岐。</li>
+  </ul>
+  <p>
+    <code>api/app.ts</code>と<code>api/server.ts</code>はcomposition
+    entryを呼ぶだけに縮小し、Mission Pilot service、repository、timer関数を直接importしない。
+  </p>
+  <h2 id="section-11-mission-pilot-runtime-flow">11. Mission Pilot Runtime Flow</h2>
+  <h3 id="section-111-play-and-initial-prompt">11.1 Play and initial prompt</h3>
+  <p>Playは人間ユーザー操作であり、task authorizationを先に検証する。</p>
+  <p>
+    初期Promptは、人間ユーザーがTaskへmessageを送るものと同じTask intake commandへ送る。Mission
+    Pilot用Coding Agent start APIや専用handoff APIは作らない。
+  </p>
+  <pre><code class="language-text">User clicks Play
+  -&gt; package session becomes playing
+  -&gt; package submits the initial prompt through Task intake
+  -&gt; Coding Agent receives normal user intake
+  -&gt; Coding Agent owns Plan Mode gate/questionnaire generation
+  -&gt; Mission Pilot waits for a typed request for the next user operation
+</code></pre>
+  <p>
+    Mission Pilotは、初期Prompt送信直後にPlan Modeを直接起動しない。Coding AgentがPlan
+    Modeに入ったかをfilesystem、run内部状態、error textから推測しない。
+  </p>
+  <h3 id="section-112-waiting">11.2 Waiting</h3>
+  <p>
+    Mission Pilotの標準状態は「次のユーザー操作要求を待つ」である。pollingでprivate
+    repositoryを読むのではなく、typed public application eventをconsumeし、必要時にTask Operator
+    resourceを再読する。
+  </p>
+  <p>UIへ少なくとも次を区別して表示する。</p>
+  <ul>
+    <li><code>waiting_for_coding_agent</code></li>
+    <li><code>waiting_for_questionnaire</code></li>
+    <li><code>waiting_for_user_override</code></li>
+    <li><code>generating_artifacts</code></li>
+    <li><code>waiting_for_run</code></li>
+    <li><code>evaluating_outcome</code></li>
+    <li><code>stopped</code></li>
+    <li><code>unavailable</code></li>
+  </ul>
+  <p>
+    長いLLM応答待ちを停止と誤認しないよう、last activityと次のeligible
+    timeを表示する。過去の実providerではQuestionnaire応答に100秒超を要した例があるため、live
+    canaryは短い固定timeoutで失敗扱いにしない。
+  </p>
+  <h3 id="section-113-questionnaire">11.3 Questionnaire</h3>
+  <p>
+    Questionnaireの質問、選択肢、Recommendedは、UIが読むものと同じTask Operator questionnaire
+    resourceから取得する。
+  </p>
+  <p>
+    20秒の代理回答待機は、Questionnaireが構造的に<code>answering</code>となったeventを受けた時点から開始する。Task作成、Play、LLM
+    generation開始から数えない。
+  </p>
+  <pre><code class="language-text">questionnaire status becomes answering
+  -&gt; save delayed user-operation event with eligibleAt = eventAt + 20 seconds
+  -&gt; show user that Mission Pilot will answer after eligibleAt
+  -&gt; if human submits first, mark delayed event superseded
+  -&gt; at eligibleAt, re-read the same questionnaire resource
+  -&gt; if still answerable, select from its current choices/recommendation
+  -&gt; execute the same questionnaire.submit action used by UI
+</code></pre>
+  <p>必須precondition:</p>
+  <ul>
+    <li>task ID</li>
+    <li>questionnaire ID</li>
+    <li>questionnaire revision</li>
+    <li>current status</li>
+    <li>principal</li>
+    <li>delegated-user provenance</li>
+    <li>idempotency key</li>
+    <li>consumed delayed event ID</li>
+  </ul>
+  <p>
+    20秒中に人間が回答した場合、人間回答が勝つ。timer
+    callbackは再読後にno-opとする。raceで同時submitになってもserver側revision/idempotency検査で一方だけが成立する。
+  </p>
+  <p>Mission Pilot専用draft submitやrepository writeを追加しない。</p>
+  <h3 id="section-114-artifact-routing-and-generation">11.4 Artifact routing and generation</h3>
+  <p>
+    <code>questionnaire.submit</code>後は、人間回答と同じPlan Mode
+    application処理がArtifact推薦を作る。
+  </p>
+  <p>Mission PilotはTask Operatorからrouting/resourceを読み、公開actionを実行する。</p>
+  <p>現行actionを維持する場合:</p>
+  <ul>
+    <li><code>plan.routing.update</code></li>
+    <li><code>plan.artifact.feature_plan.generate</code></li>
+    <li><code>plan.artifact.blueprint.generate</code></li>
+    <li><code>plan.artifact.data_model.generate</code></li>
+    <li><code>plan.artifact.view.generate</code></li>
+  </ul>
+  <p>
+    複数Artifactの一括生成が必要なら、Mission
+    Pilot専用actionではなくUIも利用できるAgent非依存actionとして設計・追加する。追加が不要なら現行type-specific
+    actionを順番に使う。
+  </p>
+  <p>
+    include/omitと理由はtask-keyed
+    routingへ保存し、<code>plan_mode.routing_changed</code>でUIへ通知する。Mission Pilotのlocal
+    sessionだけへ保存しない。
+  </p>
+  <p>
+    Mission Pilot稼働中でもUIのArtifact selectionをdisabledにしない。ユーザー変更とMission Pilot
+    actionが競合した場合はrouting
+    revisionで検出し、最新resourceを再読してLLMに次actionを判断させる。
+  </p>
+  <h3 id="section-115-implementation-start">11.5 Implementation start</h3>
+  <p>
+    Artifact準備後の実装開始は、Task Operatorの<code>run.implementation.start</code>を使う。Coding
+    Agent route/service/repositoryを直接呼ばない。
+  </p>
+  <p>
+    Mission Pilot handoffのprovenanceはRunへ構造的に保存するが、Coding
+    Agentのruntime起動条件にはしない。ユーザー直結Runは同じCoding Agent runtimeへMission
+    Pilotなしで入れる。
+  </p>
+  <h3 id="section-116-stop-continuation-and-completion">11.6 Stop, continuation, and completion</h3>
+  <p>Coding Agentが停止または中断した場合、Mission Pilotは次の公開resourceを読む。</p>
+  <ul>
+    <li>current Todo</li>
+    <li>run outcome</li>
+    <li>task timeline/messages</li>
+    <li>artifact index</li>
+    <li>queue state</li>
+  </ul>
+  <p>
+    Goal未達で、追加のユーザー情報なしに継続可能とLLMが判断した場合だけ、公開actionからcontinueする。
+  </p>
+  <ul>
+    <li>current Todoを再開できる場合: <code>run.todo.resume</code></li>
+    <li>新しい実装Runが必要な場合: <code>run.implementation.start</code></li>
+  </ul>
+  <p>
+    error messageの単語、exit
+    code一覧、Task文言でcontinueを決めない。hostはrevision、権限、idempotency、terminal
+    state等の構造的不変条件だけを強制する。
+  </p>
+  <p>
+    Task完了判断もLLMがTask goal、完了条件、run
+    outcome、verificationを読んで行う。通信障害以外でLLM本文を固定文へ差し替えない。
+  </p>
+  <h2 id="section-12-principal-and-provenance">12. Principal and Provenance</h2>
+  <p>
+    人間操作とMission Pilot代理操作は、同じapplication commandを使う。違いは次の構造だけに限定する。
+  </p>
+  <pre><code class="language-ts">type ActionPrincipal =
+  | {
+      kind: &quot;human_user&quot;;
+      userId: string;
+    }
+  | {
+      kind: &quot;delegated_user&quot;;
+      userId: string;
+      delegate: &quot;mission_pilot&quot;;
+      sessionId: string;
+    };
+</code></pre>
+  <p>provenanceには少なくとも次を保存する。</p>
+  <ul>
+    <li>invoking principal kind</li>
+    <li>human user ID</li>
+    <li>delegate role</li>
+    <li>Mission Pilot session ID</li>
+    <li>source Task ID</li>
+    <li>source event/action ID</li>
+    <li>idempotency key</li>
+    <li>occurredAt</li>
+  </ul>
+  <p>provenanceをmessage text、hidden prefix、error stringへ埋めて判定しない。</p>
+  <p>delegated principalの権限はhuman userの権限の部分集合とし、次を行わない。</p>
+  <ul>
+    <li>owner権限への昇格</li>
+    <li>unauthorized projectへのアクセス</li>
+    <li>userが実行できないactionの実行</li>
+    <li>user confirmationを必要とする副作用の迂回</li>
+  </ul>
+  <h2 id="section-13-realtime-separation">13. Realtime Separation</h2>
+  <p>
+    backend realtime brokerはrole固有payloadを解釈しない。replayable event
+    registrationが必要なら、generic registrationまたはcomposition contributionとして受け取る。
+  </p>
+  <p>
+    frontendではcore <code>useNightWorkersRealtime</code>からMission Pilot importとTask cache
+    mutationを外す。
+  </p>
+  <pre><code class="language-text">core realtime transport
+  -&gt; core handlers update core query cache
+  -&gt; extension handlers receive validated envelope
+       -&gt; Mission Pilot package handler validates mission_pilot.updated
+       -&gt; package handler updates Mission Pilot query cache
+</code></pre>
+  <p>
+    Mission Pilot control summaryはpackage query cacheが所有する。core Task
+    cacheへ<code>missionPilot</code>を埋め戻さない。
+  </p>
+  <p>
+    event payloadを全面的な<code>unknown</code>へ弱めず、boundaryでpackage contract
+    schemaにより検証する。unknown event typeはcore transportが安全に無視し、既知typeのinvalid
+    payloadは構造化logへ出す。
+  </p>
+  <h2 id="section-14-frontend-composition">14. Frontend Composition</h2>
+  <p>frontend接続は<code>src/composition/mission-pilot/**</code>に限定する。</p>
+  <p>このcompositionは次を行う。</p>
+  <ul>
+    <li>package clientへ既存API transportとauth contextを注入する。</li>
+    <li>package realtime handlerをcore realtime transportへ登録する。</li>
+    <li>Task IDをpackage control componentへ渡す。</li>
+    <li>shell/timelineの明示slotへpackage componentを配置する。</li>
+    <li>package i18n dictionaryとCSSをroot compositionで結合する。</li>
+  </ul>
+  <p>
+    package側はNightWorkers internal componentをimportしない。見た目の統一が必要なら、CSS custom
+    properties、primitive props、neutral UI tokenを利用する。
+  </p>
+  <p>
+    Mission PilotがunavailableでもTask画面、Plan Mode UI、Coding
+    Agent操作は表示・操作できる。Mission Pilot controlだけがunavailable表示になる。
+  </p>
+  <h2 id="section-15-systemcontext-and-llm-provider">15. SystemContext and LLM Provider</h2>
+  <p>
+    SystemContext
+    TOML、生成catalog、bindingは<code>api/systemContexts</code>に残す。これは既存AGENTSルールの明示例外であり、packageへ移動しない。
+  </p>
+  <p>
+    packageはSystemContext fileまたはcatalog内部実装をimportせず、host portでbindingをresolveする。
+  </p>
+  <p>
+    Mission Pilot安定化を理由にstructured LLM providerの共有実装を拡張しない。最初の実装ではprovider
+    turnをstatelessに保ち、Mission Pilotの継続性はcore-owned conversation
+    store、採用済み判断、未解決事項、実行済みaction、compaction digestで維持する。
+  </p>
+  <p>
+    provider retryは明示的retryableな一時障害だけに限定し、回数上限と停止手段を持つ。schema
+    parse失敗時もprovider本文を保存する。
+  </p>
+  <h2 id="section-16-architecture-enforcement">16. Architecture Enforcement</h2>
+  <p>package移動と同時に、説明文ではなく検査で境界を固定する。</p>
+  <h3 id="section-161-root-and-ontology-rules">16.1 Root and ontology rules</h3>
+  <p>更新対象:</p>
+  <ul>
+    <li>root <code>AGENTS.md</code></li>
+    <li><code>.agent-ontology/boundary-policy.json</code></li>
+    <li><code>.agent-ontology/modules/mission-pilot.yaml</code></li>
+    <li><code>.agent-ontology/modules/plan-mode.yaml</code></li>
+    <li>module boundary scripts</li>
+    <li>Coding Agent standalone boundary script</li>
+    <li>Task Operator boundary script</li>
+  </ul>
+  <p>root <code>AGENTS.md</code>のAgent固有production locationは次へ更新する。</p>
+  <ul>
+    <li>
+      Coding
+      Agentは現状の<code>api/modules/codingAgent</code>、<code>src/modules/codingAgent</code>、対応shared
+      path。
+    </li>
+    <li>Mission Pilotは<code>packages/mission-pilot</code>。</li>
+    <li>role固有SystemContextだけは<code>api/systemContexts</code>。</li>
+    <li>compositionだけは指定されたroot composition path。</li>
+  </ul>
+  <p>
+    P1時点ではold Mission Pilot production
+    pathがまだ存在するため、これらを恒久的な許可pathとして扱わない。既存file一覧をshrink-only
+    migration ledgerとして固定し、新規file、新規role機能、file数増加を禁止する。P5でbackend/shared
+    ledgerを0件、P6でfrontend ledgerを0件にし、その同じcheckpointでmigration例外を削除する。
+  </p>
+  <h3 id="section-162-required-static-rules">16.2 Required static rules</h3>
+  <ol>
+    <li>
+      <code>api/modules/codingAgent/**</code
+      >、<code>src/modules/codingAgent/**</code>、<code>shared/modules/codingAgent/**</code>からpackage
+      importを禁止する。
+    </li>
+    <li>
+      <code>api/modules/planMode/**</code>、<code>src/modules/planMode/**</code>からpackage
+      importを禁止する。
+    </li>
+    <li>
+      packageから<code>api/**</code>、<code>src/**</code>、<code>shared/**</code>へのsource
+      importを禁止する。
+    </li>
+    <li>
+      packageからCoding Agent、Plan Mode、NightWorkers repository、core DB
+      schemaへのimportを禁止する。
+    </li>
+    <li>package内のfilesystem、Git、shell、process execution library importを禁止する。</li>
+    <li>package deep importを禁止する。</li>
+    <li>old Mission Pilot pathsからのre-exportを禁止する。</li>
+    <li>Task Operator moduleからpackage importを禁止する。</li>
+    <li>
+      Coding Agent standalone entrypointのtransitive graphにpackageとMission Pilot DB
+      schemaがないことを検査する。
+    </li>
+    <li>
+      rootで<code>missionPilot</code> identifierを許す場所を、composition、SystemContext、historical
+      migration、package integration testへ限定する。
+    </li>
+    <li>architecture scan対象へ<code>packages/**</code>を含める。</li>
+    <li>dynamic import、type-only import、re-exportも同じ規則で検査する。</li>
+  </ol>
+  <h3 id="section-163-exact-composition-allowlist">16.3 Exact composition allowlist</h3>
+  <p>
+    最終状態でNightWorkers本体からpackageをimportできるproduction pathは、原則として次だけとする。
+  </p>
+  <ul>
+    <li><code>api/composition/mission-pilot/**</code></li>
+    <li><code>src/composition/mission-pilot/**</code></li>
+    <li>root app/serverのcomposition entry</li>
+    <li>root CSS/i18n composition entry</li>
+  </ul>
+  <p>
+    business service、Task route、Plan Mode、Coding Agent、Task Operator
+    repositoryからのimportは許可しない。
+  </p>
+  <h2 id="section-17-implementation-checkpoints">17. Implementation Checkpoints</h2>
+  <p>
+    各checkpointは独立commitとし、後続checkpointと混ぜずにrevert可能にする。各checkpoint終了時にrequired
+    verificationを実行し、失敗した状態で次へ進まない。
+  </p>
+  <h3 id="p0-baseline-characterization">P0: Baseline characterization</h3>
+  <p>目的:</p>
+  <ul>
+    <li>基準コミットの動作と既知fixture不整合を分離する。</li>
+    <li>Coding Agent standaloneの基準を固定する。</li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li>
+      <code>routes-workbench-04.test.ts</code>のQuestionnaire choice fixtureを現行object
+      schemaへ修正する。
+    </li>
+    <li>direct Coding Agent normal start testを維持する。</li>
+    <li>direct Coding Agent Plan Mode testを正常化する。</li>
+    <li>
+      Mission Pilot sessionがなくてもCoding Agentが開始できるcharacterization
+      testを追加する。production codeは変更しない。
+    </li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>normal startがMission Pilot envelopeなしで成功する。</li>
+    <li>Plan Mode gate/questionnaire pathがMission Pilotなしで成功する。</li>
+    <li>不要なstructured-output repair callが発生しない。</li>
+    <li>Coding Agent production diffが空。</li>
+  </ul>
+  <h3 id="p1-pure-typescript-scaffold-and-guardrails">
+    P1: Pure TypeScript scaffold and guardrails
+  </h3>
+  <p>目的:</p>
+  <ul>
+    <li>behaviorを変えずにpackage境界と違反検査を先に作る。</li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li>root TypeScript alias設定。workspace設定と独自manifestは追加しない。</li>
+    <li>
+      empty source-boundary scaffold、explicit public indexes、package-local
+      <code>AGENTS.md</code>。
+    </li>
+    <li>
+      root <code>AGENTS.md</code>とontologyへ最終配置ルール、および期限付きshrink-only migration
+      ledgerを追加する。
+    </li>
+    <li>architecture scriptsを<code>packages/**</code>対応にする。</li>
+    <li>packageからroot private sourceへのimport禁止。</li>
+    <li>Coding Agent/Plan Modeからpackageへのimport禁止。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>packageは空のfactory/contractだけでtypecheckできる。</li>
+    <li>old pathのfile数とexport surfaceがbaselineから増えていない。</li>
+    <li>runtime listener、route、DBはまだ切り替えない。</li>
+    <li>existing behavior testは不変。</li>
+  </ul>
+  <h3 id="p2-host-port-seam-and-dependency-inversion">
+    P2: Host port seam and dependency inversion
+  </h3>
+  <p>目的:</p>
+  <ul>
+    <li>
+      現在のMission Pilotが直接参照するhost capabilityを棚卸しし、package public portへ収束させる。
+    </li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li>
+      Task Operator query/action、Task intake、typed event、realtime、SystemContext、structured
+      LLM、authorization、clock、ID、loggerのportを定義する。
+    </li>
+    <li><code>api/composition/mission-pilot</code>へadapterを作る。</li>
+    <li>
+      Mission Pilotの意味判断をadapterへ移さず、adapterを単純pass-throughに保つcontract
+      testを追加する。
+    </li>
+    <li>
+      direct Coding Agent/Plan Mode importなしでhost port fakeを使えるpackage test harnessを作る。
+    </li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>
+      port一覧にfilesystem、Git、repository、Coding Agent direct start、Plan Mode writerがない。
+    </li>
+    <li>package contractがNightWorkers private typeをexportしない。</li>
+    <li>composition以外にhost/package両方をimportするfileがない。</li>
+  </ul>
+  <h3 id="p3-neutral-task-projection-and-lazy-session">
+    P3: Neutral Task projection and lazy session
+  </h3>
+  <p>目的:</p>
+  <ul>
+    <li>core TaskとMission Pilot sessionの必須結合を切る。</li>
+  </ul>
+  <p>変更はatomic cutoverとして行う:</p>
+  <ul>
+    <li>neutral Task schemaへ切り替える。</li>
+    <li><code>taskWithMissionPilotSchema</code>利用を除去する。</li>
+    <li><code>createTaskWithMissionPilot</code>をAgent非依存<code>createTask</code>へ置換する。</li>
+    <li>Task作成時session作成を廃止する。</li>
+    <li>Mission Pilot summary queryを独立させる。</li>
+    <li>frontendはTask fieldではなくsummary queryを読む。</li>
+    <li>Playでidempotentにsessionをlazy createする。</li>
+    <li>core realtime Task cacheからMission Pilot mutationを外す。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>Mission Pilot tableが空または存在しなくてもTask CRUDが成功する。</li>
+    <li>Coding Agent standalone normal/Plan Modeが成功する。</li>
+    <li>Playでだけsessionが1件作られる。</li>
+    <li>concurrent Playで重複sessionが作られない。</li>
+    <li>existing sessionが再利用される。</li>
+    <li>UIでMission Pilot unavailableでもTask/Coding Agent操作が有効。</li>
+  </ul>
+  <h3 id="p4-core-persistence-capability-extraction">P4: Core persistence capability extraction</h3>
+  <p>目的:</p>
+  <ul>
+    <li>
+      Mission PilotのDB ownershipをNightWorkers coreのrole
+      moduleへ集約し、packageのDB直参照をなくす。
+    </li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li>
+      schema、agent
+      schema、bootstrap、repositoryを<code>api/modules/missionPilot/persistence</code>へ移動する。
+    </li>
+    <li>coreの単一Drizzle/libSQL pathへschemaを統合する。</li>
+    <li>packageへ固定operation allowlistの非HTTP capabilityを注入する。</li>
+    <li>
+      packageの<code>drizzle-orm</code>、<code>@libsql/client</code>、DB client/schema
+      importを0件にする。
+    </li>
+    <li>Mission Pilot固有provenance backfillをcore bootstrapへ移す。</li>
+    <li>role名付きcore physical columnsへ中立column migrationを追加する。</li>
+    <li>existing data preservation testを追加する。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>core bootstrapが既存table/dataをそのまま認識する。</li>
+    <li>packageがDB client/schemaをimportせず、core tableを直接join/read/writeしない。</li>
+    <li>capabilityが任意SQLと未知operationを拒否する。</li>
+    <li>capability factoryをcomposition以外のproduction codeが取得できない。</li>
+    <li>migration前後でsession、conversation、event、idempotency dataが一致する。</li>
+    <li>Mission Pilot storage bootstrap failure時もcore server/Coding Agentが利用可能。</li>
+  </ul>
+  <h3 id="p5-backend-package-cutover">P5: Backend package cutover</h3>
+  <p>目的:</p>
+  <ul>
+    <li>Mission Pilot backend/contractsをpackageへ移し、old backend pathをなくす。</li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li><code>api/modules/missionPilot/**</code>をpackage backendへ移す。</li>
+    <li>
+      <code>shared/modules/missionPilot/**</code>のrole固有contractをpackage contractsへ移す。
+    </li>
+    <li>package backendをhost portsだけで動かす。</li>
+    <li>router/runtime/storageをexplicit factoryからcompositionする。</li>
+    <li>
+      <code>api/app.ts</code>と<code>api/server.ts</code>のdirect service
+      import、timer、reconciliationをcompositionへ置換する。
+    </li>
+    <li>old backend/shared directoryとcompatibility re-exportを削除する。</li>
+  </ul>
+  <p>cutover rule:</p>
+  <ul>
+    <li>old/new listenerを同時起動しない。</li>
+    <li>old/new timerを同時起動しない。</li>
+    <li>old/new persistence writeをdual-writeしない。</li>
+    <li>package start成功を確認した同じcommitでold production registrationを削除する。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>old backend/shared pathが存在しない。</li>
+    <li>packageにroot private source importがない。</li>
+    <li>package runtimeをstart/stop/restartできる。</li>
+    <li>restart後にpending questionnaire、session、idempotencyが復元される。</li>
+    <li>package unavailableでもcore/Coding Agentが起動する。</li>
+  </ul>
+  <h3 id="p6-frontend-package-cutover">P6: Frontend package cutover</h3>
+  <p>目的:</p>
+  <ul>
+    <li>Mission Pilot UIとrealtime stateをpackageへ移す。</li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li><code>src/modules/missionPilot/**</code>をpackage frontendへ移す。</li>
+    <li>package client、components、hooks、i18n、CSSをexplicit exportする。</li>
+    <li><code>src/composition/mission-pilot</code>でshell slotとrealtime extensionへ接続する。</li>
+    <li>core Task cacheからMission Pilot fieldを完全除去する。</li>
+    <li>old frontend pathとcompatibility re-exportを削除する。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>package frontendがNightWorkers private component/typeをimportしない。</li>
+    <li>realtime eventでpackage query cacheだけが更新される。</li>
+    <li>Play/Stop/status/timelineが既存UIと同等に動く。</li>
+    <li>waiting、answering delay、generating、unavailableが区別される。</li>
+    <li>Mission Pilot稼働中もArtifact UIが操作可能。</li>
+  </ul>
+  <h3 id="p7-user-equivalent-runtime-stabilization">P7: User-equivalent runtime stabilization</h3>
+  <p>目的:</p>
+  <ul>
+    <li>package移動後のruntimeを、現在確立された人間ユーザー同等flowへ限定する。</li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li>initial promptを同じTask intakeへ送る。</li>
+    <li>Coding Agentからのtyped next-user-operation eventを待つ。</li>
+    <li>Questionnaire <code>answering</code>から20秒delayを開始する。</li>
+    <li>human preemptionとrevision/idempotency raceを実装する。</li>
+    <li>同じ<code>questionnaire.submit</code>を使う。</li>
+    <li>routing/ArtifactをTask Operator resource/actionだけで操作する。</li>
+    <li>implementation/continueを公開actionだけで行う。</li>
+    <li>LLM completion judgmentとconversation compactionを安定化する。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>packageにCoding Agent/Plan Mode direct importがない。</li>
+    <li>private repository writeがない。</li>
+    <li>user actionとdelegated actionがprincipal/provenance以外で分岐しない。</li>
+    <li>error/task text keyword判定がない。</li>
+    <li>人間回答とMission Pilot回答が同じArtifact推薦処理へ入る。</li>
+    <li>routing changed eventがUIへ反映される。</li>
+  </ul>
+  <h3 id="p8-residue-removal-and-canary">P8: Residue removal and canary</h3>
+  <p>目的:</p>
+  <ul>
+    <li>transitional residueを削除し、real providerとregistered repositoryで完了を確認する。</li>
+  </ul>
+  <p>変更:</p>
+  <ul>
+    <li>old path、old schema、old query shape、temporary adaptersを削除する。</li>
+    <li>architecture marker allowlistを最終状態へ絞る。</li>
+    <li>testsをpackage unit、host integration、root E2Eへ整理する。</li>
+    <li>live testの一時directoryを実workspaceとして扱うfixtureを廃止する。</li>
+    <li>registered Projectのreal canary repo rootをworker経由で使う。</li>
+  </ul>
+  <p>終了条件:</p>
+  <ul>
+    <li>old Mission Pilot production pathが0件。</li>
+    <li>Coding Agent/Plan Modeのpackage transitive dependencyが0件。</li>
+    <li>full verificationが成功。</li>
+    <li>direct Coding Agent normal/Plan Mode canaryがMission Pilot停止・未作成で成功。</li>
+    <li>
+      Mission Pilot canaryがQuestionnaire、Artifact、implementation、continue、completionまで成功。
+    </li>
+  </ul>
+  <h2 id="section-18-verification-matrix">18. Verification Matrix</h2>
+  <h3 id="section-181-every-checkpoint">18.1 Every checkpoint</h3>
+  <p>必ず次を実行する。</p>
+  <pre><code class="language-sh">git diff -- api/modules/codingAgent src/modules/codingAgent shared/modules/codingAgent
+bun run typecheck
+bun run check:architecture
+bun run check:docs
+</code></pre>
+  <p>1行目に差分が出た場合、そのcheckpointを失敗とする。</p>
+  <p>さらに、そのcheckpointに関係するfocused unit/component/integration testを実行する。</p>
+  <h3 id="section-182-coding-agent-independence-tests">18.2 Coding Agent independence tests</h3>
+  <ul>
+    <li>Mission Pilot session未作成でnormal Coding Agentを開始できる。</li>
+    <li>Mission Pilot停止中にnormal Coding Agentを開始できる。</li>
+    <li>Mission Pilot storage bootstrap失敗中にnormal Coding Agentを開始できる。</li>
+    <li>Mission Pilot session未作成でCoding Agent Plan Modeに入れる。</li>
+    <li>Mission Pilot停止中にCoding Agent Plan Modeに入れる。</li>
+    <li>package runtime restart中にCoding Agent direct Runが継続する。</li>
+    <li>Coding Agent standalone entrypointのmodule graphにpackageがない。</li>
+  </ul>
+  <h3 id="section-183-task-and-session-tests">18.3 Task and session tests</h3>
+  <ul>
+    <li>Task create/list/get/updateがMission Pilotなしで成功する。</li>
+    <li>Task creationがMission Pilot tableへwriteしない。</li>
+    <li>first Playでsessionが作られる。</li>
+    <li>repeated/concurrent Playが同じsessionへ収束する。</li>
+    <li>existing session historyを再利用する。</li>
+    <li>Stop後のPlayが正しいrevisionで再開する。</li>
+    <li>unauthorized userのPlay/Stopを拒否する。</li>
+  </ul>
+  <h3 id="section-184-questionnaire-tests">18.4 Questionnaire tests</h3>
+  <ul>
+    <li>initial promptがhuman Task intakeと同じcommandへ入る。</li>
+    <li><code>answering</code>前には20秒timerが始まらない。</li>
+    <li>19.999秒ではsubmitしない。</li>
+    <li>20秒後に同じQuestionnaire resourceを再読する。</li>
+    <li>humanが先に回答するとMission Pilotはsubmitしない。</li>
+    <li>同時raceはrevision/idempotencyで一方だけ成功する。</li>
+    <li>Mission Pilot submitがUIと同じ<code>questionnaire.submit</code>を通る。</li>
+    <li>Recommendedとchoiceをresource正本から読む。</li>
+    <li>restart後もdue eventを一度だけ処理する。</li>
+  </ul>
+  <h3 id="section-185-artifact-and-realtime-tests">18.5 Artifact and realtime tests</h3>
+  <ul>
+    <li>human回答とdelegated回答で同じinclude/omit推薦になる。</li>
+    <li>必要・不要の理由がtask-keyed routingへ保存される。</li>
+    <li><code>plan_mode.routing_changed</code>が同じpayload contractで配信される。</li>
+    <li>frontend package cacheが更新される。</li>
+    <li>core Task cacheへMission Pilot fieldを追加しない。</li>
+    <li>Mission Pilot稼働中もuser Artifact actionが成功する。</li>
+    <li>stale routing revisionは再読とLLM再判断へ進む。</li>
+  </ul>
+  <h3 id="section-186-implementation-and-continuation-tests">
+    18.6 Implementation and continuation tests
+  </h3>
+  <ul>
+    <li>implementation startが<code>run.implementation.start</code>を通る。</li>
+    <li>Coding Agent direct serviceを呼ばない。</li>
+    <li>stopped/incomplete/no-new-inputでcontinue actionを選べる。</li>
+    <li>user input待ちでは勝手にcontinueしない。</li>
+    <li>complete outcomeを重複startしない。</li>
+    <li>restart後もaction idempotencyを維持する。</li>
+    <li>error stringを変更しても構造的に同じ判断になる。</li>
+  </ul>
+  <h3 id="section-187-persistence-tests">18.7 Persistence tests</h3>
+  <ul>
+    <li>existing schemaからcore Mission Pilot bootstrapできる。</li>
+    <li>existing session/conversation/event dataを保持する。</li>
+    <li>core bootstrapが既存Mission Pilot dataを破壊せず再実行できる。</li>
+    <li>role-neutral column migrationがbackfillを保つ。</li>
+    <li>application cutover後に旧columnへwriteしない。</li>
+    <li>Mission Pilot storage failureがcore Task transactionをrollbackしない。</li>
+    <li>package経由の全SQLite操作が単一core DB pathを使う。</li>
+    <li>任意SQLと未知operationがpersistence capabilityで拒否される。</li>
+  </ul>
+  <h3 id="section-188-e2e-and-live-canary">18.8 E2E and live canary</h3>
+  <p>root E2E:</p>
+  <ul>
+    <li>Mission PilotなしのTask作成からCoding Agent normal start。</li>
+    <li>Mission PilotなしのTask作成からCoding Agent Plan Mode start。</li>
+    <li>Playからlazy session、Questionnaire delay、Artifact、implementation。</li>
+    <li>human override。</li>
+    <li>browser reloadとserver restart。</li>
+  </ul>
+  <p>live:</p>
+  <ul>
+    <li>real providerを使う。</li>
+    <li>registered Projectのreal repository rootを使う。</li>
+    <li>repository作業はCoding Agent worker経由だけで行う。</li>
+    <li><code>/tmp</code>や一時directoryへの編集を完了証拠にしない。</li>
+    <li>long questionnaire latencyを許容し、activity heartbeatを観測する。</li>
+  </ul>
+  <h2 id="section-19-rollback-strategy">19. Rollback Strategy</h2>
+  <p>
+    rollbackはcheckpoint単位で行う。production中にold/new runtimeを並走させるfeature
+    flagは作らない。
+  </p>
+  <ul>
+    <li>P0/P1/P2はbehaviorを変えないため、commit revertで戻せる。</li>
+    <li>P3のTask projection cutoverはAPI/UIを同一commitで戻す。</li>
+    <li>
+      P4のadditive DB columnはrevert時もdata保全のため残してよい。application
+      read/writeだけ旧状態へ戻す。
+    </li>
+    <li>P5/P6はold path削除とnew registrationを同一commitで扱い、片側だけ戻さない。</li>
+    <li>P7はpublic action contractを変えずpackage runtimeだけのrevertで戻せるようにする。</li>
+    <li>
+      migrationで旧columnを削除しないため、package cutover完了まではdown migrationを不要にする。
+    </li>
+  </ul>
+  <p>rollback後もCoding Agent independence testを最初に実行する。</p>
+  <h2 id="section-20-change-scope-ledger">20. Change Scope Ledger</h2>
+  <h3 id="must-change">Must change</h3>
+  <ul>
+    <li>root TypeScript alias/package resolution</li>
+    <li>root and package <code>AGENTS.md</code></li>
+    <li>architecture/ontology checks</li>
+    <li>Mission Pilot backend/frontend/shared production paths</li>
+    <li>Mission Pilot DB ownership</li>
+    <li>Mission Pilot host composition</li>
+    <li>neutral Task projection</li>
+    <li>lazy Mission Pilot session</li>
+    <li>realtime extension composition</li>
+    <li>related tests and fixtures</li>
+  </ul>
+  <h3 id="may-change">May change</h3>
+  <ul>
+    <li><code>api/modules/nightworkers/**</code>のTask neutralization</li>
+    <li><code>shared/schemas/**</code>のTask shape neutralization</li>
+    <li><code>api/db/**</code>のschema separationとadditive migration</li>
+    <li><code>api/app.ts</code>、<code>api/server.ts</code>のcomposition</li>
+    <li>root frontend shell/realtime/CSS/i18n composition</li>
+    <li><code>api/systemContexts</code>のpackage binding接続</li>
+  </ul>
+  <h3 id="must-not-change">Must not change</h3>
+  <ul>
+    <li><code>api/modules/codingAgent/**</code></li>
+    <li><code>src/modules/codingAgent/**</code></li>
+    <li><code>shared/modules/codingAgent/**</code></li>
+    <li>Coding Agent runtime behavior</li>
+    <li>Coding Agent Plan Mode ownership</li>
+    <li>Plan Mode正本のownership</li>
+    <li>user-facing action semantics</li>
+    <li>Task OperatorをMission Pilot専用APIへ置き換えること</li>
+  </ul>
+  <h2 id="section-21-definition-of-done">21. Definition of Done</h2>
+  <p>次をすべて満たした時だけ完了とする。</p>
+  <ol>
+    <li>
+      Mission Pilot behavior/contracts/UIが<code>packages/mission-pilot</code>へ、SQLite
+      persistenceが<code>api/modules/missionPilot/persistence</code>へ集約されている。
+    </li>
+    <li>old backend/frontend/shared Mission Pilot pathとcompatibility re-exportがない。</li>
+    <li>NightWorkers本体はcomposition root以外からpackageをimportしない。</li>
+    <li>packageはNightWorkers private sourceをimportしない。</li>
+    <li>
+      Coding AgentとPlan Modeからpackageへのdirect/transitive dependencyがない。 5a.
+      <code>packages/mission-pilot/package.json</code>と専用<code>tsconfig.json</code>が存在しない。
+      5b. package内の<code>drizzle-orm</code>、<code>@libsql/client</code>、DB client/schema
+      importが0件である。 5c. persistence
+      capabilityは非HTTPで、任意SQLを受け付けず、compositionからpackageへだけ注入される。
+    </li>
+    <li>Mission Pilot sessionなしでTaskとCoding Agentが正常動作する。</li>
+    <li>Mission Pilot packageがunavailableでもCoding Agent normal/Plan Modeが動く。</li>
+    <li>Mission Pilotはfilesystem、Git、repository、Coding Agent内部を確認しない。</li>
+    <li>initial promptがhuman Task intakeと同じ経路を通る。</li>
+    <li>Coding AgentがPlan Mode gateとquestionnaire生成を所有する。</li>
+    <li>Mission Pilotは次のuser operation requestまで待つ。</li>
+    <li>Questionnaireは同じresource、20秒delay、同じsubmit actionを使う。</li>
+    <li>human overrideが常に可能である。</li>
+    <li>human/delegated回答が同じArtifact推薦とrouting処理を通る。</li>
+    <li>Artifact include/omitと理由がtask-keyed Plan Mode routingへ保存される。</li>
+    <li>routing realtime eventがPlan Mode UIへ反映される。</li>
+    <li>Mission Pilot稼働中もArtifact UIが有効である。</li>
+    <li>implementationとcontinueがTask Operator公開actionを通る。</li>
+    <li>principal/provenance以外のuser/Mission Pilot意味分岐がない。</li>
+    <li>task/error keywordまたは正規表現による意味判定がない。</li>
+    <li>required static checks、focused tests、E2E、live canaryが成功する。</li>
+    <li>Coding Agent production diffが全checkpointで空である。</li>
+  </ol>
+  <h2 id="section-22-first-implementation-action">22. First Implementation Action</h2>
+  <p>実装開始時はP0だけを行う。package file moveやTask shape変更を同時に始めない。</p>
+  <p>
+    最初のcommitは、基準線test fixtureの現行schema化とCoding Agent standalone
+    characterizationだけに限定する。これがgreenになった後、P1でworkspaceと境界検査を作る。
+  </p>
+  <p>この順序により、以後の失敗を次の3種類へ分離できる。</p>
+  <ul>
+    <li>基準線fixtureの不整合。</li>
+    <li>package境界またはcompositionの回帰。</li>
+    <li>Mission Pilot runtime behaviorの回帰。</li>
+  </ul>
+  <p>
+    Coding Agentの動作を直すためにCoding Agentを編集するのではなく、Coding
+    Agentを巻き込んでいる外側のMission Pilot必須依存を除去することが、この計画の中心方針である。
+  </p>
+</article>

@@ -1,6 +1,7 @@
 # NightWorkers Agent Rules
 
-- `spec/docs`には未実装または作業中の文書だけを置く。実装完了した計画、実装指示、実行台帳は`spec/.archived`へ移し、明示的な履歴調査を依頼された場合を除いてLLM contextへ含めず、LLMから読まない。
+- `spec/docs`には未実装または作業中のHTML文書だけを置く。実装完了した計画、実装指示、実行台帳は`spec/docs/.archived`へ移し、明示的な履歴調査を依頼された場合を除いてLLM contextへ含めず、LLMから読まない。
+- `spec/docs`と`spec/docs/.archived`の設計書は、`lang="ja"`を持つ単一の`article`と一つの`h1`から成るHTML fragmentにする。編集後は`bun run docs:fix`を実行し、相対linkとsemantic HTMLを維持する。
 - S11tを調査・導入・更新する作業では、最初に`spec/s11t-coding-agent-guide.md`を読み、runtime/CLIの責務、role module境界、生成物、canary配備、検証ルールに従う。
 - 共通で使うツール説明、JSON契約、schema、回答要件は、定数または関数として再利用できる形にまとめる。
 - ユーザー文言やerror messageを正規表現・keywordで分類しない。Task解釈、Todo、次action、検証、完了判断はLLMに委ね、hostは構造的不変条件だけを強制する。

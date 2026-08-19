@@ -1,0 +1,1156 @@
+<article lang="ja">
+  <h1 id="coding-agent-system-context-todo-refactor-plan">
+    Coding Agent System-Context Todo Refactor Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>completed</code></li>
+    <li>Document created: 2026-07-15</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Baseline HEAD: <code>a4464a3aba441439d9cea9406faaccd55d61c3b6</code></li>
+    <li>Target scope: Coding Agent runtime、System Context、Todo runtime、Run Control</li>
+    <li>Related plan: <code>spec/docs/mission-pilot-persistent-agent-refactor-plan.html</code></li>
+    <li>User decisions confirmed: 2026-07-15</li>
+    <li>Implementation status: completed 2026-07-15</li>
+    <li>
+      Verification: <code>bun run verify</code>、<code>bun run test</code>（316 files / 1935
+      tests）、<code>bun run check:architecture</code>、<code>bun run check:docs</code> green
+    </li>
+  </ul>
+  <h3 id="implementation-result">Implementation Result</h3>
+  <ul>
+    <li>Phase 0-7を完了し、production pathを単一Coding Agent runtimeへ切り替えた。</li>
+    <li>
+      version付き共通System Context、current Todo Context、ID / revision / transactionによるTodo
+      single-writer境界を導入した。
+    </li>
+    <li>
+      Native API / Codex SDKから固定startup Todo、semantic
+      recovery、checkpoint、暗黙Todo更新、固定completion gateを削除した。
+    </li>
+    <li>
+      Test / Reviewの新規runtime、prompt、mutation route、UI
+      actionを削除し、過去履歴のread-only参照だけを残した。
+    </li>
+    <li>
+      action journalとprovider session resumeにより、明示tool
+      actionのidempotencyと同一Run再開を維持した。
+    </li>
+    <li>
+      <code>needs_human</code> Todoへ人間UIから回答し、同じRun、Todo、provider
+      sessionを分離worker内で再開する経路を接続した。
+    </li>
+    <li>
+      Todo dependency cycle / open dependency、Run terminal後の更新、同時running Todoをapplication
+      serviceとDB制約の両方で拒否するよう補強した。
+    </li>
+    <li>
+      旧Todo repository writer、別RunへのTodoコピーoption、Role Handoff / Working Context、Test /
+      Review UI mutationを削除し、architecture checkで再導入を検出するようにした。
+    </li>
+    <li>
+      semantic-control再導入を検出するarchitecture
+      checkを追加し、旧挙動を固定していたtestを新contract testへ置換した。
+    </li>
+  </ul>
+  <p>
+    この文書を、NightWorkersのCoding
+    Agentを、実装側の固定workflowと意味推論に従う実行器から、LLMがTodoとtool結果を用いて自律的に次の行動を選ぶagentへ移行するための実装計画正本とする。
+  </p>
+  <p>本計画の原則は次の一文に集約する。</p>
+  <blockquote>
+    <p>
+      LLMはTaskの意味、Todo、次の行動、検証、完了可否を判断する。ホストはtool実行、安全、権限、永続化、状態整合性、resource上限だけを保証し、LLMの判断をkeyword、正規表現、固定phase、固定Todo、recovery
+      promptで上書きしない。
+    </p>
+  </blockquote>
+  <p>
+    TodoはすべてのCoding Agent
+    Runで必須とする。TodoをLLMの外部作業記憶、進捗表示、局所Contextとして強化し、各Todoにversion付きSystem
+    Contextと「今何をするべきか」という強い行動指示を含める。一方、Todo名やtask
+    typeをホストのworkflow state machineとして利用する現行実装は削除する。
+  </p>
+  <h2 id="section-1-purpose">1. Purpose</h2>
+  <p>
+    現在のCoding
+    Agentには、LLMがtool結果と作業状態を読んで判断する前後に、実装側が次を決めるロジックが多数存在する。
+  </p>
+  <ul>
+    <li>実行modeごとのtool強制とtool allowlist。</li>
+    <li>固定startup処理と固定startup Todo。</li>
+    <li>Todo名、task type、procedure、command文字列による工程分類。</li>
+    <li>command実行結果によるTodoの自動完了。</li>
+    <li>Test / Review / closeoutを固定工程として扱う処理。</li>
+    <li>final response後の自動recovery turnとcheckpoint prompt。</li>
+    <li>schema不成立、tool callなし、finalize失敗時の固定本文への差し替え。</li>
+    <li>Native API laneとCodex SDK laneで別々に実装された意味上の進行制御。</li>
+  </ul>
+  <p>
+    これらは過去の失敗を個別ロジックで補正するほど増え、LLMへ十分なContextとtool結果を渡す設計から遠ざかっている。リファクタリング後は次の状態を達成する。
+  </p>
+  <ol>
+    <li>
+      Implementation、Test、Reviewという複数modeを廃止し、単一のCoding Agent runtimeだけを使用する。
+    </li>
+    <li>
+      Test実行や自己確認が必要かは、単一Coding AgentがTaskとTodo
+      Contextから判断する。Reviewは独立modeとして行わない。
+    </li>
+    <li>
+      すべてのCoding Agent
+      RunでTodoを必須とし、LLMが作成、並べ替え、開始、完了、再試行、再計画する。
+    </li>
+    <li>ホストはTodoを暗黙更新しない。Todo更新は、LLMまたは人間UIからの明示commandだけで行う。</li>
+    <li>
+      各turnでは共通System
+      Context、全体計画の短いsnapshot、現在Todoの十分なContextと行動指示をLLMへ渡す。
+    </li>
+    <li>tool成功・失敗は構造化結果としてLLMへ戻し、次の行動を実装側で決めない。</li>
+    <li>
+      LLM本文が存在する場合、parse、schema、completion gateの結果を理由に固定本文へ差し替えない。
+    </li>
+    <li>
+      filesystem、network、Git、外部操作、承認、認可、transaction、timeoutは引き続きホストが強制する。
+    </li>
+  </ol>
+  <h2 id="section-2-codexとの比較から固定する設計原則">2. Codexとの比較から固定する設計原則</h2>
+  <h3 id="section-21-比較対象">2.1 比較対象</h3>
+  <p>
+    比較基準は、計画作成時点のローカルCodex実装
+    <code>/Users/y.noguchi/Code/codex</code> とする。Codex TypeScript
+    SDKはthreadへpromptとoptionを渡してevent streamとfinal responseを返す薄い境界であり、主要なagent
+    loopはRust coreにある。
+  </p>
+  <p>主な比較対象:</p>
+  <ul>
+    <li><code>codex-rs/core/src/session/turn.rs</code></li>
+    <li><code>codex-rs/core/src/stream_events_utils.rs</code></li>
+    <li><code>codex-rs/core/src/tools/router.rs</code></li>
+    <li><code>codex-rs/core/src/tools/parallel.rs</code></li>
+    <li><code>sdk/typescript/src/thread.ts</code></li>
+  </ul>
+  <p>Codexの中心loopは概ね次の形である。</p>
+  <pre><code class="language-text">conversation history + current input
+                |
+                v
+             model call
+                |
+        +-------+-------+
+        |               |
+   tool call         final text
+        |               |
+ execute tool           v
+        |           turn complete
+ typed result
+        |
+ append to history
+        |
+        +------&gt; model call
+</code></pre>
+  <p>
+    toolの公開範囲、sandbox、approval、cancel、timeoutは実装側が制約する。一方、Taskの意味、どのfileを読むか、次にどのtoolを使うか、Testや自己確認が必要かは原則としてmodelが会話履歴と指示から判断する。
+  </p>
+  <h3 id="section-22-nightworkersで採用する点">2.2 NightWorkersで採用する点</h3>
+  <ul>
+    <li>modelとtoolの反復を小さな共通loopとして維持する。</li>
+    <li>tool failureを可能な限りmodel-visibleなtyped resultとして会話へ戻す。</li>
+    <li>安全境界と意味判断を分離する。</li>
+    <li>prompt、AGENTS、System Context、Todo Contextで行動を誘導する。</li>
+    <li>final textが返ったら、ホストが内容を別の説明へ書き換えない。</li>
+    <li>
+      新runtime開始後の同一Session内ではconversationとtool resultを継続する。legacy
+      Sessionからは履歴を移行しない。
+    </li>
+  </ul>
+  <h3 id="section-23-nightworkersで独自に維持する点">2.3 NightWorkersで独自に維持する点</h3>
+  <p>
+    NightWorkersにはTask
+    UIと永続Runがあるため、Codexと完全に同じ内部表現へ揃える必要はない。次は製品上の価値があり、維持する。
+  </p>
+  <ul>
+    <li>UIで確認できる永続Todo。</li>
+    <li>Task eventとrealtime進捗表示。</li>
+    <li>Project登録とrepository rootの固定。</li>
+    <li>providerを選択できるruntime lane。</li>
+    <li>新runtime Session内のrestart / resumeと永続event history。</li>
+    <li>verification結果、artifact参照、差分情報の事実としての永続化。</li>
+    <li>ユーザー設定に基づく権限、approval、sandbox相当の制約。</li>
+  </ul>
+  <p>ただし、これらをTaskの意味や次工程の自動決定には使わない。</p>
+  <h2 id="section-3-locked-product-decisions">3. Locked Product Decisions</h2>
+  <h3 id="section-31-単一coding-agent-behavior">3.1 単一Coding Agent behavior</h3>
+  <p>
+    新runtimeに実行modeを持たせない。Implementation、Test、Reviewのstate
+    machineとruntime分岐を廃止し、すべてのCoding
+    Agent作業を同じ<code>CodingAgentRuntime</code>と同じ終了contractで実行する。
+  </p>
+  <p>
+    Testはmodeではなく、現在Taskを完了するために必要ならLLMがTodoへ追加して実行する通常作業である。Review
+    modeは廃止し、新runtimeにはreview workflow、review prompt、review permission
+    profileを作らない。将来必要になった場合は旧設計を復活させず、要件からゼロベースで設計する。
+  </p>
+  <p>
+    既存の<code>executionMode</code>、Test / Review API、UI操作、専用prompt、専用routeはproduction
+    pathから削除する。過去Runのmode値は履歴表示用のread-only dataとしてのみ残せる。
+  </p>
+  <h3 id="section-32-必須system-context">3.2 必須System Context</h3>
+  <p>単一Coding Agentには、version付きの共通System Contextを与える。</p>
+  <pre><code class="language-ts">type CodingAgentSystemContext = {
+  version: number;
+  roleInstructionsJa: string;
+  taskGoal: string;
+  projectRulesJa: string[];
+  todoRequirementJa: string;
+  failureRecoveryJa: string;
+  completionRuleJa: string;
+  toolContractJa: string;
+  registeredRepositoryRoot: string;
+};
+</code></pre>
+  <p>System Contextは次を強く指示する。</p>
+  <ul>
+    <li>最初のmodel turnでTodo planを作成し、current Todoを一件開始する。</li>
+    <li>current Todoなしにworkspace作業を開始しない。</li>
+    <li>current Todoのobjective、context、next actionを読んでからtoolを選ぶ。</li>
+    <li>toolや検証が失敗したら、その結果をTodo Contextへ反映して修正・再試行する。</li>
+    <li>同じ方法が失敗する場合は原因を読み直し、Todoを分割または再計画する。</li>
+    <li>
+      達成不能、必要情報不足、安全に継続不能の場合だけ<code>needs_human</code>へ遷移し、ユーザーへ具体的な質問を返して停止する。
+    </li>
+    <li>Testや自己確認の要否と方法はLLM自身が判断する。</li>
+    <li>Evidenceの作成、添付、参照を完了条件にしない。</li>
+  </ul>
+  <p>
+    共通tool説明、JSON contract、回答要件、System
+    Context文言は定数またはbuilderへまとめる。prompt文言は日本語を維持する。Task本文、Todo名、error本文のkeywordや正規表現でSystem
+    Contextを切り替えない。
+  </p>
+  <h3 id="section-33-todoの責務">3.3 Todoの責務</h3>
+  <p>TodoはLLMの外部作業記憶であり、次の三つを同時に満たす。</p>
+  <ol>
+    <li>ユーザーが進捗を確認できる。</li>
+    <li>LLMが長いTaskを分割し、現在地を失わない。</li>
+    <li>現在Todoへ局所Context、受け入れ条件、失敗内容、次に試す行動を集約できる。</li>
+  </ol>
+  <p>
+    すべてのCoding Agent RunはTodo planとcurrent Todoを持たなければならない。新Sessionの最初のmodel
+    callだけはTodo未作成を許し、そのresponseではTodo作成以外のworker
+    toolを実行できない。Todo作成後は、current Todoが存在しない状態でworkspaceを読む・変更するworker
+    toolを呼び出した場合、hostは<code>CURRENT_TODO_REQUIRED</code>を返す。これはTaskの意味判断ではなく、ユーザーが決定した構造上のpreconditionである。
+  </p>
+  <p>LLMが決めること:</p>
+  <ul>
+    <li>Todoの作成、分割、統合、並べ替え。</li>
+    <li>title、objective、context、next action、acceptance criteria、dependency。</li>
+    <li>どのTodoをcurrentにするか。</li>
+    <li>作業結果がTodoを満たしたか。</li>
+    <li>失敗後に同じ方法を修正して再試行するか、別方法へ切り替えるか、Todoを再計画するか。</li>
+    <li>達成不能として<code>needs_human</code>へ停止するか。</li>
+    <li>新しい事実を受けた再計画。</li>
+  </ul>
+  <p>ホストが決めること:</p>
+  <ul>
+    <li>schema validation。</li>
+    <li>対象RunとTodoの存在確認。</li>
+    <li>Todo ID、revision、transaction、idempotency。</li>
+    <li>一つのRunに<code>running</code>が最大一件であること。</li>
+    <li>terminal Todoを暗黙に再openしないこと。</li>
+    <li>dependency IDの参照整合性。</li>
+    <li>Todoへ現在のSystem Context versionとsnapshotを関連付けること。</li>
+    <li>current Todoなしのworker tool実行を拒否すること。</li>
+    <li>realtime通知と監査event。</li>
+    <li>resource上限と文字数上限。</li>
+  </ul>
+  <p>
+    ホストはcommand実行、file変更、Test成功、context compile、final
+    responseを観測してTodoを自動完了してはならない。
+  </p>
+  <h3 id="section-34-todo-schema">3.4 Todo schema</h3>
+  <p>
+    現在の<code>task_run_todos</code>は維持し、破壊的置換ではなくadditive
+    migrationを行う。操作上の正本は<code>seq</code>ではなく安定した<code>id</code>へ変更する。
+  </p>
+  <p>目標schema:</p>
+  <pre><code class="language-ts">type AgentTodo = {
+  id: string;
+  runId: string;
+  seq: number; // UI表示順。操作identityには使わない
+  title: string;
+  objective: string | null;
+  context: string | null;
+  nextAction: string;
+  acceptanceCriteria: string[];
+  status:
+    | &quot;pending&quot;
+    | &quot;running&quot;
+    | &quot;passed&quot;
+    | &quot;needs_human&quot;
+    | &quot;skipped&quot;;
+  dependsOn: string[];
+  statusReason: string | null;
+  lastFailure: string | null;
+  attemptCount: number;
+  systemContextVersion: number;
+  systemContextSnapshot: CodingAgentSystemContext;
+  createdBy: &quot;agent&quot; | &quot;human&quot; | &quot;migration&quot;;
+  revision: number;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+</code></pre>
+  <p>
+    status区分は、<code>pending</code> /
+    <code>running</code>を作業中、<code>needs_human</code>をユーザー回答待ちのpause、<code
+      >passed</code
+    >
+    /
+    <code>skipped</code
+    >をterminalとする。<code>needs_human</code>は失敗完了として扱わず、ユーザー回答後に同じTodoを明示的にresumeできる。
+  </p>
+  <p>既存fieldの扱い:</p>
+  <table>
+    <caption>
+      3.4 Todo schema
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current field</th>
+        <th scope="col">Target treatment</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>title</code></td>
+        <td>維持</td>
+      </tr>
+      <tr>
+        <td><code>description</code></td>
+        <td>互換readを維持し、<code>objective</code> / <code>context</code>へ移行</td>
+      </tr>
+      <tr>
+        <td><code>taskType</code></td>
+        <td>UI分類の任意metadataへ降格。runtime分岐に使わない</td>
+      </tr>
+      <tr>
+        <td><code>procedureId</code> / <code>procedureSnapshot</code></td>
+        <td>既存表示の互換readのみ。新規agent制御には使わない</td>
+      </tr>
+      <tr>
+        <td><code>contextSnapshot</code></td>
+        <td>current Todoのversion付きSystem Contextと作業Context snapshotとして再定義</td>
+      </tr>
+      <tr>
+        <td><code>completionGateResult</code></td>
+        <td>semantic gateを廃止。必要な過去表示のみ維持</td>
+      </tr>
+      <tr>
+        <td><code>evidenceRequirementsJson</code></td>
+        <td>新runtimeでは使用しない。過去表示用のread-only fieldへ移行</td>
+      </tr>
+      <tr>
+        <td><code>evidenceRefsJson</code></td>
+        <td>新runtimeでは使用しない。過去表示用のread-only fieldへ移行</td>
+      </tr>
+      <tr>
+        <td><code>dependsOn</code></td>
+        <td>Todo ID配列へ統一</td>
+      </tr>
+      <tr>
+        <td><code>statusReason</code></td>
+        <td>維持</td>
+      </tr>
+      <tr>
+        <td><code>seq</code></td>
+        <td>並び順に限定</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-35-todo-mutation-contract">3.5 Todo mutation contract</h3>
+  <p>Todo更新は単一のapplication serviceを正本とし、LLM toolと人間UIが同じcommandを呼ぶ。</p>
+  <pre><code class="language-ts">type TodoMutationCommand =
+  | { op: &quot;replace_plan&quot;; expectedPlanRevision: number; todos: TodoDraft[] }
+  | { op: &quot;start&quot;; todoId: string; expectedTodoRevision: number }
+  | {
+      op: &quot;resume&quot;;
+      todoId: string;
+      expectedTodoRevision: number;
+      userContext: string;
+    }
+  | {
+      op: &quot;transition&quot;;
+      todoId: string;
+      expectedTodoRevision: number;
+      status: &quot;passed&quot; | &quot;needs_human&quot; | &quot;skipped&quot;;
+      reason: string;
+      nextTodoId?: string;
+    }
+  | {
+      op: &quot;record_failure&quot;;
+      todoId: string;
+      expectedTodoRevision: number;
+      failureSummary: string;
+      nextAction: string;
+    }
+  | {
+      op: &quot;update_context&quot;;
+      todoId: string;
+      expectedTodoRevision: number;
+      context: string;
+      nextAction: string;
+    };
+</code></pre>
+  <p>
+    <code>transition</code>は、LLMが指定したTodo
+    IDだけを閉じる。<code>nextTodoId</code>がある場合は同じtransactionでそのTodoを開始できるが、ホストが次Todoを推測しない。誤ったID、stale
+    revision、terminal Todoはtyped errorとして返す。
+  </p>
+  <p>
+    <code>record_failure</code>はTodoをterminalにしない。attempt
+    count、失敗内容、次に試す方法をcurrent
+    Todoへ保存し、同じTodoを<code>running</code>のまま維持する。固定retry回数やerror本文classifierは設けず、LLMがtool
+    resultとTodo
+    Contextを読んで再試行方法を選ぶ。resource上限へ達する、必要情報がない、安全に続行できない等の場合は、LLMが<code>needs_human</code>へ遷移する。
+  </p>
+  <p>
+    <code>needs_human</code
+    >は完了ではなくpause状態とする。ユーザーが質問へ回答した操作を契機に、同じapplication
+    serviceが<code>resume</code>を実行し、回答をTodo
+    Contextへ追記して<code>running</code>へ戻す。hostは回答内容から次actionを推測せず、再開したLLMがTodoと回答を読んで判断する。
+  </p>
+  <h3 id="section-36-todo-contextの注入">3.6 Todo Contextの注入</h3>
+  <p>各model turnに全Todoの全文を繰り返し入れない。次の二層にする。</p>
+  <pre><code class="language-text">Plan summary
+  - plan revision
+  - pending / running / terminal counts
+  - Todo ID、順序、title、statusの短い一覧
+
+Current Todo detail
+  - id / revision
+  - System Context version / snapshot
+  - objective
+  - context
+  - next action
+  - acceptance criteria
+  - dependencies
+  - last failure / attempt count
+  - blocker / status reason
+</code></pre>
+  <p>
+    過去Todoの詳細はtoolで取得できるようにする。context compaction時もPlan summaryとCurrent Todo
+    detailは必須保持し、conversationを新規固定baselineへ置換しない。
+  </p>
+  <p>
+    System Contextでは、すべてのCoding Agent Runについて、worker
+    tool実行前にTodoを作成・開始し、各turnでcurrent
+    Todoを確認し、作業中に得た重要Context、失敗、次に試す方法をcurrent
+    Todoへ追記するよう強く指示する。hostも<code>CURRENT_TODO_REQUIRED</code>を構造的に検証するが、Todoの内容や次actionは判断しない。
+  </p>
+  <h3 id="section-37-失敗時の再試行とユーザー確認">3.7 失敗時の再試行とユーザー確認</h3>
+  <p>
+    tool、command、Test、build、編集が失敗しても、直ちにTodoまたはRunを失敗終了させない。LLMは次の順で判断する。
+  </p>
+  <ol>
+    <li>tool resultとraw errorを読む。</li>
+    <li>current Todoへ失敗内容と次に試す方法を記録する。</li>
+    <li>入力、実装、command、前提、方法を修正して再試行する。</li>
+    <li>同じ方法で解消しない場合はTodoを分割・置換・並べ替えして別経路を試す。</li>
+    <li>
+      自力で解消できない情報不足、権限不足、外部判断、安全上の問題、resource上限の場合だけ<code>needs_human</code>へ遷移する。
+    </li>
+    <li>
+      <code>needs_human</code
+      >では、何が分からず、何を試し、ユーザーに何を判断してほしいかを具体的な質問として返してRunを停止する。
+    </li>
+  </ol>
+  <p>
+    hostはtool failureからretry方法、次Todo、停止判断を選ばない。provider transport層の同一request
+    retry、timeout、rate limit backoff、idempotencyだけは通信境界として残せる。
+  </p>
+  <h3 id="section-38-run-completion">3.8 Run completion</h3>
+  <p>
+    assistantがtool callなしの本文を返した場合、その本文をfinal candidateとして保存する。Coding
+    Agent Runでも固定<code>needs_human</code>本文へ差し替えない。
+  </p>
+  <p>Runを<code>completed</code>へ遷移する際、次の決定的整合性だけを確認する。</p>
+  <ul>
+    <li><code>running</code> Todoがない。</li>
+    <li>
+      <code>pending</code> Todoがない。不要になったTodoはLLMが<code>skipped</code>へ明示遷移する。
+    </li>
+    <li>
+      <code>needs_human</code> Todoがない。存在する場合はRunをcompletedにせずpause状態を維持する。
+    </li>
+    <li>Todo revisionが読み取り時から変わっていない。</li>
+    <li>必須approval待ちのside effectがない。</li>
+  </ul>
+  <p>
+    precondition不成立時は<code>RUN_HAS_OPEN_TODOS</code>等のtyped
+    resultと現在snapshotをmodelへ返す。modelはTodoを完了、skip、再試行、再計画するか、<code>needs_human</code>としてユーザーへ質問するかを判断する。resource
+    budgetを超えた場合も原則<code>needs_human</code>で停止し、最後に得たLLM本文を保持・表示する。provider
+    process自体が成立しない場合だけ<code>runtime_failed</code>を使用する。
+  </p>
+  <p>
+    Evidence、Test成功、Review、security scan、context compile、knowledge
+    registrationをhostの必須completion gateにはしない。必要な確認と完了判断はSystem Context、Task
+    Context、Todo Contextを読んだLLMが行う。
+  </p>
+  <h2 id="section-4-deletion-first残置判定">4. Deletion-First残置判定</h2>
+  <p>既存ロジックを残す場合は、次の条件をすべて満たす必要がある。</p>
+  <ol>
+    <li>Taskの意味、次工程、Todoの意味上の完了を決めない。</li>
+    <li>
+      schema、authorization、permission、安全、transaction、revision、idempotency、resource、protocol、lossless
+      persistenceのいずれかである。
+    </li>
+    <li>
+      user文言、Task本文、Todo名、command文字列、LLM本文、error本文のkeywordや正規表現を使用しない。
+    </li>
+    <li>失敗時はtyped errorを返し、別action、別mode、retry、完了を自動選択しない。</li>
+    <li>LLMだけを矯正する例外ではなく、人間UIまたは全runtimeに共通する正しさの境界である。</li>
+    <li>削除すると起こる具体的な安全、権限、整合性、重複実行、resource問題を説明できる。</li>
+    <li>単体testで成立条件と不成立条件を固定できる。</li>
+  </ol>
+  <p>
+    満たさないclassifier、gate、fallback、recovery、auto
+    transitionは削除する。既存testがあること、過去の不具合対策だったこと、念のためという理由だけでは残さない。
+  </p>
+  <h2 id="section-5-existing-logic-disposition">5. Existing Logic Disposition</h2>
+  <h3 id="section-51-そのまま残す">5.1 そのまま残す</h3>
+  <table>
+    <caption>
+      5.1 そのまま残す
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Area</th>
+        <th scope="col">Existing responsibility</th>
+        <th scope="col">Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Project / workspace境界</td>
+        <td>登録Projectのrepo rootを実作業workspaceにする</td>
+        <td>filesystem安全境界</td>
+      </tr>
+      <tr>
+        <td>worker tool schema</td>
+        <td>tool argumentとresultのschema validation</td>
+        <td>protocol整合性</td>
+      </tr>
+      <tr>
+        <td>permission / approval</td>
+        <td>filesystem、network、Git、外部actionの許可</td>
+        <td>権限・安全</td>
+      </tr>
+      <tr>
+        <td>provider transport</td>
+        <td>provider呼び出し、HTTP / SDK error、timeout</td>
+        <td>通信境界</td>
+      </tr>
+      <tr>
+        <td>JSON extraction / schema issue</td>
+        <td>raw本文とvalidation issueのlossless保持</td>
+        <td>provider責務</td>
+      </tr>
+      <tr>
+        <td>new Session persistence</td>
+        <td>新runtime開始後のconversation、tool event、usage、resume tokenの保存</td>
+        <td>同一Session内の再開可能性</td>
+      </tr>
+      <tr>
+        <td>event ledger</td>
+        <td>起きた事実のappend-only記録</td>
+        <td>監査・UI表示</td>
+      </tr>
+      <tr>
+        <td>cancellation / timeout / budget</td>
+        <td>user stop、期限、token、output上限</td>
+        <td>resource安全</td>
+      </tr>
+      <tr>
+        <td>DB transaction / constraint</td>
+        <td>unique、foreign key、revision、CAS</td>
+        <td>状態整合性</td>
+      </tr>
+      <tr>
+        <td>realtime notification</td>
+        <td>persisted stateのUI通知</td>
+        <td>表示整合性</td>
+      </tr>
+      <tr>
+        <td>artifact / verification result store</td>
+        <td>artifact参照と検証結果の永続化</td>
+        <td>UI表示用の事実保存。Todo完了条件には使わない</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-52-形を変えて残す">5.2 形を変えて残す</h3>
+  <table>
+    <caption>
+      5.2 形を変えて残す
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current component</th>
+        <th scope="col">Target responsibility</th>
+        <th scope="col">Removed responsibility</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>NativeAgentRuntime</code> / native coordinator</td>
+        <td>小さなmodel-tool loop</td>
+        <td>startup phase、mode別終了、固定recovery</td>
+      </tr>
+      <tr>
+        <td><code>CodexAgentRuntime</code></td>
+        <td>Codex thread / eventの薄いadapter</td>
+        <td>finalize rejection後のfresh thread、checkpoint turn</td>
+      </tr>
+      <tr>
+        <td><code>native-api-tool-dispatcher.ts</code></td>
+        <td>schema検証、authorization、tool実行、typed result</td>
+        <td>semantic dispatch state、次工程管理</td>
+      </tr>
+      <tr>
+        <td><code>native-api-tool-registry.ts</code></td>
+        <td>permissionと実在capabilityに基づくtool catalog</td>
+        <td>mode / current Todo / taskTypeによる逐次allowlist</td>
+      </tr>
+      <tr>
+        <td><code>todo-list.ts</code></td>
+        <td>ID・revision指定のTodo command adapter</td>
+        <td>fixed gate merge、bootstrap禁止、seq中心操作</td>
+      </tr>
+      <tr>
+        <td>Todo repository</td>
+        <td>atomic transition、single-running、revision</td>
+        <td>自動next Todo選択</td>
+      </tr>
+      <tr>
+        <td><code>todo-context</code></td>
+        <td>System Context、plan summary、current Todo detail、失敗と次action</td>
+        <td>procedure中心Context</td>
+      </tr>
+      <tr>
+        <td><code>ledger-sink.ts</code></td>
+        <td>eventとverification factの永続化</td>
+        <td>Todo自動完了・自動開始</td>
+      </tr>
+      <tr>
+        <td><code>RunControlRepository</code></td>
+        <td>action journal、idempotency、revision、dedupe</td>
+        <td>semantic phase、no-progress recovery</td>
+      </tr>
+      <tr>
+        <td><code>finalize-controller.ts</code></td>
+        <td>共通Run completion precondition</td>
+        <td>verification fresh判定、次action指示</td>
+      </tr>
+      <tr>
+        <td>verification command処理</td>
+        <td>通常toolとしてtyped check resultを返す</td>
+        <td>evidence生成、command文字列からのworkflow完了推論</td>
+      </tr>
+      <tr>
+        <td>security oracle</td>
+        <td>明示的に呼べるscan tool / result</td>
+        <td>finalize時の自動gate</td>
+      </tr>
+      <tr>
+        <td>ContextStill連携</td>
+        <td>LLMが選べるtool</td>
+        <td>startup / closeoutでの自動実行</td>
+      </tr>
+      <tr>
+        <td>runtime lane選択</td>
+        <td>provider capabilityとユーザー設定によるengine選択</td>
+        <td>execution modeによる意味上の挙動差</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-53-削除する">5.3 削除する</h3>
+  <p>次は移植せず削除する。</p>
+  <ul>
+    <li><code>native-api-startup-controller.ts</code>の固定startup sequence。</li>
+    <li><code>native-api-startup-todos.ts</code>の固定Todo生成・完了。</li>
+    <li><code>native-api-runner-routing.ts</code>の本文・error文字列classifier。</li>
+    <li>implementation / test / reviewごとの<code>toolChoice: required</code>とmode分岐。</li>
+    <li>implementationでtool callがないときの固定<code>needs_human</code> response。</li>
+    <li>current Todoの<code>taskType</code> / <code>procedureId</code>に応じたtool公開切替。</li>
+    <li><code>todo-list-builder.ts</code>の固定prep、quality gate、completion report Todo。</li>
+    <li>Task本文やtitleのregexによるmigration / E2E / feature分類。</li>
+    <li>command文字列のregex分類を根拠とするTodo完了とquality gate完了。</li>
+    <li><code>ledger-sink.ts</code>からのTodo自動closeと次Todo自動start。</li>
+    <li><code>native-api-finalize.ts</code>からの最終Todo直接完了。</li>
+    <li><code>finalize_answer</code>専用tool。通常のassistant final textを終了候補にする。</li>
+    <li>final response後に別threadを開始するCodex recovery prompt。</li>
+    <li>current Todo完了を促すCodex checkpoint prompt。</li>
+    <li>
+      <code>RunControlPhase = active | recovery | closeout | terminal</code>を使うsemantic state
+      machine。
+    </li>
+    <li>consecutive no-progressによる固定recovery action。</li>
+    <li>Test完了後のReview自動開始、Review後の固定closeout。</li>
+    <li>Test mode / Review modeのruntime route、専用prompt、専用UI action。</li>
+    <li>LLM本文をschema error、gate error、tool不足の固定文へ差し替える処理。</li>
+    <li>import失敗後にhostが別のimport / implementation pathを選ぶfallback。</li>
+    <li><code>new_context</code>時に履歴を要約なしの固定baselineへresetする処理。</li>
+  </ul>
+  <h3 id="section-54-観測用途に限定して残せるclassifier">5.4 観測用途に限定して残せるclassifier</h3>
+  <p>
+    commandやeventの分類がUIアイコン、検索、統計だけに使われる場合は、semantic
+    controlから完全に切り離したうえで残せる。ただし次の条件を課す。
+  </p>
+  <ul>
+    <li>Todo、Run status、next action、verification合否を変更しない。</li>
+    <li>分類不能でもraw eventをlosslessに表示・保存する。</li>
+    <li>分類結果をLLMへの必須Factとして扱わない。</li>
+    <li>classifierを削除してもagent behaviorが変化しないことをtestする。</li>
+  </ul>
+  <h2 id="section-6-target-architecture">6. Target Architecture</h2>
+  <figure>
+    <pre class="mermaid" data-spec-html-source="markdown">flowchart TD
+    U[&quot;User / Mission Pilot&quot;] --&gt; R[&quot;CodingAgentRuntime&quot;]
+    W[&quot;Versioned System Context\nJapanese mandatory instructions&quot;] --&gt; R
+    T[&quot;Mandatory Todo Plan + Current Todo Context&quot;] --&gt; R
+    R --&gt; E{&quot;Agent Engine&quot;}
+    E --&gt;|&quot;Native provider&quot;| N[&quot;Generic model-tool loop&quot;]
+    E --&gt;|&quot;Codex SDK&quot;| C[&quot;Codex delegated thread&quot;]
+    N --&gt; D[&quot;Common Tool Dispatcher&quot;]
+    C --&gt; D
+    D --&gt; S[&quot;Schema / Authorization / Permission / Transaction&quot;]
+    S --&gt; X[&quot;Worker Tools on registered repo root&quot;]
+    X --&gt; O[&quot;Typed tool result&quot;]
+    O --&gt; R
+    R --&gt; M[&quot;Explicit Todo Mutation Service&quot;]
+    M --&gt; P[&quot;Todo DB + Revision + Realtime&quot;]
+    R --&gt; F[&quot;Raw final candidate&quot;]
+    F --&gt; G[&quot;Deterministic completion preconditions&quot;]
+    G --&gt;|&quot;ok&quot;| Z[&quot;Completed Run&quot;]
+    G --&gt;|&quot;typed error&quot;| R
+</pre>
+    <figcaption>6. Target Architectureの図</figcaption>
+  </figure>
+  <p>
+    Native providerとCodex
+    SDKは内部loopの所有者が異なる。これを無理に同じ低レベルinterfaceへ押し込まない。共通化するのは、System
+    Context、必須Todo contract、tool result、permission、persistence、completion contractである。
+  </p>
+  <h2 id="section-7-implementation-phases">7. Implementation Phases</h2>
+  <h3 id="phase-0-baselineとcharacterization">Phase 0: Baselineとcharacterization</h3>
+  <p>目的は、現行の重要な安全境界と、削除対象のsemantic behaviorを混同しないことである。</p>
+  <p>実施:</p>
+  <ol>
+    <li>accepted baseline SHAとworktree statusを保存する。</li>
+    <li>Native API、Codex SDK、Todo、Run Controlの既存test一覧を分類する。</li>
+    <li>
+      testを<code>retain-boundary</code>、<code>replace-contract</code>、<code>delete-behavior</code>へ分類する。
+    </li>
+    <li>
+      provider raw本文、tool failure、必須Todo、同一Session resume、permission
+      denial、cancelのcharacterization testを追加する。
+    </li>
+    <li>
+      現行Runについて、model call回数、host-generated recovery
+      turn数、Todo自動更新数、固定本文差し替え数を計測する。
+    </li>
+  </ol>
+  <p>成果物:</p>
+  <ul>
+    <li>削除対象test一覧。</li>
+    <li>維持する安全境界test一覧。</li>
+    <li>before metrics。</li>
+  </ul>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>既存安全境界を説明するtestがgreen。</li>
+    <li>どのtestがsemantic controlを固定しているか文書化済み。</li>
+  </ul>
+  <h3 id="phase-1-todo-schemaとsingle-writer境界">Phase 1: Todo schemaとsingle-writer境界</h3>
+  <p>実施:</p>
+  <ol>
+    <li>
+      <code>objective</code
+      >、<code>context</code>、<code>next_action</code>、<code>acceptance_criteria_json</code>、<code>last_failure</code>、<code>attempt_count</code>、<code>system_context_version</code>、<code>created_by</code>、<code>revision</code>を新runtime用schemaへ追加する。
+    </li>
+    <li>
+      新runtimeの<code>dependsOn</code>をTodo IDへ統一する。legacy
+      dependencyは新runtimeへ変換しない。
+    </li>
+    <li><code>TodoMutationService</code>を作り、UIとLLM toolを同じserviceへ接続する。</li>
+    <li>Todo操作を<code>id + expectedRevision</code>へ変更する。</li>
+    <li><code>transition + optional nextTodoId</code>を一transactionで実行する。</li>
+    <li>event ledger、startup、finalizeからのTodo mutationを停止する。</li>
+    <li>legacy Todoは新runtimeへbackfillせず、過去Runのread-only表示に限定する。</li>
+    <li>
+      新Sessionの最初のturnではTodo作成以外のworker
+      toolを<code>CURRENT_TODO_REQUIRED</code>で拒否する。
+    </li>
+    <li>
+      <code>record_failure</code
+      >でTodoをrunningのまま維持し、失敗Contextと次actionを更新できるようにする。
+    </li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>Todoの書き込み経路が<code>TodoMutationService</code>だけである。</li>
+    <li>ledger eventやcommand実行だけではTodo statusが変わらない。</li>
+    <li>concurrent updateは片方が<code>TODO_REVISION_CONFLICT</code>になる。</li>
+    <li>一つのRunにrunning Todoを複数作れない。</li>
+    <li>新SessionでTodoなしにworkspace作業を開始できない。</li>
+    <li>legacy Runは履歴として表示できるが、新runtime Contextへ混入しない。</li>
+  </ul>
+  <h3 id="phase-2-system-contextと共通todo-context">Phase 2: System Contextと共通Todo Context</h3>
+  <p>実施:</p>
+  <ol>
+    <li>日本語のversion付き<code>CodingAgentSystemContext</code> builderを作成する。</li>
+    <li>
+      共通tool説明、JSON contract、回答要件、Todo必須規則、失敗再試行規則をshared
+      builderへ集約する。
+    </li>
+    <li>implementation / test / review promptを削除し、単一System Contextへ置き換える。</li>
+    <li><code>PlanSummary</code>と<code>CurrentTodoContext</code>のversion付きschemaを作る。</li>
+    <li>Native APIとCodex SDKへ同じSystem ContextとTodo Contextを注入する。</li>
+    <li>
+      current TodoにSystem Context snapshot、next action、last failure、attempt countを含める。
+    </li>
+    <li>Task本文、Todo title、error本文を読んでmodeやContextを選ぶclassifierを削除する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>同じTask ContextとTodoに対し、両laneが同じSystem Context / Todo packetを受け取る。</li>
+    <li>Todo変更でtool catalogが変化しない。</li>
+    <li>mode / System Context選択にkeyword / regexが存在しない。</li>
+    <li>prompt文言が日本語で、一箇所から再利用される。</li>
+  </ul>
+  <h3 id="phase-3-native-api-agent-loopの縮小">Phase 3: Native API agent loopの縮小</h3>
+  <p>実施:</p>
+  <ol>
+    <li><code>native-api-run-coordinator.ts</code>からstartup flagsとphase routingを除去する。</li>
+    <li>
+      loopを<code>model call -&gt; explicit tool calls -&gt; typed results -&gt; model call</code
+      >へ縮小する。
+    </li>
+    <li>
+      implementation / test / reviewのmode分岐と<code>toolChoice: required</code
+      >を外す。ただし最初のturnではTodo mutation toolの実行を必須とする。
+    </li>
+    <li>tool callなしのassistant本文をfinal candidateとして扱う。</li>
+    <li>tool parse / validation failureをmodel-visible resultへ変換する。</li>
+    <li>provider本文がある場合は必ず保持し、固定error responseへ差し替えない。</li>
+    <li>context compactionをconversation summary + Todo Context保持方式へ変更する。</li>
+    <li>transport retryをprovider typed errorに限定する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>modelがtoolを呼ばずに正常終了できる。</li>
+    <li>invalid tool argsを受けたmodelが次turnで自己修正できる。</li>
+    <li>tool failure後の次actionをhostが選ばない。</li>
+    <li>LLM本文がparse / gate失敗でもUIとeventへ残る。</li>
+    <li>startup用のhost tool callがゼロになる。</li>
+  </ul>
+  <h3 id="phase-4-codex-sdk-adapterの縮小">Phase 4: Codex SDK adapterの縮小</h3>
+  <p>実施:</p>
+  <ol>
+    <li>Codex SDKへSystem Contextと必須Todo Contextを一つのprompt packetとして渡す。</li>
+    <li>Codex eventをlosslessにNightWorkers eventへ投影する。</li>
+    <li>final response後のfresh thread recoveryを削除する。</li>
+    <li>current Todo checkpoint turnを削除する。</li>
+    <li>Codex tool eventからTodoを自動更新しない。</li>
+    <li>NightWorkersのpermission / Project rootをCodex thread optionへ一対一で反映する。</li>
+    <li>
+      新runtime開始後に作成されたCodex thread IDとNightWorkers Run IDのmappingだけを維持する。legacy
+      thread IDは引き継がない。
+    </li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>Codexの一つのthreadをhost都合で分断しない。</li>
+    <li>同じfinal responseをRunのraw final candidateとして保存する。</li>
+    <li>Native laneと同じTodo mutation tool / completion contractを使う。</li>
+    <li>Codex event分類不能時もraw eventが欠落しない。</li>
+  </ul>
+  <h3 id="phase-5-run-controlとfinalizationの縮小">Phase 5: Run Controlとfinalizationの縮小</h3>
+  <p>実施:</p>
+  <ol>
+    <li><code>RunControlState</code>からsemantic phaseとrecovery counterを除去する。</li>
+    <li>
+      action identity、idempotency、revision、effect
+      logを<code>ActionExecutionJournal</code>へ抽出する。
+    </li>
+    <li>finalizationを<code>RunCompletionPreconditions</code>へ置き換える。</li>
+    <li>missing / open Todo、approval待ち、revision conflictだけをtyped errorで返す。</li>
+    <li>verification / security / ContextStillの自動実行を削除する。</li>
+    <li>final candidate、completion error、terminal reasonを別fieldでlossless保存する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>finalizationが別のtool、mode、retryを開始しない。</li>
+    <li>open Todo時にmodelが明示transitionして再度完了できる。</li>
+    <li>budget終了時にも最後のLLM本文をユーザーが読める。</li>
+    <li>Run完了にcommand文字列classifierが関与しない。</li>
+  </ul>
+  <h3 id="phase-6-test--review-mode廃止とcutover">Phase 6: Test / Review mode廃止とcutover</h3>
+  <p>実施:</p>
+  <ol>
+    <li>新規Coding Agent Runを単一runtimeへrouteする。</li>
+    <li>Test / Review専用state machine、route、prompt、runtime factoryを削除する。</li>
+    <li>Test / Reviewの新規Run作成UIとAPI actionを削除または無効化する。</li>
+    <li>Testは、LLMが必要と判断した場合にcurrent RunのTodoとして追加・実行する。</li>
+    <li>Review modeは新runtimeに作らない。過去Runのmode情報だけread-only表示できる。</li>
+    <li>
+      legacy Sessionからconversation、tool history、Todoを移行せず、新Session IDと新Run
+      IDで開始する。
+    </li>
+    <li>短期間のrollback flagを設け、安定後にlegacy pathとflagを削除する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>production runtimeにTest / Review modeが存在しない。</li>
+    <li>Testが必要なTaskでも同じCoding AgentがTodoを追加して実行する。</li>
+    <li>Review専用prompt、permission profile、tool loopが存在しない。</li>
+    <li>legacy Session IDと履歴が新runtime promptへ含まれない。</li>
+  </ul>
+  <h3 id="phase-7-dead-code削除と文書更新">Phase 7: Dead code削除と文書更新</h3>
+  <p>実施:</p>
+  <ol>
+    <li>5.3の削除対象file / function / testを削除する。</li>
+    <li><code>spec/architecture.md</code>からTest / Review modeと固定lifecycleを除去する。</li>
+    <li>MCP tool descriptionからmanaged fixed gateの説明を除去する。</li>
+    <li>AGENTS規則と新runtime contractの整合を確認する。</li>
+    <li>互換期間終了後、seq指定Todo mutationと旧field writeを削除する。</li>
+    <li>architecture boundary checkへsemantic classifier禁止の静的検査を追加する。</li>
+  </ol>
+  <p>
+    静的検査はuser文言の意味を推定しない。禁止対象directoryで、<code>RegExp</code>や<code>.includes()</code>等がTask本文、Todo
+    title、LLM本文、error messageからruntime actionを選ぶ依存を検出するための保守用lintとする。
+  </p>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>legacy runtime pathとTest / Review modeがproduction bundleに含まれない。</li>
+    <li>固定gate、auto Todo close、recovery promptのdead codeがない。</li>
+    <li><code>bun run check:architecture</code>と<code>bun run check:docs</code>がgreen。</li>
+    <li>rollback flagを削除済み。</li>
+  </ul>
+  <h2 id="section-8-verification-plan">8. Verification Plan</h2>
+  <h3 id="section-81-todo-contract-tests">8.1 Todo contract tests</h3>
+  <ul>
+    <li>新Sessionの最初のturnでLLMが空のplanからSystem Context付きTodoを作成できる。</li>
+    <li>Todo作成前のworker tool callが<code>CURRENT_TODO_REQUIRED</code>になる。</li>
+    <li>current TodoのContext更新が次turnへ反映される。</li>
+    <li>current TodoのSystem Context、next action、last failureが毎turnへ反映される。</li>
+    <li>explicit Todo IDだけが完了する。</li>
+    <li>seqが変わってもTodo identityが変わらない。</li>
+    <li>stale revisionが<code>TODO_REVISION_CONFLICT</code>になる。</li>
+    <li>ledger event、verification event、final responseではTodoが変化しない。</li>
+    <li><code>nextTodoId</code>未指定時にhostが次Todoを開始しない。</li>
+    <li>tool failureを記録してもTodoはrunningのままでattempt countが増える。</li>
+    <li>skipped / needs_humanのreasonが保持される。</li>
+    <li>ユーザー回答による<code>resume</code>で同じTodoへ回答Contextが追記され、runningへ戻る。</li>
+    <li>新runtime Sessionのresume後もplan revisionとcurrent Todoが一致する。</li>
+  </ul>
+  <h3 id="section-82-agent-loop-tests">8.2 Agent loop tests</h3>
+  <ul>
+    <li>assistant final textのみで正常終了する。</li>
+    <li>tool call、tool result、次のtool callを任意回数反復できる。</li>
+    <li>invalid argumentsがtyped tool resultとしてmodelへ戻る。</li>
+    <li>tool domain failure後にmodelが別actionを選べる。</li>
+    <li>tool / Test失敗後にLLMがTodo Contextを更新して再試行できる。</li>
+    <li>達成不能時にLLMが<code>needs_human</code>へ遷移し、具体的な質問を返して停止する。</li>
+    <li>provider本文とschema issueが同時に保存される。</li>
+    <li>transport到達不能時だけprovider failureとして扱う。</li>
+    <li>context compaction後もTask goal、Plan summary、Current Todo detailが残る。</li>
+    <li>user cancelがtool実行と後続model callを停止する。</li>
+  </ul>
+  <h3 id="section-83-system-context--mode-removal-tests">
+    8.3 System Context / mode removal tests
+  </h3>
+  <ul>
+    <li>production registryにTest / Review runtimeが存在しない。</li>
+    <li>Test / Reviewの新規Run APIが作成されない。</li>
+    <li>
+      Task本文に<code>review</code>、<code>test</code>、<code>migration</code>等が含まれてもruntime
+      routeとSystem Contextが変わらない。
+    </li>
+    <li>Testが必要な場合は通常Todoとして追加され、同じruntimeで実行される。</li>
+    <li>tool catalogがTodoや旧execution modeで変化しない。</li>
+    <li>error本文の語句でretry / mode / Todo statusが変わらない。</li>
+  </ul>
+  <h3 id="section-84-completion-tests">8.4 Completion tests</h3>
+  <ul>
+    <li>open Todoがある完了要求はtyped errorをmodelへ返す。</li>
+    <li>modelが残Todoをpassed / skippedへ明示遷移した後に完了できる。</li>
+    <li>completion precondition failureでraw final candidateを失わない。</li>
+    <li>Evidenceの作成・参照なしでRunを完了できる。</li>
+    <li>Testやverification結果をhostがTodo完了条件として判定しない。</li>
+    <li>resource budget終了時に固定本文へ差し替えない。</li>
+  </ul>
+  <h3 id="section-85-persistence--recovery-tests">8.5 Persistence / recovery tests</h3>
+  <ul>
+    <li>
+      新runtime開始後のprocess restartでは、同じRun、conversation、Todo、Codex
+      threadをresumeできる。
+    </li>
+    <li>tool call実行済み・result保存前のcrashをidempotency keyで復旧できる。</li>
+    <li>Todo transitionのtransaction途中crashで二つのrunning Todoが残らない。</li>
+    <li>event分類不能でもraw payloadから監査できる。</li>
+    <li>
+      legacy conversation、tool history、Todo、Codex thread IDが新Session Contextへ含まれない。
+    </li>
+    <li>legacy Runはread-only履歴として残り、新Session IDと新Run IDでゼロから開始できる。</li>
+  </ul>
+  <h3 id="section-86-verification-commands">8.6 Verification commands</h3>
+  <p>各Phaseでは対象testを先に実行し、Phase完了時に次を実行する。</p>
+  <pre><code class="language-bash">bun run typecheck
+bun run lint
+bun run check:architecture
+bun run check:docs
+bun run test -- tests/services.todo-runtime.test.ts
+bun run test -- tests/services.todo-context.test.ts
+bun run test -- tests/services.native-api-runner.test.ts
+bun run test -- tests/services.codex-agent-runtime.test.ts
+bun run test -- tests/run-control.test.ts
+bun run verify
+</code></pre>
+  <p>
+    cutover前にはfull backend testと、必須Todo、失敗再試行、<code>needs_human</code>停止、Test /
+    Review mode不存在、新Session restartのdeterministic E2Eを追加して実行する。live provider
+    testはcredentialを必要とするため通常gateと分離し、release候補で明示実行する。
+  </p>
+  <h2 id="section-9-migration-and-rollback">9. Migration and Rollback</h2>
+  <h3 id="section-91-legacy-sessionは移行しない">9.1 Legacy Sessionは移行しない</h3>
+  <ul>
+    <li>
+      legacy conversation、tool history、Todo、Run Control state、Codex thread
+      IDを新runtimeへ移さない。
+    </li>
+    <li>legacy RunとTodoは削除せず、過去履歴としてread-onlyで保存できる。</li>
+    <li>新runtime開始時に新しいSession IDとRun IDを発行する。</li>
+    <li>
+      新Sessionの最初のmodel callには、現在のユーザーTask、登録Project、現在のrepository
+      root、共通System Contextだけを渡す。
+    </li>
+    <li>
+      新Sessionは空のTodo planから開始し、最初のresponseでLLMがSystem Context付きTodoを作成する。
+    </li>
+    <li>
+      repository上にlegacy
+      Runが作成した未commit変更が残っている場合、それは会話履歴ではなく現在のworkspace
+      FactとしてLLMが改めて調査する。
+    </li>
+    <li>旧status、procedure、completion gate、Evidenceを新Todoへ写像しない。</li>
+  </ul>
+  <h3 id="section-92-runtime-cutover">9.2 Runtime cutover</h3>
+  <ol>
+    <li>development環境で新runtimeを有効化する。</li>
+    <li>deterministic fixtureで両laneを検証する。</li>
+    <li>Test / Review modeを無効化し、新規Runを単一Coding Agent runtimeへrouteする。</li>
+    <li>
+      legacyの進行中Runを新runtimeへresumeしない。必要なTaskは新Session IDと新Run
+      IDで最初から開始する。
+    </li>
+    <li>新runtimeをdefaultにする。</li>
+    <li>rollback期間終了後にlegacy path、legacy resume migration、flagを削除する。</li>
+  </ol>
+  <h3 id="section-93-rollback条件">9.3 Rollback条件</h3>
+  <p>次のいずれかが発生した場合は、新規Runのrouteだけをlegacyへ戻せるようにする。</p>
+  <ul>
+    <li>workspace root外への操作が可能になる安全退行。</li>
+    <li>Todoの二重running、terminal reopen、更新消失。</li>
+    <li>新runtime開始後の同一Session restartでconversationまたはTodoが欠落する。</li>
+    <li>provider本文の消失。</li>
+    <li>permission / approval bypass。</li>
+  </ul>
+  <p>
+    modelの判断品質が一度低かったことだけでsemantic gateを復活させない。まずSystem Context、Todo
+    Context、tool description、model設定、観測可能性を改善する。
+  </p>
+  <h2 id="section-10-observability">10. Observability</h2>
+  <p>新runtimeでは、意味判断をhostへ戻さずに問題を診断できるよう次を計測する。</p>
+  <ul>
+    <li>Runあたりmodel turn数。</li>
+    <li>tool call成功 / typed failure / validation failure数。</li>
+    <li>LLMが行ったTodo create / update / transition / replan数。</li>
+    <li>LLM commandまたは明示的な人間UI操作を伴わないhost Todo mutation数。目標<code>0</code>。</li>
+    <li>
+      tool失敗後の<code>record_failure</code>数、再試行数、再計画数、<code>needs_human</code>停止数。
+    </li>
+    <li>current Todoなしのtool call拒否数。</li>
+    <li>completion precondition rejection数とerror code。</li>
+    <li>fixed response replacement数。目標<code>0</code>。</li>
+    <li>host-generated semantic recovery turn数。目標<code>0</code>。</li>
+    <li>context compaction前後のTodo Context保持率。目標<code>100%</code>。</li>
+    <li>新runtime Session内のrestart / resume成功率。</li>
+    <li>permission denialとapproval request数。</li>
+  </ul>
+  <p>
+    eventには「LLMがなぜその判断をしたか」をhostが推定して書かない。prompt、tool call、tool
+    result、Todo mutation、final responseという観測可能なFactを保存する。
+  </p>
+  <h2 id="section-11-non-goals">11. Non-Goals</h2>
+  <ul>
+    <li>LLMの判断を無制限に信用してsandboxやapprovalを外すこと。</li>
+    <li>Todoを廃止すること。</li>
+    <li>
+      将来のTest /
+      Review機能を今の設計の延長で定義すること。必要になった時点でゼロベースに設計する。
+    </li>
+    <li>Native providerとCodex SDKの内部実装を一つの偽の抽象化へ統合すること。</li>
+    <li>Mission Pilot全体のリファクタリングを本計画へ取り込むこと。</li>
+    <li>Plan Artifact generator、Questionnaire、Task UIの全面再設計。</li>
+    <li>provider routing、料金、model selectionの全面変更。</li>
+    <li>
+      verification toolやsecurity scan capability自体の削除。通常toolとしてLLMが必要時に利用できる。
+    </li>
+  </ul>
+  <h2 id="section-12-definition-of-done">12. Definition of Done</h2>
+  <p>本計画は次をすべて満たした時に完了とする。</p>
+  <ol>
+    <li>production pathにTest / Review mode、専用runtime、専用prompt、専用routeが存在しない。</li>
+    <li>単一Coding AgentがTestを含む必要作業をTodoとして計画・実行する。</li>
+    <li>すべてのCoding Agent RunでSystem Context付きTodoが必須になる。</li>
+    <li>
+      LLMがTodoの作成、再計画、開始、完了、失敗再試行、skip、<code>needs_human</code>停止を所有する。
+    </li>
+    <li>TodoはID・revision・transactionで安全に永続化され、UIへ進捗表示される。</li>
+    <li>event、command、startup、finalizeがTodoを暗黙更新しない。</li>
+    <li>EvidenceがTodoまたはRunの完了条件にならない。</li>
+    <li>
+      Task本文、Todo名、command文字列、LLM本文、error本文のkeyword / regexがruntime
+      actionを決めない。
+    </li>
+    <li>tool catalogはpermissionとcapabilityだけで決まり、current Todoの意味で変わらない。</li>
+    <li>Native API loopがmodel-tool-finalの小さなloopになる。</li>
+    <li>Codex SDK wrapperがrecovery threadやcheckpoint turnを挿入しない。</li>
+    <li>LLM本文がparse、schema、gate失敗によって固定本文へ差し替えられない。</li>
+    <li>安全、権限、approval、transaction、revision、idempotency、timeout、cancelが維持される。</li>
+    <li>legacy Session履歴を移行せず、新Session IDと新Run IDで再開できる。</li>
+    <li>新runtime開始後の同一Sessionではconversation、Todo Context、event historyが継続する。</li>
+    <li>legacy semantic control codeと、それを固定していたtestが削除される。</li>
+    <li><code>bun run verify</code>、対象integration test、deterministic E2Eがgreenになる。</li>
+  </ol>
+  <h2 id="section-13-recommended-implementation-order">13. Recommended Implementation Order</h2>
+  <p>
+    最初の実装PRはTodo single-writer境界に限定する。agent
+    loopを先に単純化すると、既存のstartup、ledger、finalizeがTodoを並行更新し、LLM所有という正本が成立しないためである。
+  </p>
+  <p>推奨PR順:</p>
+  <ol>
+    <li>Todo additive schema + revision + <code>TodoMutationService</code>。</li>
+    <li>ledger / startup / finalizeからのTodo mutation撤去。</li>
+    <li>shared Japanese System Context + Todo Context packet。</li>
+    <li>Native API loop縮小。</li>
+    <li>Codex SDK wrapper縮小。</li>
+    <li>Run Control / finalization縮小。</li>
+    <li>Test / Review mode削除 + 新Session cutover。</li>
+    <li>legacy code、compat write、rollback flag削除とarchitecture文書更新。</li>
+  </ol>
+  <p>
+    各PRは削除対象ロジックを新しいCoordinator、Policy、Gateへ移植していないことをreview
+    checklistで確認する。
+  </p>
+</article>

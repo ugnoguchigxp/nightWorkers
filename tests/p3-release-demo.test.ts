@@ -363,21 +363,26 @@ describe("P3 deterministic demo and docs", () => {
 		await mkdir(path.join(root, "spec/docs"), { recursive: true });
 		await writeFile(path.join(root, "package.json"), '{"version":"1.2.3"}\n');
 		await writeFile(
-			path.join(root, "spec/docs/completed-plan.md"),
-			"# Completed plan\n\n## Status\n\n- Plan status: `implemented`\n",
+			path.join(root, "spec/docs/completed-plan.html"),
+			'<article lang="ja"><h1>Completed plan</h1><h2>Status</h2><ul><li>Plan status: <code>implemented</code></li></ul></article>\n',
 		);
 		await writeFile(
-			path.join(root, "spec/docs/active-plan.md"),
-			"# Active plan\n\n## Status\n\n- Plan status: `in_progress`\n",
+			path.join(root, "spec/docs/active-plan.html"),
+			'<article lang="ja"><h1>Active plan</h1><h2>Status</h2><ul><li>Plan status: <code>in_progress</code></li></ul></article>\n',
 		);
 		await writeFile(
-			path.join(root, "spec/docs/completed-inline-plan.md"),
-			"# Completed inline plan\n\nStatus: implemented\n\n## Scope\n",
+			path.join(root, "spec/docs/completed-inline-plan.html"),
+			'<article lang="ja"><h1>Completed inline plan</h1><p>Status: implemented</p></article>\n',
+		);
+		await writeFile(
+			path.join(root, "spec/docs/legacy-plan.md"),
+			"# Legacy plan\n",
 		);
 
 		expect(await checkDocsConsistency({ root, documentPaths: [] })).toEqual([
-			"spec/docs/completed-inline-plan.md: completed implementation document must move to spec/.archived/",
-			"spec/docs/completed-plan.md: completed implementation document must move to spec/.archived/",
+			"spec/docs/completed-inline-plan.html: completed implementation document must move to spec/docs/.archived/",
+			"spec/docs/completed-plan.html: completed implementation document must move to spec/docs/.archived/",
+			"spec/docs/legacy-plan.md: design document must be converted to HTML",
 		]);
 	});
 });

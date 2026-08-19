@@ -1,0 +1,2808 @@
+<article lang="ja">
+  <h1 id="security-intelligence-executable-integration-実装計画">
+    Security Intelligence Executable Integration 実装計画
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>
+      Archive status: archived on 2026-08-16 after code implementation; remaining deployment
+      evidence is tracked by
+      <a href="./security-intelligence-pilot-rollout-todo.html"
+        >Security Intelligence Pilot / Rollout TODO</a
+      >
+    </li>
+    <li>Plan status: Code implemented; rollout default OFF; pilot evidence pending</li>
+    <li>Last updated: 2026-08-15</li>
+    <li>
+      Applies to: <code>vulnWorkbench</code>, <code>NightWorkers</code>, <code>contextStill</code>
+    </li>
+    <li>
+      Source concept:
+      <code>spec/docs/security-intelligence-integration-concept.html</code>
+    </li>
+    <li>
+      Existing producer plan:
+      <code>vulnWorkbench/spec/security-intelligence-pr4-nightworkers-pilot-plan.md</code>
+    </li>
+    <li>Scope: Concept Stage 0からStage 3までを実行可能にするためのcross-repository変更</li>
+    <li>
+      Implementation in this change: SI-00からSI-INT-01までのcode pathを3
+      repositoryへ実装済み。SI-PILOT-01の実環境1-pair / 10-pair pilotとdated GO / ITERATE / STOP
+      decisionは未実施であり、Stage 2 / Stage 3 completeはまだ宣言しない。
+    </li>
+  </ul>
+  <h2 id="section-1-結論">1. 結論</h2>
+  <p>
+    構想の方向性は変更しない。現在不足しているのは、新しいscannerや別Agent
+    runtimeではなく、次の接続と永続化である。
+  </p>
+  <ol>
+    <li>
+      <code>vulnWorkbench</code>が既に返せるrevision-bound
+      assessmentを、<code>NightWorkers</code>がstrictに解釈し、scan開始時のproject / revision /
+      digestへ結び付けて保存する。
+    </li>
+    <li>
+      <code>NightWorkers</code>がSecurity ContractをTask /
+      Runへimmutableかつversionedに保存し、User、Mission Pilot、Coding
+      Agentのいずれから操作された場合も同じapplication commandと同じRun contractへ接続する。
+    </li>
+    <li>
+      採用済みFeature Plan、明示project policy、またはdirect Runの明示completion conditionがSecurity
+      Contractを参照する場合だけ、そのconditionを完了評価へ渡す。hostは本文から必要性や合否を推測しない。
+    </li>
+    <li>
+      <code>contextStill</code>のPostgreSQL、TypeScript SQLite、Rust native SQLiteでcandidate
+      lifecycleを揃え、登録直後のcandidateを<code>active</code> Knowledgeにしない。
+    </li>
+    <li>
+      NightWorkersからcontextStillへのmutationはdurable
+      outboxとidempotentな専用ingressを通し、candidate登録失敗でTaskやscanを巻き戻さない。
+    </li>
+  </ol>
+  <p>
+    初回実装はStage 2までを第一tranche、Stage
+    3を第二trancheとする。第一trancheでは、実装前assessmentをTask Revision
+    Snapshotへ、実装後assessmentをRunのcanonical Evidence Subjectへ別々にbindingし、同じSecurity
+    Contractから変更後verificationまで追跡できるpre / post loopを成立させる。Knowledge
+    candidate送信はそのintegrityをpilotで確認した後に接続する。
+  </p>
+  <h2 id="section-2-変更しない境界">2. 変更しない境界</h2>
+  <p>本計画では次を変更対象にしない。</p>
+  <ul>
+    <li>Mission PilotとCoding Agentの所有責務を統合しない。</li>
+    <li>
+      User操作とMission Pilot操作を別の権限model、別workflow、別completion policyへ分けない。Mission
+      PilotはUserに許可されたapplication commandを使用する。
+    </li>
+    <li>
+      Coding AgentのUser直結RunとMission Pilot handoff Runでruntime、tool contract、semantic
+      modeを分けない。
+    </li>
+    <li>
+      User、Mission Pilot、Coding Agentのどれがartifactを作成したかはaudit
+      provenanceとして保持できるが、provenance文字列から権限、tool、完了条件を切り替えない。
+    </li>
+    <li>Security evidenceが存在すること自体を全Runの固定completion gateにしない。</li>
+    <li>
+      <code>off / shadow / advisory / required</code>のようなTask-level activation stateをSecurity
+      Contractへ追加しない。
+    </li>
+    <li>hostがFeature Plan本文、Task本文、LLM本文をkeywordや正規表現で分類しない。</li>
+    <li>vulnWorkbenchのassessmentをNightWorkersが独自にconfirmed findingへ変換しない。</li>
+    <li>
+      contextStillのcandidateをNightWorkersまたはvulnWorkbenchが直接<code>active</code>化しない。
+    </li>
+    <li>各productのprivate databaseを他productから読まない。</li>
+    <li>
+      新scanner、大規模Ontology、自動policy緩和、自動verification省略、automatic Knowledge
+      promotionは追加しない。
+    </li>
+    <li>既存Security Scan integration v1を破壊的変更しない。</li>
+  </ul>
+  <h2 id="section-3-implementation-start-codebase-baseline">
+    3. Implementation-start codebase baseline
+  </h2>
+  <p>
+    2026-08-15の実装着手時点を基準とする。以下の不足欄は実装前の差分であり、現在の実装状況は17節を正本とする。
+  </p>
+  <table>
+    <caption>
+      3. Implementation-start codebase baseline
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Repository</th>
+        <th scope="col">現在あるもの</th>
+        <th scope="col">実行可能にするための不足</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>B-01</td>
+        <td>vulnWorkbench</td>
+        <td>
+          <code
+            >GET
+            /api/integrations/nightworkers/security-intelligence/v1/scans/:scanRunRef/assessment</code
+          >、strict bundle schema、auth、owner/project binding、target/evidence
+          binding、payload上限、default OFF flagが実装済み
+        </td>
+        <td>NightWorkers consumerが未実装。Security Intelligence専用capability responseも未実装</td>
+      </tr>
+      <tr>
+        <td>B-02</td>
+        <td>NightWorkers</td>
+        <td>Security Scan preview/start/status/findings/report clientとbinding履歴がある</td>
+        <td>
+          <code>shared/schemas/security-scan.schema.ts</code
+          >のbindingは<code>scanRunRef</code>、input selection/target、createdAtだけで、provider
+          project ref、resolved source revision、resolved target digestを保持しない
+        </td>
+      </tr>
+      <tr>
+        <td>B-03</td>
+        <td>NightWorkers</td>
+        <td>scan startはproviderのstrict responseを受け取る</td>
+        <td>
+          <code>api/modules/securityScan/security-scan.routes.ts</code>はstart結果のtarget
+          identityをbindingへ保存せず、requestのtarget selectorだけを保存する
+        </td>
+      </tr>
+      <tr>
+        <td>B-04</td>
+        <td>NightWorkers</td>
+        <td>
+          Task Runにtask revision、workspace authority、admitted HEAD、context
+          snapshotがあり、evidence subject snapshotにsource state / diff digestがある
+        </td>
+        <td>
+          Security Intelligence assessment receipt、Security Contract、completion
+          conditionとの構造的参照がない
+        </td>
+      </tr>
+      <tr>
+        <td>B-05</td>
+        <td>NightWorkers</td>
+        <td>security scan binding履歴をapplication settingsへ保存する</td>
+        <td>
+          <code>api/modules/securityScan/security-scan-settings.service.ts</code
+          >でrepositoryごと20件に切られるため、Task / Run evidenceの正本にはできない
+        </td>
+      </tr>
+      <tr>
+        <td>B-06</td>
+        <td>NightWorkers</td>
+        <td>standard Run prompt snapshotに既存<code>securityOracle</code>設定がある</td>
+        <td>Security Contractとassessment referenceがCoding Agent contextへ渡らない</td>
+      </tr>
+      <tr>
+        <td>B-07</td>
+        <td>contextStill</td>
+        <td>
+          PostgreSQLの<code>registerCandidate</code>はdistillation target、candidate
+          result、queueへ登録し、finalizeでKnowledgeを<code>draft</code>にする
+        </td>
+        <td>
+          TypeScript SQLite経路だけembedding後にKnowledgeを<code>active</code>で直接insertする
+        </td>
+      </tr>
+      <tr>
+        <td>B-08</td>
+        <td>contextStill</td>
+        <td>desktopで使用するRust native MCPに<code>register_candidates</code>がある</td>
+        <td>
+          Rust native SQLite経路もKnowledgeを<code>active</code>で直接insertし、返却値だけ<code
+            >next: distillation_pipeline</code
+          >としている
+        </td>
+      </tr>
+      <tr>
+        <td>B-09</td>
+        <td>contextStill</td>
+        <td>SQLite core schemaにもcandidate / covering / finalize pipelineのtableがある</td>
+        <td>TypeScript SQLiteとRust nativeがそのpipelineを使用していない</td>
+      </tr>
+      <tr>
+        <td>B-10</td>
+        <td>Cross-repository</td>
+        <td>
+          vulnWorkbenchにassessmentのpositive fixture、negative fixture、canonical digest検証がある
+        </td>
+        <td>
+          NightWorkers側assessment consumer fixtureと、NightWorkers / contextStill間のcandidate
+          batch fixtureがない。3 product共通のidentity / redaction fixtureもない
+        </td>
+      </tr>
+      <tr>
+        <td>B-11</td>
+        <td>NightWorkers</td>
+        <td>
+          Task revision snapshot、workspace authority、Evidence Subject snapshot、Run final judgment
+          columnがある
+        </td>
+        <td>
+          assessmentのpre / post phase binding、Security Contract head CAS、両runtime
+          lane共通のstructured final judgment提出経路がない
+        </td>
+      </tr>
+      <tr>
+        <td>B-12</td>
+        <td>NightWorkers / vulnWorkbench</td>
+        <td>
+          Security Scanの既定transportに<code>local_cli</code>があり、HTTP transportとは別のscan
+          lifecycleを持つ
+        </td>
+        <td>
+          Security Intelligence bundleを取得するlocal CLI consumer contractはない。Tranche
+          Aで対応transportを明示しないとdefault構成のavailabilityが曖昧になる
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    既存実装として完了しているvulnWorkbench
+    producerを作り直さない。<code>vulnWorkbench/spec/security-intelligence-initial-implementation-roadmap.md</code>のPR
+    1からPR 3、およびPR 4 producer部分をbaselineとして利用する。
+  </p>
+  <h2 id="section-4-target-lifecycle">4. Target lifecycle</h2>
+  <pre><code class="language-text">pre-implementation Security Scan preview
+  -&gt; Security Scan start
+  -&gt; durable Scan Binding
+       projectRef + scanRunRef + sourceRevisionRole + sourceRevision + targetDigest
+  -&gt; assessment fetch
+  -&gt; strict parse + exact binding validation
+  -&gt; immutable Assessment Receipt
+  -&gt; pre-implementation Assessment Subject Binding
+       Task Revision Snapshot
+  -&gt; role-side LLM creates/updates task-scoped Security Contract
+  -&gt; explicit completion condition may reference the Contract
+  -&gt; same Run context for direct and handoff Runs
+  -&gt; implementation
+  -&gt; role / human explicitly requests planned post-implementation assessment
+  -&gt; post-implementation scan against server-resolved Task workspace
+  -&gt; post-implementation Assessment Receipt
+  -&gt; post-implementation Assessment Subject Binding
+       Run + canonical Evidence Subject Snapshot
+  -&gt; verification / rerun correlation
+  -&gt; role-side LLM evaluates explicit completion conditions
+  -&gt; evidence-bound final judgment
+  -&gt; LLM or human proposes generalized Knowledge Candidates
+  -&gt; NightWorkers outbox
+  -&gt; contextStill candidate pipeline (not active Knowledge)
+  -&gt; review / distillation
+  -&gt; draft, then independent promotion policy
+</code></pre>
+  <h3 id="section-41-semantic-decision-boundary">4.1 Semantic decision boundary</h3>
+  <p>LLMへ残す判断:</p>
+  <ul>
+    <li>Taskに関係するinvariant、guardrail、verification candidateの選択</li>
+    <li>Security Contract本文の作成と更新提案</li>
+    <li>assessment、coverage、unknown、residual riskのTask-specific解釈</li>
+    <li>明示されたcompletion conditionを満たしたか、needs-humanか、blockedかの評価</li>
+    <li>finding、修正、rerunから再利用可能なKnowledge Candidateを提案するか</li>
+    <li>
+      Security Contract、Todo、Feature Planに基づきpost assessment application commandを実行するか
+    </li>
+  </ul>
+  <p>host / serverが強制する不変条件:</p>
+  <ul>
+    <li>schema version、payload size、authorization、project ownership</li>
+    <li>
+      task revision snapshot、run / workspace authority、Evidence
+      Subject、projectRef、scanRunRef、sourceRevision role、targetDigestの一致
+    </li>
+    <li>immutable reference、digest、idempotency、revision conflict</li>
+    <li>explicit completion conditionがfinal judgmentから欠落していないこと</li>
+    <li>staleまたはforeign evidenceをcurrent evidenceとして参照しないこと</li>
+    <li>outboxのtransaction、retry上限、停止手段、receipt</li>
+    <li>
+      secret、credential、LLM-visible / durable integration artifact内のabsolute private
+      pathの拒否またはredaction。既存scan v1 requestと5.3のauthenticated短命grant
+      requestはserver-only例外とし、response / telemetry / receiptへ残さない
+    </li>
+  </ul>
+  <p>
+    hostはSecurity ContractやFeature Plan本文の語句からcompletion
+    gateを生成しない。role側LLMが返した意味判断を固定文へ置き換えない。
+  </p>
+  <h2 id="section-5-versioned-contracts">5. Versioned contracts</h2>
+  <h3 id="section-51-provider-scan-binding-v2">5.1 Provider Scan Binding v2</h3>
+  <p>NightWorkers内部のdurable schemaとする。既存provider wire contract v1は変更しない。</p>
+  <pre><code class="language-ts">type ProviderScanBindingV2 = {
+  version: 2;
+  bindingRef: string;
+  repositoryId: string;
+  provider: &quot;vulnworkbench&quot;;
+  identityMappingVersion: 1;
+  providerProjectRef: string;
+  scanRunRef: string;
+  selection: SecurityScanSelection;
+  requestedTarget: SecurityScanTarget;
+  resolvedTarget: {
+    kind: &quot;full&quot; | &quot;working_tree&quot;;
+    sourceRevisionRole: &quot;snapshot_revision&quot; | &quot;base_revision&quot;;
+    sourceRevision: string | null;
+    targetDigest: string;
+  };
+  bindingDigest: string;
+  createdAt: string;
+};
+
+type SecurityIntelligenceBindingProofV1 = {
+  version: 1;
+  proofRef: string;
+  rawProjectRef: string;
+  canonicalProjectRef: `project:${string}`;
+  rawScanRunRef: string;
+  canonicalScanRunRef: `scan-run:${string}`;
+  target: {
+    kind: &quot;diff&quot;;
+    baseRevision: string;
+    assessedRevision: string;
+    rawTargetDigest: string;
+    canonicalTargetDigest: `sha256:${string}`;
+  };
+  proofDigest: `sha256:${string}`;
+};
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>
+      <code>providerProjectRef</code>は既存capabilities
+      responseの<code>project.ref</code>から取得する。
+    </li>
+    <li>
+      <code>resolvedTarget</code>はpreview/start responseのprovider観測値から作り、request
+      selectorで代用しない。
+    </li>
+    <li>
+      v1 wire identityとSecurity Intelligence v1
+      identityの対応を次で固定し、文字列の見た目による推測を実装ごとに重複させない。
+    </li>
+  </ul>
+  <table>
+    <caption>
+      5.1 Provider Scan Binding v2
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Semantic identity</th>
+        <th scope="col">Security Scan v1</th>
+        <th scope="col">Security Intelligence v1</th>
+        <th scope="col">Comparison rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>project</td>
+        <td>raw provider UUID/ref</td>
+        <td><code>project:&lt;raw-ref&gt;</code></td>
+        <td><code>identityMappingVersion: 1</code>のadapterでprefixを1回だけ付与・除去する</td>
+      </tr>
+      <tr>
+        <td>scan run</td>
+        <td>raw provider UUID/ref</td>
+        <td><code>scan-run:&lt;raw-ref&gt;</code></td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td>target digest</td>
+        <td>64桁lowercase hex</td>
+        <td><code>sha256:&lt;hex&gt;</code></td>
+        <td>algorithm prefixを検証後、hex部分をconstant-time相当の比較へ渡す</td>
+      </tr>
+      <tr>
+        <td>working-tree base</td>
+        <td>start <code>sourceRevision</code></td>
+        <td>binding proof <code>target.baseRevision</code></td>
+        <td><code>sourceRevisionRole = base_revision</code>として比較する</td>
+      </tr>
+      <tr>
+        <td>assessed revision</td>
+        <td>startでは取得不能</td>
+        <td>
+          binding proof <code>target.assessedRevision</code> + assessment
+          <code>target.sourceRevision</code>
+        </td>
+        <td>proofとassessmentを比較し、receiptに別fieldで保存する</td>
+      </tr>
+      <tr>
+        <td>full snapshot revision</td>
+        <td>start <code>sourceRevision</code></td>
+        <td>capabilityが対応をadvertiseしたassessment field</td>
+        <td>対応fieldがcontract fixtureで確定するまでassessment対象外</td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>
+      <code>working_tree</code
+      >ではstartの<code>sourceRevision</code>をassessmentの<code>target.sourceRevision</code>へ直接比較しない。前者は<code>baseSha</code>、後者は<code>headSha</code>または<code>working-tree/&lt;digest&gt;</code>である。
+    </li>
+    <li>
+      producer project refはcapabilitiesとpreview/startの間で変化し得る。またworking-tree start
+      responseはbase revision、assessmentはassessed
+      revisionしか公開しない。この差を推測で埋めず、Security Intelligence route rootへread-only
+      binding proof endpointを追加し、producerが保持するscan bindingからraw / canonical
+      project・scan ref、base / assessed revision、raw / canonical digestを返す。
+    </li>
+    <li>
+      NightWorkersはstart response、binding proof、assessment
+      bundleの三者を検証する。mismatch時はreceiptもTask/Run associationも作らない。将来scan start
+      responseへproject refを追加する場合は既存strict v1へfieldを足さず、新versionで行う。
+    </li>
+    <li>
+      binding proofのsemantic canonical
+      payloadは<code>proofRef</code>と<code>proofDigest</code>を除外し、<code
+        >proofRef = sibp:v1:&lt;proof digest hex&gt;</code
+      >とする。同じscan refへ異なるproof digestを返した場合はintegrity conflictとする。
+    </li>
+    <li>
+      start前previewのdigestとstart
+      responseのdigestが一致しない場合はbindingを作らず、scanをTaskへ関連付けない。
+    </li>
+    <li><code>bindingDigest</code>はversionを含むcanonical payloadから決定的に算出する。</li>
+    <li>
+      binding作成後に同じ<code>scanRunRef</code>へ異なるdigestを登録した場合はconflictとする。
+    </li>
+    <li>
+      既存settings内bindingから不足fieldを推測してbackfillしない。<code>legacy_unverifiable</code>として履歴表示だけを許可し、assessment
+      consumerの入力には使わない。
+    </li>
+  </ul>
+  <h3 id="section-52-assessment-receipt-v1">5.2 Assessment Receipt v1</h3>
+  <p>NightWorkersがproducer payloadを再解釈せず、受領時のbindingと状態を保存する。</p>
+  <pre><code class="language-ts">type SecurityAssessmentReceiptV1 = {
+  version: 1;
+  receiptRef: string;
+  repositoryId: string;
+  scanBindingRef: string;
+  providerBindingProofRef: string;
+  providerBindingProofDigest: `sha256:${string}`;
+  providerProjectRef: string;
+  scanRunRef: string;
+  canonicalProjectRef: `project:${string}`;
+  canonicalScanRunRef: `scan-run:${string}`;
+  normalizedTarget: {
+    kind: &quot;diff&quot; | &quot;snapshot&quot; | &quot;commit&quot;;
+    sourceRevision: string;
+    baseRevision?: string;
+    targetDigest: `sha256:${string}`;
+  };
+  producerContractVersion: 1;
+  bundleRef: string;
+  assessmentRefs: string[];
+  payloadDigest: `sha256:${string}`;
+  payload: NightworkersSecurityIntelligenceBundleV1;
+  receivedAt: string;
+};
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>producer fixtureをNightWorkers側のstrict Zod schemaでparseする。</li>
+    <li>bundle、各assessment、各evidence refのproject / scan / target bindingを再検証する。</li>
+    <li>
+      raw scan binding、producer binding
+      proof、bundleの比較は5.1の<code>identityMappingVersion</code>を通す。normalized targetをscan
+      v1 fieldへ直接文字列比較しない。
+    </li>
+    <li>
+      producer側strict schemaをruntime packageとして共有しない。wire fixture、JSON
+      Schema相当の契約、canonical hashをrepositoryごとに検証する。
+    </li>
+    <li>
+      同じ<code>bundleRef</code>、同じprovider binding proof digest、同じpayload
+      digestの再取得はreplayとして扱う。いずれかが異なる場合はintegrity conflictとする。
+    </li>
+    <li>
+      source本文、raw scanner artifact、absolute pathをNightWorkersへ複製しない。既存bundleのbounded
+      referenceだけを保存する。
+    </li>
+    <li>
+      <code>inconclusive</code
+      >、<code>unknown</code>、<code>unavailable</code>をsuccessへ正規化しない。
+    </li>
+  </ul>
+  <h3 id="section-53-post-workspace-target-grant-and-assessment-subject-binding-v1">
+    5.3 Post-workspace target grant and Assessment Subject Binding v1
+  </h3>
+  <p>
+    Assessment ReceiptとTask / Runの関連付けは別のimmutable rowとし、repository-level
+    receiptを暗黙にcurrent Runへ流用しない。
+  </p>
+  <pre><code class="language-ts">type CreateProviderWorkspaceTargetGrantRequestV1 = {
+  version: 1;
+  providerProjectRef: string;
+  workspaceSubjectRef: string;
+  workspacePath: string; // server-resolved absolute path; LLM / browser inputは禁止
+  expectedGitCommonDirDigest: `sha256:${string}`;
+  expectedHeadSha: string;
+};
+
+type ProviderWorkspaceTargetGrantV1 = {
+  version: 1;
+  grantRef: string;
+  providerProjectRef: string;
+  workspaceSubjectRef: string;
+  expectedGitCommonDirDigest: `sha256:${string}`;
+  expectedHeadSha: string;
+  providerWorkspaceStateDigest: `sha256:${string}`;
+  expiresAt: string;
+  grantDigest: `sha256:${string}`;
+};
+
+type SecurityAssessmentSubjectBindingV1 =
+  | {
+      version: 1;
+      bindingRef: string;
+      phase: &quot;pre_implementation&quot;;
+      assessmentReceiptRef: string;
+      taskId: string;
+      taskRevisionSnapshotId: string;
+      taskRevision: number;
+      taskDigest: string;
+      repositoryIdentityRevision: number;
+      repositoryBaseWorktreeId: string;
+      expectedBaseHeadSha: string;
+      bindingDigest: string;
+      createdAt: string;
+    }
+  | {
+      version: 1;
+      bindingRef: string;
+      phase: &quot;post_implementation&quot;;
+      assessmentReceiptRef: string;
+      taskId: string;
+      taskRevisionSnapshotId: string;
+      taskRevision: number;
+      taskDigest: string;
+      implementationRunId: string;
+      evidenceSubjectSnapshotId: string;
+      providerWorkspaceTargetGrantRef: string;
+      providerWorkspaceTargetGrantDigest: `sha256:${string}`;
+      providerWorkspaceStateDigest: `sha256:${string}`;
+      workspaceId: string;
+      workspaceAllocationVersion: number;
+      admittedHeadSha: string;
+      sourceStateHash: string;
+      diffDigest: string;
+      bindingDigest: string;
+      createdAt: string;
+    };
+
+type RequestPostSecurityAssessmentCommandV1 = {
+  version: 1;
+  runId: string;
+  expectedTaskRevisionSnapshotId: string;
+  expectedWorkspaceId: string;
+  expectedWorkspaceAllocationVersion: number;
+  selection: SecurityScanSelection;
+};
+
+type RequestPostSecurityAssessmentResultV1 =
+  | { status: &quot;completed&quot;; assessmentAttemptRef: string; assessmentSubjectBindingRef: string }
+  | { status: &quot;not_applicable&quot;; assessmentAttemptRef: string; reasonCode: string }
+  | { status: &quot;unavailable&quot;; assessmentAttemptRef: string; reasonCode: string; retryable: boolean };
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>
+      pre bindingはRun開始前のconstraint入力であり、Task Revision Snapshotとscanのbase / target
+      identityを照合する。
+    </li>
+    <li>
+      既存scan v1はcanonical pathごとにprovider Projectを解決するため、Task worktree
+      pathをそのまま渡して別Projectを作らない。vulnWorkbenchへSecurity
+      Intelligence専用のworkspace-target grant endpointを追加する。
+    </li>
+    <li>
+      grant作成requestだけはNightWorkers serverが解決したworkspace pathを既存authenticated
+      server-to-server transportで渡す。vulnWorkbenchはowner / allowed
+      root、symlink解決、登録Projectと同じGit common directory、expected
+      HEADを検証し、provider側でworkspace state digestをcaptureして短命opaque
+      <code>grantRef</code>を返す。pathをresponse、audit
+      detail、telemetry、receipt、promptへ保存しない。
+    </li>
+    <li>
+      post scan preview /
+      startはpathではなく<code>grantRef</code>を受け、grantのProject、expiry、single workspace
+      stateを再検証する。previewはgrantを消費せずtarget digestを固定し、startはexpected
+      digestとidempotency keyを検証してCAS consumeする。同じstart
+      replayは同じscanを返し、異なるrequestでの再consumeをrejectする。既存strict scan
+      v1へfieldを追加せず、Security Intelligence route rootの独立version contractとする。
+    </li>
+    <li>
+      post bindingは、serverがRunから解決した登録済みTask
+      workspaceと有効なgrantだけをscan対象にできる。commandは同じworkspace stateからcanonical
+      Evidence Subject Snapshotを作成または再利用し、LLMからabsolute pathを受け取らない。
+    </li>
+    <li>
+      post scanは既存workspace mutation / closeout
+      authorityのlease内で実行し、scan開始前後でworkspace allocation、admitted HEAD、source
+      stateが変化していないことを確認する。drift時はreceiptをcurrent Runへbindingせず、canonical
+      <code>evidence_subject_snapshots</code> rowへFKしない。
+    </li>
+    <li>
+      pre receiptをpost evidenceとして、または別Runのpost receiptをcurrent
+      evidenceとして使用しない。
+    </li>
+    <li>
+      pre / postで異なるdigest algorithmを使用する場合、文字列一致を装わず、versioned correlation
+      fixtureで「どのfieldを比較するか」を固定する。
+    </li>
+    <li>
+      post assessmentはUser、Mission Pilot、Coding Agentが同じagent-neutral application
+      commandで明示要求する。pre receiptの存在からhostが自動挿入せず、別runtime modeや固定Security
+      workflowを作らない。
+    </li>
+    <li>
+      post commandのrequest digestはRun、Task Revision Snapshot、workspace ID / allocation、Evidence
+      Subject digest、selectionから算出する。同じdigestのretryは同じattempt / scan /
+      receiptへ収束し、異なるworkspace stateを同じattemptとして再利用しない。
+    </li>
+    <li>
+      明示要求後に対象変更がない場合はcommandがtyped <code>not_applicable</code>を、transport /
+      capability不足では<code>unavailable</code>を返し、同じruntime
+      laneのcontextへ戻す。hostがsuccessへ正規化しない。
+    </li>
+  </ul>
+  <h3 id="section-54-security-contract-v1">5.4 Security Contract v1</h3>
+  <p>
+    Security ContractはNightWorkersが所有するTask-scoped projectionであり、vulnWorkbench
+    assessmentやcontextStill Knowledgeの正本を複製しない。
+  </p>
+  <pre><code class="language-ts">type SecurityContractV1 = {
+  version: 1;
+  contractRef: string;
+  contractRevision: number;
+  taskId: string;
+  taskRevisionSnapshotId: string;
+  taskRevision: number;
+  taskDigest: string;
+  repositoryId: string;
+  projectRef: `project:${string}`;
+  sourceState: {
+    phase: &quot;pre_implementation&quot;;
+    assessmentSubjectBindingRef: string;
+    revisionRole: &quot;assessed_revision&quot;;
+    revision: string;
+    targetDigest: `sha256:${string}`;
+  };
+  affectedAssets: Array&lt;{ kind: string; ref: string }&gt;;
+  declaredInvariantRefs: string[];
+  knowledgeRefs: string[];
+  assessmentSubjectBindingRefs: string[];
+  requiredBaselineVerificationRefs: string[];
+  targetedVerificationCandidateRefs: string[];
+  nonGoals: string[];
+  approvedBounds: {
+    policyRefs: string[];
+    budgetRefs: string[];
+  };
+  unknowns: Array&lt;{ source: string; reasonCode: string }&gt;;
+  supersedesContractRef?: string;
+  contractDigest: string;
+  createdAt: string;
+  authorPrincipalRef: string;
+};
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>
+      rowはimmutableとし、更新は新<code>contractRevision</code> +
+      <code>supersedesContractRef</code>で行う。
+    </li>
+    <li>
+      <code>version</code>はwire/schema version、<code>contractRevision</code>はTask revision
+      snapshot内の単調増加revisionであり、混同しない。
+    </li>
+    <li>
+      update
+      commandは<code>expectedCurrentContractRef</code>と<code>expectedHeadRevision</code>を必須とする。repositoryは新row
+      insertと<code>security_contract_heads</code>更新を同一transactionで行い、head不一致はtyped
+      conflictとして自動mergeしない。
+    </li>
+    <li>
+      初回createは<code>expectedCurrentContractRef = null</code>、<code
+        >expectedHeadRevision = 0</code
+      >だけを許可する。既存headがあるTask Revision
+      Snapshotへcreateを再実行した場合はupdateへ暗黙変換しない。
+    </li>
+    <li>
+      <code>security_contract_heads.task_revision_snapshot_id</code
+      >をuniqueにし、同じ親Contractから複数のcurrent
+      successorを作らない。競合後の本文mergeと再提案はLLMまたはUserへ戻す。
+    </li>
+    <li>
+      Taskの整数revisionだけで関連付けず、既存immutable
+      <code>task_revision_snapshots</code> rowとdigestへFKする。
+    </li>
+    <li>
+      <code>authorPrincipalRef</code>はaudit用であり、User、Mission Pilot、Coding
+      Agentを理由に権限、runtime、tool、completion処理を分岐しない。
+    </li>
+    <li>
+      User UI、Mission Pilot host adapter、Coding Agent direct Run adapterは同じagent-neutral
+      application commandを呼ぶ。
+    </li>
+    <li>
+      Mission Pilot
+      adapterは<code>api/composition/mission-pilot</code>または<code>src/composition/mission-pilot</code>に置き、<code>packages/mission-pilot</code>からNightWorkers
+      private sourceをimportしない。
+    </li>
+    <li>
+      Coding Agentの全Runで同じbounded Security Contract snapshotを使用する。handoff
+      provenanceによるtool allowlistやprompt modeは追加しない。
+    </li>
+    <li>ContractにTask-level activation enumを持たせない。</li>
+  </ul>
+  <h3 id="section-55-explicit-completion-condition-reference">
+    5.5 Explicit completion condition reference
+  </h3>
+  <p>
+    Security Contractをcompletionへ反映する条件は、Contract自身の状態ではなく、採用済みcompletion
+    conditionからの明示参照として保存する。
+  </p>
+  <pre><code class="language-ts">type AdoptedCompletionCondition = {
+  conditionRef: string;
+  taskId: string;
+  taskRevisionSnapshotId: string;
+  taskRevision: number;
+  taskDigest: string;
+  conditionRevision: number;
+  conditionKey: string;
+  state: &quot;adopted&quot; | &quot;revoked&quot;;
+  source:
+    | {
+        kind: &quot;feature_plan&quot;;
+        artifactRef: string;
+        artifactDigest: string;
+      }
+    | {
+        kind: &quot;project_policy&quot;;
+        policyRef: string;
+        policyRevision: number;
+        artifactDigest: string;
+      }
+    | {
+        kind: &quot;direct_user_instruction&quot;;
+        messageRef: string;
+        artifactDigest: string;
+      }
+    | {
+        kind: &quot;coding_agent_todo&quot;;
+        runId: string;
+        todoKey: string;
+        todoRevision: number;
+        todoPlanRevision: number;
+        artifactDigest: string;
+      };
+  subjectRef: string; // Security Contract refを参照できる
+  supersedesConditionRef?: string;
+  conditionDigest: `sha256:${string}`;
+  recordedAt: string;
+  authorPrincipalRef: string;
+};
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>
+      Feature Plan / policy / direct Run
+      planを生成または採用するrole側LLM・User操作が、構造化commandで参照を登録する。
+    </li>
+    <li>User操作とMission Pilot操作は同じcommand、同じauthorization、同じrevision checkを使う。</li>
+    <li>
+      Coding Agent単体Runでは、Userの明示指示またはCoding Agentが明示更新したTodo /
+      planをsourceにできる。hostの観測から暗黙追加しない。
+    </li>
+    <li>
+      source artifactまたはTodoが更新されても既存conditionを暗黙更新しない。新digest /
+      revisionを参照する新conditionをCAS付きcommandで採用し、旧conditionを<code>supersedesConditionRef</code>で置き換える。
+    </li>
+    <li>
+      <code>task_completion_condition_heads</code>は<code
+        >taskRevisionSnapshotId + conditionKey</code
+      >をuniqueにし、update commandはexpected condition ref / head revisionを検証する。同じcondition
+      keyのcurrent successorを分岐させない。
+    </li>
+    <li>
+      condition初回createもexpected ref <code>null</code> / head revision
+      <code>0</code>を要求し、既存headがある場合は暗黙updateしない。
+    </li>
+    <li>
+      conditionを外す場合もrow削除やhost観測による暗黙削除を行わず、<code>state = revoked</code
+      >の新revisionを明示commandで作る。final judgmentのexpected setにはcurrent
+      headが<code>adopted</code>のconditionだけを含める。
+    </li>
+    <li>
+      Run closeoutはcurrent condition
+      setをRun開始時snapshotおよび明示的なRun中更新から再構成し、別RunのTodo、旧Todo
+      revision、旧Task Revision Snapshot由来のconditionを拒否する。
+    </li>
+    <li>
+      conditionがなければSecurity Contractはcontextとして利用できるが、完了条件へは追加しない。
+    </li>
+    <li>
+      conditionがあればrole側LLMのfinal judgmentはconditionRefごとの結果とevidence refsを返す。
+    </li>
+    <li>
+      hostはconditionの存在を理由にassessment outcomeを独自計算しない。condition resultの欠落、wrong
+      revision、foreign evidenceだけを構造的に拒否する。
+    </li>
+    <li>
+      現行<code>securityFinalizationBlocked</code>をproducer
+      statusへ直結しない。意味判断の固定boolean化は行わない。
+    </li>
+  </ul>
+  <h3 id="section-56-security-final-judgment-v1">5.6 Security Final Judgment v1</h3>
+  <p>
+    両Coding Agent runtime laneは同じstructured
+    resultを返し、hostは最終本文からcondition結果を抽出しない。
+  </p>
+  <pre><code class="language-ts">type SecurityFinalJudgmentV1 = {
+  version: 1;
+  runId: string;
+  taskRevisionSnapshotId: string;
+  securityContractRef: string;
+  securityContractDigest: string;
+  assessmentAttemptRefs: string[];
+  assessmentSubjectBindingRefs: string[];
+  conditionEvaluations: Array&lt;{
+    conditionRef: string;
+    result: &quot;satisfied&quot; | &quot;not_satisfied&quot; | &quot;needs_human&quot; | &quot;blocked&quot; | &quot;not_applicable&quot; | &quot;unavailable&quot;;
+    evidenceRefs: string[];
+    limitationCodes: string[];
+    rationale: string;
+  }&gt;;
+  residualRisk: {
+    level: &quot;low&quot; | &quot;medium&quot; | &quot;high&quot; | &quot;unknown&quot;;
+    rationale: string;
+  };
+  judgmentDigest: string;
+  createdAt: string;
+};
+
+type SubmitSecurityFinalJudgmentCommandV1 = {
+  version: 1;
+  runId: string;
+  expectedRunStatus: &quot;running&quot; | &quot;finalizing&quot; | &quot;verifying&quot;;
+  expectedTaskRevisionSnapshotId: string;
+  expectedSecurityContractRef: string;
+  expectedConditionRefs: string[];
+  judgment: SecurityFinalJudgmentV1;
+};
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>
+      <code>RuntimeLaneResult</code>へoptional <code>securityFinalJudgment</code>を追加し、native
+      API laneとCodex laneで同じstrict schemaを使用する。adopted
+      conditionが1件以上ある場合だけrequiredとする。
+    </li>
+    <li>
+      runtimeはcondition evaluationをtool / structured resultとして返す。final
+      report本文のparse、keyword分類、host側の合否再計算を行わない。
+    </li>
+    <li>
+      post assessment commandは両laneで同じtool contractを持ち、Run IDとexpected workspace
+      allocationだけを受け取る。serverがauthoritative pathとEvidence Subjectを解決し、receipt /
+      typed unavailableをtool resultとして同じlaneへ返してからrole側LLMがjudgmentを提出する。
+    </li>
+    <li>
+      application serviceはRun、Task Revision Snapshot、current Contract head、expected condition
+      set、assessment attempt / subject binding、evidence subject bindingを再検証する。
+    </li>
+    <li>
+      final judgment保存と<code>run.final_judgment_created</code> event appendをterminal status
+      publishより先に同一closeout transactionで完了する。CAS conflictまたはinvalid
+      resultではterminal化せず、同じruntime laneへtyped continuationを返す。
+    </li>
+    <li>conditionなしのRunではfieldを省略でき、Security固有のevaluationやgateを追加しない。</li>
+    <li>
+      rationaleはbounded safe text、evidence refは既存receipt / Evidence Ledger / verification
+      documentから解決できるopaque refだけを許可する。
+    </li>
+  </ul>
+  <h3 id="section-57-security-knowledge-candidate-batch-v1">
+    5.7 Security Knowledge Candidate Batch v1
+  </h3>
+  <p>NightWorkersのoutboxとcontextStill ingressで共有するwire contractとする。</p>
+  <pre><code class="language-ts">type SecurityKnowledgeCandidateBatchV1 = {
+  contractVersion: 1;
+  batchRef: string;
+  idempotencyKey: string;
+  batchPayloadDigest: `sha256:${string}`;
+  producer: { system: &quot;nightworkers&quot;; version: string };
+  correlation: { taskRef: string; runRef: string };
+  items: Array&lt;{
+    candidateRef: string;
+    fingerprint: string;
+    payloadDigest: `sha256:${string}`;
+    type: &quot;rule&quot; | &quot;procedure&quot;;
+    polarity: &quot;positive&quot; | &quot;negative&quot;;
+    title: string;
+    body: string;
+    applicability: {
+      domains: string[];
+      technologies: string[];
+      changeTypes: string[];
+    };
+    evidenceRefs: Array&lt;{
+      assessmentRef: string;
+      evidenceRef: string;
+      evidenceDigest: string;
+      sourceProjectRef: string;
+      sourceRevision: string;
+      targetDigest: string;
+    }&gt;;
+    confidence: number;
+    limitations: string[];
+  }&gt;;
+};
+</code></pre>
+  <p>Initial limits:</p>
+  <ul>
+    <li>1 batchあたり1から10 candidate。</li>
+    <li>
+      UTF-8 byteでtitle 512 bytes、body 16 KiB、limitations合計8 KiB、1 item 32 KiB、batch全体256
+      KiBを上限とする。<code>evidenceRefs</code>は1 itemあたり1から20件とする。
+    </li>
+    <li><code>evidenceRefs</code>を最低1件要求する。LLM explanationだけのcandidateは拒否する。</li>
+    <li>
+      bodyからproject固有identifierを除く。ただしsource project / revisionはprovenance
+      metadataとして保持する。
+    </li>
+    <li>
+      absolute path、credential pattern、control
+      characterを拒否する。redactionで意味が変わる場合は自動修復せずitem rejectとする。
+    </li>
+    <li>
+      item <code>payloadDigest</code>は当該itemから<code>payloadDigest</code>を除いたstrict
+      canonical JSONのSHA-256とする。
+    </li>
+    <li>
+      <code>fingerprint</code>はversion
+      prefix付きとし、<code>type</code>、<code>polarity</code>、generalized
+      <code>title / body</code>、canonical applicabilityから算出する。evidence、project / run
+      correlation、confidenceはfingerprintへ含めず、duplicate itemでは既存candidate
+      refへ新しいprovenanceをappendする。
+    </li>
+    <li>
+      <code>batchPayloadDigest</code
+      >は<code>idempotencyKey</code>、<code>batchRef</code>、<code>batchPayloadDigest</code>を除くsemantic
+      batch payloadのstrict canonical JSONから算出する。<code>batchRef</code>は<code
+        >skcb:v1:&lt;batch digest hex&gt;</code
+      >とし、同じsemantic payloadから決定的に再計算できるようにする。
+    </li>
+    <li>
+      idempotency keyのscopeはauthenticated producer principal + endpoint + contract
+      versionとする。同じscopeの<code>idempotencyKey + batchPayloadDigest</code>
+      replayは保存済みreceipt refとitem resultをそのまま返す。同じkeyで異なるbatch digestは409
+      conflictとし、item mutationを行わない。
+    </li>
+    <li>
+      同じsemantic batchを別idempotency keyで送った場合は新request receiptを作れるが、item
+      fingerprint / payload digestによって各itemを<code>duplicate</code>とし、candidate
+      pipelineを再enqueueしない。
+    </li>
+    <li>
+      batch
+      successはcandidateのtransactional受領を意味し、Knowledgeの<code>active</code>化を意味しない。
+    </li>
+    <li>
+      contextStill内部では、receiptの<code>accepted</code>を既存<code
+        >distillation_target_states.status = pending</code
+      >、<code>find_candidate_results.status = selected</code>、対応queue
+      rowへ写像する。この境界をquarantine相当とし、新しいKnowledge statusは増やさない。
+    </li>
+  </ul>
+  <p>Transaction semantics:</p>
+  <ul>
+    <li>
+      auth、top-level schema、contract version、batch byte limit、batch digest
+      mismatchはrequest全体をrejectし、receiptもitem rowも作らない。
+    </li>
+    <li>
+      top-level
+      validation後は各itemを独立に検証し、<code>accepted</code>、<code>duplicate</code>、<code>rejected</code>を同じreceiptへ記録する。1
+      itemのvalidation rejectで他のvalid itemをrollbackしない。
+    </li>
+    <li>
+      receipt、全item result、accepted itemのcandidate pipeline enqueueは1 DB transactionとする。DB
+      failure時は全体をrollbackし、retry可能なreceiptを捏造しない。
+    </li>
+    <li>accepted item 0件でも検証済みreceiptを保存し、同じkeyのreplayへ同じ結果を返す。</li>
+    <li>
+      payload duplicate判定はitem fingerprint / payload digestのversioned規則で行い、idempotency key
+      replayと同じ概念にしない。
+    </li>
+    <li>
+      NightWorkers producerとcontextStill ingressの双方がfingerprint、item digest、batch digest /
+      refを再計算し、caller値と一致しないrequestをmutation前にrejectする。
+    </li>
+    <li>
+      初回valid batchはpartial / all-rejectedを含めHTTP 201とreceipt、idempotent replayはHTTP
+      200、same-key different-digestはHTTP 409と<code>idempotency_conflict</code>を返す。authは401 /
+      403、top-level schemaは400、oversizeは413、feature / token未設定は503
+      <code>integration_unavailable</code>とし、item validation errorをHTTP errorへ昇格させない。
+    </li>
+  </ul>
+  <p>Response:</p>
+  <pre><code class="language-ts">type SecurityKnowledgeCandidateBatchReceiptV1 = {
+  contractVersion: 1;
+  batchRef: string;
+  receiptRef: string;
+  items: Array&lt;{
+    candidateRef: string;
+    status: &quot;accepted&quot; | &quot;duplicate&quot; | &quot;rejected&quot;;
+    targetStateRef?: string;
+    reasonCode?: string;
+  }&gt;;
+};
+
+type SecurityKnowledgeCandidateBatchResponseV1 = {
+  replayed: boolean;
+  receipt: SecurityKnowledgeCandidateBatchReceiptV1;
+};
+</code></pre>
+  <h3 id="section-58-security-knowledge-feedback-batch-v1">
+    5.8 Security Knowledge Feedback Batch v1
+  </h3>
+  <p>
+    Stage 3 feedbackはcandidate ingressと別contract / outboxにし、自由形式telemetryやLLM
+    self-verdictをground truthとして送らない。
+  </p>
+  <pre><code class="language-ts">type SecurityKnowledgeFeedbackBatchV1 = {
+  contractVersion: 1;
+  batchRef: string;
+  idempotencyKey: string;
+  batchPayloadDigest: `sha256:${string}`;
+  producer: { system: &quot;nightworkers&quot;; version: string };
+  events: Array&lt;{
+    eventRef: string;
+    eventType:
+      | &quot;retrieved&quot;
+      | &quot;selected&quot;
+      | &quot;actually_used&quot;
+      | &quot;verification_outcome&quot;
+      | &quot;user_override&quot;
+      | &quot;false_warning&quot;
+      | &quot;harm_signal&quot;;
+    occurredAt: string;
+    correlation: {
+      taskRef: string;
+      runRef: string;
+      compileRunRef?: string;
+      verificationRef?: string;
+    };
+    knowledgeRef: string;
+    knowledgeRevision: number;
+    outcome?: &quot;supported&quot; | &quot;contradicted&quot; | &quot;inconclusive&quot; | &quot;not_applicable&quot;;
+    evidenceRefs: string[];
+    reasonCode?: string;
+  }&gt;;
+};
+
+type SecurityKnowledgeFeedbackBatchReceiptV1 = {
+  contractVersion: 1;
+  batchRef: string;
+  receiptRef: string;
+  acceptedEventRefs: string[];
+  duplicateEventRefs: string[];
+  rejectedEvents: Array&lt;{ eventRef: string; reasonCode: string }&gt;;
+};
+
+type SecurityKnowledgeFeedbackBatchResponseV1 = {
+  replayed: boolean;
+  receipt: SecurityKnowledgeFeedbackBatchReceiptV1;
+};
+</code></pre>
+  <p>Rules:</p>
+  <ul>
+    <li>
+      1 batchは1から100 event、batch全体は128 KiB以下とする。source本文、prompt本文、absolute
+      path、credential、unbounded rationaleを含めない。
+    </li>
+    <li>
+      <code>retrieved</code
+      >、<code>selected</code>、<code>actually_used</code>を別eventにし、retrievalだけで利用済みと扱わない。
+    </li>
+    <li>
+      <code>verification_outcome</code
+      >、<code>false_warning</code>、<code>harm_signal</code>は独立evidenceまたはUser操作refを要求する。LLM
+      self-verdictだけのeventは<code>rejected</code>とする。
+    </li>
+    <li>
+      batch digest、replay、partial item transaction semanticsは5.7と同じcanonical
+      helperを再利用する。
+    </li>
+    <li>
+      <code>eventRef</code>はcontract version、event type、correlation、knowledge ref /
+      revision、outcome、evidence refsから決定的に算出し、別idempotency
+      keyで同じeventを再送してもappend-only event rowを重複させない。
+    </li>
+    <li>
+      NightWorkers producerとcontextStill ingressの双方がevent ref、batch digest /
+      refを再計算し、不一致をmutation前にrejectする。
+    </li>
+    <li>
+      contextStillはfeedbackをKnowledge本文やstatusへ直接反映せず、append-only
+      observationとして保存する。promotion / demotion policyは別計画とする。
+    </li>
+    <li>HTTP status / error envelopeは5.7と同じ規則を使用する。</li>
+  </ul>
+  <h3 id="section-59-canonicalization-and-shared-bounds">5.9 Canonicalization and shared bounds</h3>
+  <ul>
+    <li>
+      canonical JSON v1は既存vulnWorkbench contractの意味に合わせ、NFC Unicode、finite number、plain
+      JSON object / dense arrayだけを許可し、object keyをlexicographic sort、array
+      orderを保持し、whitespaceなしUTF-8 JSONとしてSHA-256を計算する。
+    </li>
+    <li>
+      cross-product runtime packageは共有しない。各repositoryの独立実装へ、Unicode、key
+      order、array、number、excluded field、digest prefixを含む同じgolden vectorを通す。
+    </li>
+    <li>
+      schema上set semanticsを持つref / applicability / limitation arrayはuniqueかつlexicographic
+      orderを要求し、producer順をhostがsilent sortしてdigestを変えない。順序に意味があるevent /
+      evaluation arrayはschemaで明示した順を保持する。
+    </li>
+    <li>
+      digest fieldはすべて<code>sha256:&lt;64 lowercase hex&gt;</code
+      >、refへdigestを埋める場合はcontractごとの固定prefixを要求する。raw
+      hexとの境界は5.1だけに限定する。
+    </li>
+  </ul>
+  <table>
+    <caption>
+      5.9 Canonicalization and shared bounds
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Artifact</th>
+        <th scope="col">Digest inputから除外するfield</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Provider Scan Binding</td>
+        <td><code>bindingRef</code>、<code>bindingDigest</code>、<code>createdAt</code></td>
+      </tr>
+      <tr>
+        <td>Binding Proof</td>
+        <td><code>proofRef</code>、<code>proofDigest</code></td>
+      </tr>
+      <tr>
+        <td>Assessment Receipt payload</td>
+        <td>receipt metadata全体。strict producer <code>payload</code>だけをdigestする</td>
+      </tr>
+      <tr>
+        <td>Workspace Target Grant</td>
+        <td><code>grantRef</code>、<code>grantDigest</code>。<code>expiresAt</code>は含める</td>
+      </tr>
+      <tr>
+        <td>Assessment Subject Binding</td>
+        <td><code>bindingRef</code>、<code>bindingDigest</code>、<code>createdAt</code></td>
+      </tr>
+      <tr>
+        <td>Security Contract</td>
+        <td>
+          <code>contractRef</code>、<code>contractDigest</code>、<code>createdAt</code>、<code
+            >authorPrincipalRef</code
+          >
+        </td>
+      </tr>
+      <tr>
+        <td>Completion Condition</td>
+        <td>
+          <code>conditionRef</code>、<code>conditionDigest</code>、<code>recordedAt</code>、<code
+            >authorPrincipalRef</code
+          >
+        </td>
+      </tr>
+      <tr>
+        <td>Security Final Judgment</td>
+        <td><code>judgmentDigest</code>、<code>createdAt</code></td>
+      </tr>
+      <tr>
+        <td>Candidate / Feedback Batch</td>
+        <td>
+          5.7で定義した<code>idempotencyKey</code>、<code>batchRef</code>、<code
+            >batchPayloadDigest</code
+          >
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>
+      byte limitはHTTP bodyをJSON parse前に、field / canonical payload limitをstrict parse後かつDB
+      mutation前に検証する。UTF-16 code unit数をUTF-8 byte数の代用にしない。
+    </li>
+    <li>
+      Assessment Receipt payloadはproducer capabilityがadvertiseする上限か2 MiBの小さい方、Security
+      Contractは128 KiB、current completion conditionは1 Task Revision Snapshotあたり100件、Security
+      Final Judgmentは128 KiBを上限とする。
+    </li>
+    <li>
+      Security Contractの各ref配列は1,000件、<code>unknowns</code>は200件、final judgmentのcondition
+      evaluationはcurrent condition setとexactly同じ件数・ref集合を要求する。
+    </li>
+    <li>
+      limit変更は同じcontract versionのdeployment config差にせず、新capabilityまたは新contract
+      versionとfixture更新で行う。
+    </li>
+  </ul>
+  <h2 id="section-6-persistence-changes">6. Persistence changes</h2>
+  <h3 id="section-61-nightworkers">6.1 NightWorkers</h3>
+  <p>追加するlogical tables:</p>
+  <table>
+    <caption>
+      6.1 NightWorkers
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Table</th>
+        <th scope="col">Purpose</th>
+        <th scope="col">Key invariants</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>security_scan_bindings</code></td>
+        <td>Provider Scan Binding v2の正本</td>
+        <td>unique <code>scan_run_ref</code>、unique <code>binding_digest</code>、repository FK</td>
+      </tr>
+      <tr>
+        <td><code>security_assessment_receipts</code></td>
+        <td>strict producer bundleと受領binding</td>
+        <td>
+          unique <code>bundle_ref</code>、unique <code>payload_digest</code>、scan binding
+          FK、provider binding proof ref / digest
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_assessment_attempts</code></td>
+        <td>pre / post commandのdurable status</td>
+        <td>
+          request digest、phase、Task / Run subject、completed / not_applicable /
+          unavailable、reason / retryability
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_assessment_subject_bindings</code></td>
+        <td>receiptのpre / post Task・Run関連付け</td>
+        <td>
+          receipt FK、task revision snapshot FK、postはRun / Evidence Subject / workspace FK、unique
+          binding digest
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_contracts</code></td>
+        <td>immutable Task-scoped Contract revision</td>
+        <td>
+          unique <code>contract_ref</code> / <code>contract_digest</code>、task revision snapshot
+          FK、unique non-null supersedes ref
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_contract_heads</code></td>
+        <td>Contract update CAS</td>
+        <td>unique task revision snapshot、current contract ref、monotonic head revision</td>
+      </tr>
+      <tr>
+        <td><code>task_completion_conditions</code></td>
+        <td>採用済みcompletion conditionの構造的参照</td>
+        <td>task revision snapshot、source別revision、subject ref、supersedes chain</td>
+      </tr>
+      <tr>
+        <td><code>task_completion_condition_heads</code></td>
+        <td>condition update CASとcurrent set</td>
+        <td>
+          unique task revision snapshot + condition key、current condition ref、monotonic head
+          revision
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_knowledge_candidate_outbox</code></td>
+        <td>contextStill candidate batch delivery</td>
+        <td>
+          unique producer principal + endpoint + contract version + idempotency key、batch payload
+          digest、attempt、next attempt、last error
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_knowledge_candidate_receipts</code></td>
+        <td>batch/item acknowledgement</td>
+        <td>outbox FK、receipt ref、per-item status</td>
+      </tr>
+      <tr>
+        <td><code>security_knowledge_feedback_outbox</code></td>
+        <td>contextStill feedback batch delivery</td>
+        <td>
+          candidate outboxとは別scopeのunique producer principal + endpoint + contract version +
+          idempotency key、batch digest、bounded retry
+        </td>
+      </tr>
+      <tr>
+        <td><code>security_knowledge_feedback_receipts</code></td>
+        <td>feedback batch acknowledgement</td>
+        <td>outbox FK、receipt ref、per-event status</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Implementation placement:</p>
+  <ul>
+    <li>schema: <code>api/db/security-intelligence-schema.ts</code></li>
+    <li>bootstrap: <code>api/db/security-intelligence-schema-bootstrap.ts</code></li>
+    <li>export / startup registration: <code>api/db/schema.ts</code>、既存bootstrap composition</li>
+    <li>migration: 実装開始時点のlatest migration番号を再確認し、Drizzle migrationを生成する</li>
+    <li>
+      domain schema / application command / query / repository:
+      <code>shared/schemas/security-intelligence*.ts</code>、<code
+        >api/modules/securityIntelligence/</code
+      >
+    </li>
+    <li>
+      existing scan start connection:
+      <code>api/modules/securityScan/security-scan.routes.ts</code>とprovider client。post
+      phaseではRunからserver-sideでTask workspaceを解決するapplication commandを追加し、request
+      pathを受け取らない。
+    </li>
+    <li>
+      Run snapshot connection:
+      <code>api/modules/nightworkers/run-orchestration/start-task-run-*.ts</code>と既存<code
+        >evidence_subject_snapshots</code
+      >
+    </li>
+    <li>
+      final judgment connection:
+      <code>api/modules/codingAgent/runtime/shared/contracts.ts</code>、native /
+      Codex各laneのstructured result
+      adapter、<code>api/modules/nightworkers/run-orchestration/runtime-execution.ts</code>のterminal
+      publish前closeout
+    </li>
+    <li>
+      Mission Pilot connection:
+      <code>api/composition/mission-pilot</code
+      >または<code>src/composition/mission-pilot</code>のhost port implementation
+    </li>
+    <li>
+      Coding Agent connection: <code>api/modules/codingAgent</code>の既存runtime context / final
+      judgment adapter。全Coding Agent Runで同じcontractを使う。
+    </li>
+  </ul>
+  <p>Migration policy:</p>
+  <ul>
+    <li>existing settings bindingを削除しない。</li>
+    <li>
+      不足するprojectRef / sourceRevision / targetDigestをrepository
+      pathや現在HEADから推測して埋めない。
+    </li>
+    <li>migration後に作られたscanだけをv2 eligibleとする。</li>
+    <li>
+      history queryはv2 rowを優先し、legacy rowは<code>legacy_unverifiable</code>表示に限定する。
+    </li>
+    <li>migration failure時に既存Security Scan v1が使用不能にならない順序で導入する。</li>
+    <li>
+      migration番号はこの計画へ固定しない。他作業のmigrationと衝突しない番号を実装開始時に採る。
+    </li>
+  </ul>
+  <h3 id="section-62-contextstill">6.2 contextStill</h3>
+  <p>既存candidate pipelineを正本として再利用する。</p>
+  <ul>
+    <li>
+      PostgreSQL:
+      <code>src/modules/registerCandidate/register-candidate.service.ts</code
+      >の現行pipelineを基準にする。
+    </li>
+    <li>
+      TypeScript SQLite: direct
+      <code>upsertKnowledgeFromSource(status: &quot;active&quot;)</code
+      >を削除し、SQLiteの<code>distillation_target_states</code>、<code>find_candidate_results</code>、<code>finding_candidate_queue</code>へtransactionalにenqueueする。
+    </li>
+    <li>
+      Rust native SQLite:
+      <code>crates/context-stilld/src/domains/mcp_lifecycle/native_knowledge.rs</code>のdirect
+      <code>knowledge_items(status = &#39;active&#39;)</code> insertを削除し、同じlogical candidate
+      rowsとqueue eventをtransactionalに作る。
+    </li>
+    <li>
+      finalize: 現行<code>src/modules/finalizeDistille/domain.ts</code>の<code
+        >status: &quot;draft&quot;</code
+      >を維持する。
+    </li>
+    <li>
+      candidate ingress receipt / idempotency tableとfeedback ingress receipt / append-only event
+      tableは、PostgreSQL schema、TypeScript SQLite core schema、Rust SQLite writer
+      schemaのすべてへ追加する。
+    </li>
+    <li>
+      logical nameは<code>security_candidate_batch_receipts</code> /
+      <code>security_candidate_batch_items</code>、<code>security_feedback_batch_receipts</code> /
+      <code>security_feedback_events</code>とし、3 backendで同じkey、status、reason
+      codeを持つ。物理命名差が必要な場合もfixture projectionは同一にする。
+    </li>
+  </ul>
+  <p>既存のdirect-active data:</p>
+  <ul>
+    <li>
+      <code>metadata.sqliteDirectRegistration</code
+      >または<code>metadata.rustDirectRegistration</code>で識別できる既存rowを自動demoteしない。
+    </li>
+    <li>read-only audit commandで件数、source、statusを確認可能にする。</li>
+    <li>
+      Security Intelligence pilotでは、独立validationを受けていない既存direct-active rowをcandidate
+      promotion成功例へ数えない。
+    </li>
+    <li>
+      data correctionが必要と判断された場合は、この実装とは別の承認済みmigration planに分ける。
+    </li>
+  </ul>
+  <h3 id="section-63-vulnworkbench-post-workspace-grant">6.3 vulnWorkbench post-workspace grant</h3>
+  <ul>
+    <li>
+      <code>nightworkers_workspace_target_grants</code>をSecurity Intelligence integration
+      moduleが所有し、integration client、provider project、workspace subject ref、canonical
+      workspace path、Git common directory digest、expected HEAD、provider-captured workspace state
+      digest、expiry、consumed stateを保存する。
+    </li>
+    <li>
+      canonical workspace pathはscan実行に必要なprovider-side短命secretとして扱い、response、audit
+      detail、telemetry、assessment、reportへ出さない。expiryまたはterminal
+      scanへのbinding後にcleanup対象とし、cleanup失敗をscan結果へ影響させない。
+    </li>
+    <li>
+      grant createとconsumeはrevision / state CASを使う。期限切れ、別client、別Project、別Git common
+      directory、workspace drift、異なるrequestでの二重consumeをrejectし、同じidempotency
+      replayは同じscanへ収束させる。
+    </li>
+    <li>
+      migration / bootstrap failure時はworkspace grant featureだけをOFFにし、既存Security Scan
+      v1と既存assessment endpointを維持する。
+    </li>
+  </ul>
+  <h2 id="section-7-integration-transport-and-security">7. Integration transport and security</h2>
+  <h3 id="section-71-vulnworkbench---nightworkers">7.1 vulnWorkbench -&gt; NightWorkers</h3>
+  <ul>
+    <li>
+      既存HTTPS / loopback HTTP integration transport、service token、scope、resource
+      bindingを再利用する。
+    </li>
+    <li>
+      assessment / binding proof endpointは既存のdefault OFF、project allowlist、response byte
+      limit、owner / scan bindingを維持する。
+    </li>
+    <li>
+      Security Intelligence専用capabilities endpointを同じversion rootへ追加し、contract
+      version、assessment kinds、payload上限、feature availabilityを返す。
+    </li>
+    <li>
+      capabilitiesは<code>http_service</code>、<code>local_cli</code>など対応transportを明示する。Tranche
+      Aでは既存HTTP(S) integration routeをassessment取得の対象とし、NightWorkersの<code
+        >local_cli</code
+      >
+      scanはSecurity Intelligence assessment <code>unavailable</code>とする。通常のlocal CLI
+      scanは維持し、receiptやconditionを暗黙生成しない。
+    </li>
+    <li>
+      local CLI assessment対応を追加する場合は、local scan recordとvulnWorkbench persisted
+      scanのidentity差を解決する独立version contract / work
+      packageを必要とし、本計画では推測adapterを作らない。
+    </li>
+    <li>
+      project identityは既存Security Scan
+      capabilitiesの<code>project.ref</code>を正本とし、NightWorkersがpathからopaque
+      refを生成しない。
+    </li>
+    <li>
+      post workspace targetは5.3の短命grantを使用する。grant create / preview /
+      startは既存integration clientのowner、allowed root、rate limitへ加えてsame Git common
+      directory、expected HEAD、provider-captured workspace state、expiryをserver側で検証する。
+    </li>
+    <li>
+      capabilities、binding proof、assessmentは既存scan read scope、grant create / grant-based
+      startはscan write scopeを要求する。grantRefをbearer credentialとして扱わず、すべてintegration
+      token認証とresource authorizationを再実行する。
+    </li>
+    <li>
+      assessment fetchはserver-side adapterだけが行い、LLM-visible arbitrary URL toolを追加しない。
+    </li>
+  </ul>
+  <h3 id="section-72-nightworkers---contextstill">7.2 NightWorkers -&gt; contextStill</h3>
+  <ul>
+    <li>
+      primary bridgeはversioned JSONを受ける専用local HTTP endpointとし、MCP mutation
+      toolはcross-product bridgeにしない。
+    </li>
+    <li>
+      endpoint例: <code>POST /api/integrations/security-intelligence/v1/candidate-batches</code>。
+    </li>
+    <li>
+      feedback endpointは<code
+        >POST /api/integrations/security-intelligence/v1/feedback-batches</code
+      >とし、candidate ingressと別のscopeを要求する。
+    </li>
+    <li>
+      scope名はcandidateを<code>security-intelligence:candidates:write</code>、feedbackを<code>security-intelligence:feedback:write</code>として固定し、token
+      principal、scope、endpointをauditへ残す。token値は残さない。
+    </li>
+    <li>
+      <code>api/app.ts</code>のAPI認証をcentral dispatcherへ整理し、public health、Security
+      Intelligence integration path、general admin APIを明示分岐する。integration pathではpath /
+      scope限定token、その他の<code>/api/*</code>では既存admin
+      keyを要求し、どのpathも認証middlewareの外へ置かない。
+    </li>
+    <li>
+      admin keyをintegration tokenとして再利用せず、integration token未設定時はrouteをfail
+      closedの<code>unavailable</code>とする。admin key未設定時の既存development
+      behaviorをintegration routeへ継承しない。
+    </li>
+    <li>
+      integration route以外で同tokenをadmin API keyとして使えないことをnegative testで固定する。
+    </li>
+    <li>
+      server起動時のhostnameを明示し、既定を<code>127.0.0.1</code>とする。<code>localhost</code>というlog表示だけをloopback保証にしない。external
+      bindは明示configがあり、既存production security policyに従うTLS reverse
+      proxyが確認できる場合だけ許可し、起動時validationを行う。
+    </li>
+    <li>
+      request byte limit、timeout、rate limit、idempotency、stable error codeをserver側で強制する。
+    </li>
+    <li>
+      contextStill CLIは同じapplication serviceへJSON stdinで接続できるthin
+      adapterとして用意し、fixture testとoperator smokeに使う。
+    </li>
+    <li>
+      NightWorkersのtokenはserver-side secretとして保持し、Task本文、prompt
+      snapshot、telemetry、outbox payloadへ含めない。
+    </li>
+  </ul>
+  <h2 id="section-8-failure-semantics">8. Failure semantics</h2>
+  <table>
+    <caption>
+      8. Failure semantics
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Condition</th>
+        <th scope="col">NightWorkers behavior</th>
+        <th scope="col">Completion effect</th>
+        <th scope="col">Retry</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Security Intelligence feature未設定</td>
+        <td>通常scan / Runを維持し、利用していないものをfailure表示しない</td>
+        <td>explicit conditionがなければ影響なし</td>
+        <td>なし</td>
+      </tr>
+      <tr>
+        <td>capability unavailable</td>
+        <td>source limitationを記録する</td>
+        <td>explicit conditionがあればrole側評価へ渡す</td>
+        <td>retryable transportだけ</td>
+      </tr>
+      <tr>
+        <td>assessment not ready</td>
+        <td>receiptを作らず、typed statusを保持する</td>
+        <td>explicit conditionがあれば未評価としてrole側へ渡す</td>
+        <td>producer hintを上限内で利用</td>
+      </tr>
+      <tr>
+        <td>assessment unavailable / inconclusive</td>
+        <td>successへ畳み込まず、reason / limitationを保持する</td>
+        <td>
+          explicit conditionがなければ固定gateにしない。あればrole側がneeds-human /
+          blocked等を判断する
+        </td>
+        <td>retryable codeだけ</td>
+      </tr>
+      <tr>
+        <td>workspace target grant unavailable / expired / drifted</td>
+        <td>post scanを開始せずattemptへtyped reasonを保存する</td>
+        <td>
+          pre assessmentをpost evidenceへ代用しない。explicit conditionがあればrole側評価へ渡す
+        </td>
+        <td>transportだけbounded retry。expiry / driftは新grantを明示要求</td>
+      </tr>
+      <tr>
+        <td>wrong project / revision / digest</td>
+        <td>payloadをTask / Runへ関連付けずintegrity incidentにする</td>
+        <td>complete evidenceとして使用不可</td>
+        <td>自動retryしない</td>
+      </tr>
+      <tr>
+        <td>post assessment workspace / Evidence Subject mismatch</td>
+        <td>receipt自体はrepository-level履歴として保持できるがpost subject bindingを作らない</td>
+        <td>current Run evidenceとして使用不可</td>
+        <td>自動retryしない。新しいauthoritative workspace snapshotで明示rerun</td>
+      </tr>
+      <tr>
+        <td>Contract head / condition revision CAS conflict</td>
+        <td>競合rowをcurrentにせず、最新headとtyped conflictを返す</td>
+        <td>old snapshotでの新規judgmentを受理しない</td>
+        <td>transport retryしない。LLMまたはUserが最新snapshotを再取得して再提案</td>
+      </tr>
+      <tr>
+        <td>final judgment schema / condition set mismatch</td>
+        <td>
+          terminal publish前にrejectし、返された本文とinvalid structured payloadを監査用に保持する
+        </td>
+        <td>semantic judgment未完了</td>
+        <td>同じruntime laneへbounded continuation。本文から補完しない</td>
+      </tr>
+      <tr>
+        <td>contextStill unavailable</td>
+        <td>outboxをpending / failedにし、Task / scan resultを維持する</td>
+        <td>影響なし</td>
+        <td>bounded exponential backoff</td>
+      </tr>
+      <tr>
+        <td>candidate item rejected</td>
+        <td>item receiptとreasonを保存する</td>
+        <td>影響なし</td>
+        <td>validation errorはretryしない</td>
+      </tr>
+      <tr>
+        <td>outbox key conflict</td>
+        <td>dead-letter相当のintegrity failureとしてoperatorへ表示する</td>
+        <td>影響なし</td>
+        <td>自動retryしない</td>
+      </tr>
+      <tr>
+        <td>feedback item rejected / unavailable</td>
+        <td>append-only feedback outbox / receiptに保存し、Knowledge statusを変更しない</td>
+        <td>影響なし</td>
+        <td>transportだけbounded retry、validationはretryしない</td>
+      </tr>
+      <tr>
+        <td>LLM unavailable / invalid</td>
+        <td>deterministic assessment、Contractの旧version、evidenceを保持する</td>
+        <td>新しいsemantic judgmentだけ未完了にする</td>
+        <td>provider policyに従う</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Retry共通規則:</p>
+  <ul>
+    <li>一時的かつ明示的にretryableなtransport / provider failureだけを対象とする。</li>
+    <li>attempt上限、next attempt、last error、手動停止、再開commandを持つ。</li>
+    <li>schema error、auth failure、revision mismatch、idempotency conflictをretryしない。</li>
+    <li>retry後も元payloadとidempotency keyを変更しない。</li>
+  </ul>
+  <h2 id="section-9-work-packages-and-merge-order">9. Work packages and merge order</h2>
+  <p>
+    既存vulnWorkbench PR 1からPR 4との混同を避けるため、この計画のwork
+    packageは<code>SI-*</code>で識別する。
+  </p>
+  <h3 id="si-00-contract-freeze-and-participant-fixtures">
+    SI-00: Contract freeze and participant fixtures
+  </h3>
+  <p>Repositories: all three</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      5.1のidentity mapping tableをmachine-readable fixtureにし、raw / namespaced project ref、raw /
+      namespaced scan ref、raw / prefixed digest、base / assessed revision role、full target
+      unsupported caseを3 repositoryへ配置する。
+    </li>
+    <li>
+      vulnWorkbenchの既存Security Intelligence v1 positive / negative fixtureとcanonical
+      digestをbaselineとして固定し、start response + binding proof + assessment
+      bundleの三者fixture、およびNightWorkersの独立consumer schema / verification testを追加する。
+    </li>
+    <li>
+      post workspace grantのsame / different Git common directory、HEAD / state
+      drift、expiry、idempotent consume fixtureをvulnWorkbenchとNightWorkersへ配置する。
+    </li>
+    <li>
+      Security Knowledge Candidate Batch v1とreceipt v1のwire
+      fixtureをNightWorkersとcontextStillへ配置する。
+    </li>
+    <li>
+      assessment contractにはwrong project、wrong revision role、wrong digest、absolute
+      pathを、candidate contractにはsecret-like value、evidenceなし、batch digest mismatch、item
+      digest mismatch、idempotency key reuse with different payloadをnegative
+      fixtureとして固定する。
+    </li>
+    <li>
+      fixture syncはruntime code copyではなく、versioned JSON + digest verification
+      scriptで行う。関係しないproductへcontract全体のconsumerを追加しない。
+    </li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>
+      assessment fixtureをvulnWorkbench producer testとNightWorkers consumer
+      testが同じ意味で解釈する。
+    </li>
+    <li>
+      candidate batch fixtureをNightWorkers producer testとcontextStill consumer
+      testが同じ意味で解釈する。
+    </li>
+    <li>
+      3 repositoryが共通identity / redaction fixtureを同じsemantic reason categoryで解釈する。
+    </li>
+    <li>
+      working-tree startのbase revisionとassessmentのassessed
+      revisionを直接比較するconsumerが存在しない。
+    </li>
+    <li>既存Security Scan v1 fixture hashが変わらない。</li>
+    <li>failure taxonomyとpayload上限が確定する。</li>
+  </ul>
+  <h3 id="si-vw-01-producer-capability-and-binding-proof-completion">
+    SI-VW-01: Producer capability and binding proof completion
+  </h3>
+  <p>Repository: vulnWorkbench</p>
+  <p>Depends on: SI-00</p>
+  <p>Changes:</p>
+  <ol>
+    <li>既存Security Intelligence route rootへread-only capabilities endpointを追加する。</li>
+    <li>
+      existing integration auth、scope、default OFF flag、project allowlist、no-store
+      headerを再利用する。
+    </li>
+    <li>assessment routeとexisting scan v1 responseを変更しない。</li>
+    <li>
+      capability responseへsupported transport、supported target kind、identity mapping
+      version、response byte上限を追加する。
+    </li>
+    <li>
+      <code>GET .../scans/:scanRunRef/binding-proof</code>を追加し、scanのpersisted
+      bindingから5.1のraw / canonical identity、base / assessed
+      revision、digestを返す。assessmentと同じauthorization、owner / project binding、payload
+      limitを適用する。
+    </li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>flag OFF時にavailabilityを誤advertiseしない。</li>
+    <li>unauthorized / wrong scope / response size testが通る。</li>
+    <li><code>full</code>または<code>local_cli</code>を未対応のままavailableとadvertiseしない。</li>
+    <li>
+      start response、binding proof、assessment fixtureの三者でidentity mapping golden
+      vectorが成立し、wrong owner / project / scanではproofを返さない。
+    </li>
+    <li>既存producer contract fixtureとassessment endpoint regressionが通る。</li>
+  </ul>
+  <p>Rollback:</p>
+  <ul>
+    <li>producer Security Intelligence flagをOFF。既存scan v1は維持する。</li>
+  </ul>
+  <h3 id="si-vw-02-authenticated-post-workspace-target-grant">
+    SI-VW-02: Authenticated post-workspace target grant
+  </h3>
+  <p>Repository: vulnWorkbench</p>
+  <p>Depends on: SI-00, SI-VW-01</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      5.3のgrant create、grant-based preview / start endpointとstrict schemaをSecurity Intelligence
+      route rootへ追加する。
+    </li>
+    <li>
+      integration client owner / allowed root、canonical path / symlink、registered provider
+      ProjectとのGit common directory、expected HEAD、provider-captured workspace
+      state、expiryを検証する。
+    </li>
+    <li>
+      provider-side短命grant repositoryとcleanupを追加し、既存scan executor / persisted scan
+      bindingへ同じprovider Project IDで接続する。worktreeを別Projectとしてauto-createしない。
+    </li>
+    <li>
+      capability responseへworkspace target grant availability、TTL、request /
+      response上限を追加する。
+    </li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>
+      同じGit common directoryの登録済みTask worktreeだけが元のprovider Projectへbindingされる。
+    </li>
+    <li>
+      別repository、symlink escape、wrong owner、expired grant、state
+      drift、異なるrequestでの二重consumeをscan作成前にrejectし、同じstart
+      replayではscanが重複しない。
+    </li>
+    <li>
+      response、audit detail、telemetry、assessment fixtureにworkspace absolute pathが出ない。
+    </li>
+    <li>
+      flag OFFでgrant routeはunavailableとなり、既存scan v1 / assessment routeにobservable
+      regressionがない。
+    </li>
+  </ul>
+  <p>Rollback:</p>
+  <ul>
+    <li>
+      workspace target grant flagをOFFにする。pre assessmentと既存Security Scan v1は維持する。
+    </li>
+  </ul>
+  <h3 id="si-nw-01-durable-scan-binding">SI-NW-01: Durable scan binding</h3>
+  <p>Repository: NightWorkers</p>
+  <p>Depends on: SI-00</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      <code>security_scan_bindings</code> schema、bootstrap、migration、repositoryを追加する。
+    </li>
+    <li>
+      capabilitiesで得たprovider project ref、identity mapping version、preview/startで得たresolved
+      targetとsource revision roleを一つのtransactional bindingへ保存する。
+    </li>
+    <li>settings binding read/writeをv2正本から外し、legacy read-only fallbackにする。</li>
+    <li>
+      target identity mismatch、duplicate scan ref with different digest、legacy bindingのnegative
+      testsを追加する。
+    </li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>
+      新規scanはprojectRef + scanRunRef + sourceRevisionRole + sourceRevision +
+      targetDigestで一意に再読できる。
+    </li>
+    <li>
+      working-tree bindingは<code>sourceRevisionRole = base_revision</code>、full bindingは<code
+        >sourceRevisionRole = snapshot_revision</code
+      >となり、roleなしのrevisionを保存しない。
+    </li>
+    <li>restart後もbindingが残る。</li>
+    <li>legacy bindingをassessmentへ使わない。</li>
+    <li>v1 scan start / history / status workflowが非破壊である。</li>
+  </ul>
+  <p>Rollback:</p>
+  <ul>
+    <li>consumer未接続のため新table書込だけを停止できる。既存settings historyは残す。</li>
+  </ul>
+  <h3 id="si-nw-02-assessment-consumer-and-receipt">SI-NW-02: Assessment consumer and receipt</h3>
+  <p>Repository: NightWorkers</p>
+  <p>Depends on: SI-00, SI-VW-01, SI-NW-01</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      Security Intelligence capabilities / binding proof / assessment
+      clientを<code>api/modules/securityScan</code>のprovider adapterから分離したagent-neutral
+      integration moduleへ追加する。
+    </li>
+    <li>
+      response byte limit後にstrict parseし、5.1のidentity adapterでstart binding、producer binding
+      proof、assessment bundleのsemantic exact matchを検証する。
+    </li>
+    <li>immutable assessment receiptを保存する。</li>
+    <li>
+      Repository / scan detailでassessment
+      ref、coverage、unknown、limitationをsource別に表示可能なprojectionを追加する。Task /
+      Run表示はsubject binding追加後のSI-NW-03で行う。
+    </li>
+    <li>default OFF consumer flagとempty project allowlistを追加する。</li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>producer fixtureをNightWorkersがstrict parseできる。</li>
+    <li>
+      raw UUID / namespaced ref、raw / prefixed digest、base / assessed revision
+      fixtureを正しく正規化し、mapping version不明時はfail closedする。
+    </li>
+    <li>
+      binding proofなし、proof digest mismatch、start / proof /
+      assessment三者のいずれかのmismatchではreceiptを作らない。
+    </li>
+    <li>wrong project / scan / revision / digestはreceiptを作らない。</li>
+    <li>unavailable / inconclusive / unknownをsuccess表示しない。</li>
+    <li>flag OFFで通常Runと既存Security Scanにobservable regressionがない。</li>
+  </ul>
+  <p>Pilot gate:</p>
+  <ul>
+    <li>
+      <code>vulnWorkbench/spec/security-intelligence-pr4-nightworkers-pilot-plan.md</code>の1-pair
+      smokeとrollback drillを実行する。
+    </li>
+    <li>integrity STOP条件が0件の場合だけ10件以上のpaired sampleへ進む。</li>
+  </ul>
+  <h3 id="si-nw-03-prepost-subject-binding-security-contract-and-run-integration">
+    SI-NW-03: Pre/post subject binding, Security Contract, and Run integration
+  </h3>
+  <p>Repository: NightWorkers</p>
+  <p>Depends on: SI-NW-02, SI-VW-02</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      Assessment Attempt / Subject Binding、Security Contract、Contract head、completion
+      condition、application command / query、immutable repositoryを追加する。
+    </li>
+    <li>
+      pre assessmentをTask Revision Snapshotへbindingする。post assessmentは両runtime
+      lane共通のagent-neutral commandで明示要求し、Runからserver-side解決したTask
+      workspaceのcanonical Evidence Subject
+      Snapshotを作成または再利用してscanした後、そのsnapshotへbindingする。LLM / clientからworkspace
+      pathを受け取らない。
+    </li>
+    <li>
+      User UI、Mission Pilot host adapter、Coding Agent direct Run adapterを同じContract / condition
+      commandへ接続し、Contract updateをhead CASで直列化する。
+    </li>
+    <li>
+      standard Run context snapshotへbounded Contract、pre / post assessment subject binding
+      refs、current condition setを追加する。
+    </li>
+    <li>
+      compaction後もContract ref、adopted condition refs、unknown、実行済みverification
+      refsを保持し、正本を再取得可能にする。
+    </li>
+    <li>
+      <code>RuntimeLaneResult</code>と両runtime laneへ5.6のstructured final
+      judgmentを追加し、同じsubmission application serviceへ接続する。
+    </li>
+    <li>
+      final judgment保存とevent appendをterminal status
+      publish前に行い、closeoutはcondition欠落、CAS conflict、stale / foreign
+      evidenceだけを構造的に拒否する。
+    </li>
+    <li>
+      Task / Run detailへpre / post attempt、subject binding、coverage、unknown、limitation、final
+      judgmentをphase別に表示する。
+    </li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>
+      User直結RunとMission Pilot handoff Runで同じContract schema、同じapplication
+      command、同じCoding Agent runtime contextを使う。
+    </li>
+    <li>
+      pre bindingはTask Revision Snapshot、post bindingは同じRunのEvidence Subject
+      SnapshotへFKし、repository rootで取得したreceiptをworktreeのpost evidenceに流用できない。
+    </li>
+    <li>
+      post scan中にworkspace stateがdriftしたcaseではsubject bindingとfinal judgment evidence
+      associationを作らず、typed conflictになる。
+    </li>
+    <li>
+      source changeありのpilot Runはpost assessmentまたはtyped unavailable resultを持ち、pre
+      receiptだけでpost verification済みと表示しない。
+    </li>
+    <li>
+      pre receiptの存在だけではpost commandをhostが自動実行せず、同commandがdirect / handoff
+      Runの両laneで同じ結果を返す。
+    </li>
+    <li>
+      同時Contract更新の一方だけがhead CASに成功し、他方は最新headを含むtyped conflictになる。
+    </li>
+    <li>
+      Todo更新後に旧<code>todoRevision</code> /
+      <code>todoPlanRevision</code>由来conditionをcurrentとして提出できない。
+    </li>
+    <li>
+      native API laneとCodex laneの両方が同じfinal judgment schemaを返し、terminal
+      publish前に保存される。
+    </li>
+    <li>provenanceを変えてもtool contract、completion policy、runtime laneが変わらない。</li>
+    <li>condition refなしのRunにSecurity固有completion gateが増えない。</li>
+    <li>condition refありのRunではfinal judgmentから当該conditionを欠落できない。</li>
+    <li>hostがFeature Plan本文またはresult本文の語句からconditionを生成しない。</li>
+  </ul>
+  <h3 id="si-cs-01-candidate-lifecycle-parity">SI-CS-01: Candidate lifecycle parity</h3>
+  <p>Repository: contextStill</p>
+  <p>Can run after: SI-00</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      TypeScript SQLite <code>registerCandidate</code>を既存candidate pipeline enqueueへ変更する。
+    </li>
+    <li>Rust native <code>register_candidates</code>を同じlogical pipeline enqueueへ変更する。</li>
+    <li>
+      PostgreSQL、TypeScript SQLite、Rust nativeのcontract testを同じfixture tableで実行する。
+    </li>
+    <li>
+      <code>candidate_registered</code>の意味を「pipelineへ永続化済み」とし、Knowledge
+      active化ではないことをtool descriptionとresponseで一致させる。
+    </li>
+    <li>existing direct-active rowのread-only audit commandを追加する。</li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>
+      3 backend / runtimeで登録直後に<code>knowledge_items.status = active</code>のrowが作られない。
+    </li>
+    <li>enqueue transaction失敗時にpartial candidate / active Knowledgeが残らない。</li>
+    <li>finalize後もinitial Knowledge statusは<code>draft</code>である。</li>
+    <li>
+      embedding serviceが停止していてもcandidate受領自体は成立し、後段failureとして観測できる。
+    </li>
+  </ul>
+  <p>Rollback:</p>
+  <ul>
+    <li>
+      old direct-active behaviorへ戻すのではなく、candidate
+      registrationを停止して既存retrievalだけを維持する。
+    </li>
+  </ul>
+  <h3 id="si-cs-02-authenticated-candidate-batch-ingress">
+    SI-CS-02: Authenticated candidate batch ingress
+  </h3>
+  <p>Repository: contextStill</p>
+  <p>Depends on: SI-00, SI-CS-01</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      strict batch / receipt schema、canonical digest helper、5.7のpartial item
+      transactionを実装するapplication serviceを追加する。
+    </li>
+    <li>
+      central auth dispatcher、scoped integration auth、explicit loopback bind、HTTP route、CLI JSON
+      adapterを追加する。
+    </li>
+    <li>idempotency receipt、item validation result、audit logをPostgreSQL / SQLiteへ保存する。</li>
+    <li>accepted itemを既存candidate pipelineへenqueueする。</li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>integration tokenはcandidate batch routeにだけ使える。</li>
+    <li>same key / same digest replayは同じreceiptを返す。</li>
+    <li>
+      same key / different digest、secret、absolute path、evidenceなし、oversizeをrejectする。
+    </li>
+    <li>
+      top-level rejectではmutationが0件、item rejectではvalid itemと全item
+      receiptが同一transactionでcommitされる。
+    </li>
+    <li>
+      integration tokenはgeneral admin APIへ使えず、admin keyはintegration
+      routeの代用にならず、token未設定時はfail closedする。
+    </li>
+    <li>
+      default listenerが実際にloopbackへbindし、external
+      bindの起動validationが通らない構成ではserverを開始しない。
+    </li>
+    <li>accepted itemがactive Knowledgeとして検索されない。</li>
+    <li>service restart後もreceiptとdedupeが維持される。</li>
+  </ul>
+  <h3 id="si-nw-04-llm-proposed-candidate-outbox">SI-NW-04: LLM-proposed candidate outbox</h3>
+  <p>Repository: NightWorkers</p>
+  <p>Depends on: SI-NW-03, SI-CS-02</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      Security Contract final evaluation後、role側LLMまたはhumanがstructured candidate batch
+      proposalを同じagent-neutral commandへ渡せるようにする。
+    </li>
+    <li>hostによるfinding textのkeyword抽出や自動candidate生成は行わない。</li>
+    <li>
+      application serviceはstrict semantic proposalからitem / batch digestとbatch
+      refを算出し、command ref由来のidempotency
+      keyを付与する。LLMがdigestやidempotency結果を自己申告しない。
+    </li>
+    <li>proposalとoutbox rowをtransactionalに保存する。</li>
+    <li>dispatcherはbounded retryとreceipt保存を行う。</li>
+    <li>Task / Run detailへpending / delivered / partial / rejected / dead-letterを表示する。</li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>Task / scan completion成功だけでcandidateが自動生成されない。</li>
+    <li>LLM-only claimでevidence refがないproposalはschemaで受理されない。</li>
+    <li>contextStill停止中もTask / scanの確定結果が維持される。</li>
+    <li>delivery receipt前にregistered / active表示しない。</li>
+    <li>retryでcandidateが重複しない。</li>
+  </ul>
+  <h3 id="si-int-00-feedback-contract-freeze-and-ingress">
+    SI-INT-00: Feedback contract freeze and ingress
+  </h3>
+  <p>Repositories: NightWorkers, contextStill</p>
+  <p>Can run after: SI-00, SI-CS-01</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      5.8のfeedback batch / receipt、canonical digest、event taxonomy、byte
+      limitを両repositoryのversioned fixtureで固定する。
+    </li>
+    <li>
+      contextStillへcandidate ingressと別scopeのHTTP / CLI adapterを追加し、append-only feedback
+      eventとreceiptをPostgreSQL / TypeScript SQLite / Rust SQLiteへ保存する。
+    </li>
+    <li>
+      NightWorkersへcandidate outboxと別のfeedback outbox / dispatcher / receipt
+      repositoryを追加する。
+    </li>
+    <li>
+      retrieved、selected、actually used、verification outcome、User
+      overrideを各正本eventから明示的に生成し、LLM本文からkeyword抽出しない。
+    </li>
+    <li>
+      application serviceがevent / batch ref、digest、idempotency keyを正本event
+      refから決定的に算出し、callerによるdigest自己申告を信頼しない。
+    </li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>
+      same key / same digest replay、same key / different digest
+      conflict、restart後dedupeが両repositoryで一致する。
+    </li>
+    <li>
+      <code>verification_outcome</code
+      >、<code>false_warning</code>、<code>harm_signal</code>はevidenceまたはUser操作refなしでは受理されない。
+    </li>
+    <li>feedback受領でKnowledge本文、status、promotion stateが変化しない。</li>
+    <li>feedback failureがTask、Run、scan、candidate receiptを巻き戻さない。</li>
+    <li>candidate tokenとfeedback token / scopeの相互利用をrejectする。</li>
+  </ul>
+  <h3 id="si-int-01-retrieval-shadow-and-outcome-feedback">
+    SI-INT-01: Retrieval shadow and outcome feedback
+  </h3>
+  <p>Repositories: NightWorkers, contextStill</p>
+  <p>Depends on: SI-NW-04, SI-INT-00</p>
+  <p>Changes:</p>
+  <ol>
+    <li>
+      Security-related context compilationでcandidate / draftを実行指示へ混ぜず、shadow
+      retrievalとして記録する。
+    </li>
+    <li>
+      SI-INT-00で固定したcontractを用い、retrieved、selected、actually used、verification
+      outcome、user override、false warning、harm signalを別eventとして記録する。
+    </li>
+    <li>feedback送信はcandidateとは別のoutbox + idempotencyを使う。</li>
+    <li>LLM self-verdictだけをKnowledge usefulnessのground truthにしない。</li>
+  </ol>
+  <p>Merge gate:</p>
+  <ul>
+    <li>shadow itemがCoding Agentのconstraintやverification省略へ影響しない。</li>
+    <li>harmful / irrelevant retrievalを計測できる。</li>
+    <li>feedback failureがTask / scan resultを巻き戻さない。</li>
+    <li>promotionは本work packageに含めない。</li>
+  </ul>
+  <h3 id="si-pilot-01-stage-2--stage-3-decision">SI-PILOT-01: Stage 2 / Stage 3 decision</h3>
+  <p>Repositories: all three</p>
+  <p>
+    Depends on: first SI-NW-02, then SI-NW-03; Stage 3 decisionはSI-INT-00、SI-NW-04、SI-INT-01後
+  </p>
+  <p>Execution:</p>
+  <ol>
+    <li>
+      1 repository / 1 Task Revision Snapshotでpre assessment、1 Run / Evidence Subjectでpost
+      assessmentを取得し、wrong-target / wrong-subject testとrollback drillを実行する。
+    </li>
+    <li>
+      10件以上のvalid pre/post pairでbaselineとassessment-enabled
+      Runを比較する。preだけ、postだけ、typed unavailableも除外せず記録する。
+    </li>
+    <li>
+      Stage 2のGO後に限り、1 batchのcandidate ingress、duplicate replay、contextStill停止を試す。
+    </li>
+    <li>
+      feedback contract smokeとして1 batchのretrieved / selected / actually-used / verification
+      outcomeを送り、duplicate replayとscope rejectionを確認する。
+    </li>
+    <li>Stage 3 shadow sampleを集め、dated GO / ITERATE / STOP recordを作る。</li>
+  </ol>
+  <p>default ONはこのwork packageの成果に含めない。別decisionとactivation PRを必要とする。</p>
+  <h2 id="section-10-dependency-graph">10. Dependency graph</h2>
+  <pre><code class="language-text">SI-00
+  ├─&gt; SI-VW-01 ─┬─&gt; SI-VW-02 ─────────────────────────────┐
+  │              └────────────────┐                        │
+  ├─&gt; SI-NW-01 ───────────────────┴─&gt; SI-NW-02 ───────────┴─&gt; SI-NW-03
+  └─&gt; SI-CS-01 ─┬─&gt; SI-CS-02
+                └─&gt; SI-INT-00
+
+SI-NW-03 ─┐
+SI-CS-02 ─┴─&gt; SI-NW-04 ─┐
+SI-INT-00 ───────────────┴─&gt; SI-INT-01
+</code></pre>
+  <p>Parallelization:</p>
+  <ul>
+    <li>
+      SI-VW-01、SI-NW-01、SI-CS-01はSI-00 fixture確定後に並行実装できる。SI-VW-02はSI-VW-01
+      capability schemaを待つ。
+    </li>
+    <li>SI-NW-02はproducer capabilityとdurable bindingの両方を待つ。</li>
+    <li>
+      SI-NW-03はassessment receiptのidentityとpost workspace grant
+      contractが固定されてから実装する。
+    </li>
+    <li>SI-CS-02はcandidate lifecycle parityを先に満たす。</li>
+    <li>SI-NW-04はStage 2 integrity pilotとcontextStill ingressの双方を待つ。</li>
+    <li>
+      SI-INT-00はSI-00とcandidate lifecycle parity後にSI-NW-03 /
+      SI-NW-04と並行できるが、SI-INT-01はfeedback ingress / outboxの両側mergeを待つ。
+    </li>
+  </ul>
+  <h2 id="section-11-verification-plan">11. Verification plan</h2>
+  <p>
+    実装PRごとにfocused test、typecheck、architecture check、migration
+    smokeを実行し、期待結果と失敗時の停止条件をPR descriptionへ記録する。
+  </p>
+  <h3 id="section-111-vulnworkbench">11.1 vulnWorkbench</h3>
+  <pre><code class="language-bash">bun test api/modules/integrations/nightworkers api/modules/security-intelligence api/app/env.test.ts
+bunx vitest run shared/schemas/nightworkers-security-intelligence.schema.test.ts shared/schemas/nightworkers-security-intelligence-pilot.schema.test.ts
+bunx vitest run shared/schemas/nightworkers-security-scan-integration.schema.test.ts shared/schemas/security-intelligence-assessment.schema.test.ts
+bun run verify:security-intelligence-contract
+bun run typecheck
+git diff --check
+</code></pre>
+  <p>追加必須case:</p>
+  <ul>
+    <li>capability flag OFF / ON</li>
+    <li>
+      capability target / transport support (<code>working_tree</code> HTTP available、<code
+        >full</code
+      >
+      / <code>local_cli</code> unavailable)
+    </li>
+    <li>wrong auth scope</li>
+    <li>assessment endpoint contract non-regression</li>
+    <li>existing Security Scan v1 fixture hash non-regression</li>
+    <li>
+      working-tree fixtureでbase revision、assessed revision、raw / prefixed
+      digestがそれぞれ正しいroleに固定される
+    </li>
+    <li>
+      workspace target grantのsame Git common directory successと、wrong repository / owner /
+      symlink / expiry / state drift / double consume rejection
+    </li>
+    <li>
+      grant create / preview / startのresponse、audit、telemetryにabsolute workspace pathがない
+    </li>
+    <li>
+      grant table migration / restart / expiry cleanupと、cleanup failure時の既存scan result不変
+    </li>
+  </ul>
+  <h3 id="section-112-nightworkers">11.2 NightWorkers</h3>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run &lt;security-intelligence focused tests&gt;
+bun run typecheck
+bun run check:architecture
+bun run check:docs
+git diff --check
+</code></pre>
+  <p>追加必須case:</p>
+  <ul>
+    <li>fresh database migration / bootstrap parity</li>
+    <li>
+      restart後のscan binding、receipt、pre / post subject binding、Contract head、candidate /
+      feedback outbox再読
+    </li>
+    <li>legacy settings bindingはunverifiable</li>
+    <li>
+      wrong project / revision role / target digest / bundle digest / Evidence Subject rejection
+    </li>
+    <li>
+      raw / namespaced ref、raw / prefixed digestのidentity mapping parityとunknown mapping version
+      rejection
+    </li>
+    <li>
+      pre receiptをpost evidenceへ流用できず、post scan pathがRunのworkspace
+      authorityからだけ解決される
+    </li>
+    <li>
+      post command same request digest replayでscan / receiptが重複せず、workspace
+      state変更後は旧attemptを再利用しない
+    </li>
+    <li>Contract同時更新CAS、stale head conflict、同一親からのcurrent successor分岐防止</li>
+    <li>stale Todo revision / Todo plan revision condition rejection</li>
+    <li>User操作 / Mission Pilot操作が同じapplication command結果になる</li>
+    <li>direct Coding Agent Run / handoff Runが同じContract snapshotを受け取る</li>
+    <li>provenance差でruntime / tool contract / completion behaviorが変わらない</li>
+    <li>explicit conditionなしではSecurity completion gateなし</li>
+    <li>explicit conditionありではcondition result欠落をreject</li>
+    <li>
+      native API / Codex両laneの同一structured final judgment、invalid judgment
+      continuation、terminal publish前persist
+    </li>
+    <li>unavailable / inconclusive / unknown rendering</li>
+    <li>contextStill timeout、retryable / non-retryable、dead-letter、replay</li>
+  </ul>
+  <h3 id="section-113-contextstill">11.3 contextStill</h3>
+  <p>実際のpackage scriptとtest pathは着手時に再確認し、最低限次を行う。</p>
+  <pre><code class="language-bash">bunx vitest run &lt;register-candidate and integration focused tests&gt;
+bun test &lt;sqlite candidate lifecycle tests&gt;
+cargo test -p context-stilld register_candidates
+bun run typecheck
+git diff --check
+</code></pre>
+  <p>追加必須case:</p>
+  <ul>
+    <li>PostgreSQL / TypeScript SQLite / Rust native同一fixture parity</li>
+    <li>candidate受領直後にactive Knowledgeが0件</li>
+    <li>finalize後のdraft</li>
+    <li>embedding unavailable時のcandidate durability</li>
+    <li>scoped token cannot access general admin API</li>
+    <li>
+      admin key cannot access integration route、candidate token cannot access feedback
+      route、token未設定fail closed
+    </li>
+    <li>explicit loopback bindとexternal bind startup rejection</li>
+    <li>idempotent replay / conflict</li>
+    <li>
+      batch digest / item digest verification、partial rejectionのtransaction semantics、DB
+      failure全rollback
+    </li>
+    <li>candidate fingerprint / ref、feedback event refの再計算不一致reject</li>
+    <li>secret / absolute path / oversize / evidenceなしreject</li>
+    <li>restart後dedupe</li>
+    <li>
+      feedback event parity、evidenceなしverification outcome / harm signal
+      reject、feedbackでKnowledge status不変
+    </li>
+  </ul>
+  <p>
+    SQLite integration suiteでembedding daemonを必要とするtestは、daemon
+    prerequisiteを明示して実行する。candidate受領test自体はembedding availabilityへ依存させない。
+  </p>
+  <h3 id="section-114-cross-repository-contract-verification">
+    11.4 Cross-repository contract verification
+  </h3>
+  <p>
+    各repositoryのCIで、取り込んだfixtureのversionとSHA-256を検証する。fixture更新順は次の通り。
+  </p>
+  <ol>
+    <li>
+      assessment contractはvulnWorkbenchで新version fixtureを追加し、NightWorkers
+      consumerがacceptしてからproducer outputを切り替える。
+    </li>
+    <li>
+      candidate batch contractはNightWorkersで新version fixtureを追加し、contextStill
+      consumerがacceptしてからdispatcher outputを切り替える。
+    </li>
+    <li>
+      feedback batch contractはNightWorkersで新version fixtureを追加し、contextStill
+      consumerがacceptしてからdispatcher outputを切り替える。
+    </li>
+    <li>
+      共通identity / revision role / redaction fixtureは3 repositoryがacceptしてから各wire
+      contractへ適用する。
+    </li>
+    <li>
+      canonical digest helperは各repositoryの独立実装に同じgolden vectorを通し、runtime
+      packageをcross-product共有しない。
+    </li>
+    <li>関係しないproductへcontract全体のruntime parserを追加しない。</li>
+    <li>旧version削除は別計画とする。</li>
+  </ol>
+  <h2 id="section-12-rollout-and-rollback">12. Rollout and rollback</h2>
+  <h3 id="rollout-controls">Rollout controls</h3>
+  <ul>
+    <li>vulnWorkbench Security Intelligence endpoint: default OFF、project allowlist empty</li>
+    <li>vulnWorkbench workspace target grant: default OFF、project allowlist empty、short TTL</li>
+    <li>NightWorkers assessment consumer: default OFF、repository allowlist empty</li>
+    <li>NightWorkers post assessment command: default OFF、repository allowlist empty</li>
+    <li>contextStill candidate ingress: default OFF、scoped token未設定ならunavailable</li>
+    <li>NightWorkers candidate dispatcher: default OFF</li>
+    <li>contextStill feedback ingress: default OFF、candidateとは別scope</li>
+    <li>NightWorkers feedback dispatcher: default OFF</li>
+    <li>retrieval: shadow only</li>
+  </ul>
+  <p>これらはdeployment rollout flagであり、Taskのcompletion activation stateではない。</p>
+  <h3 id="rollout-order">Rollout order</h3>
+  <ol>
+    <li>contract fixturesだけをmergeする。</li>
+    <li>contextStill candidate lifecycle parityをmergeする。ingressはOFF。</li>
+    <li>
+      vulnWorkbench capability / binding proof / workspace target grantとNightWorkers durable
+      binding / consumerをmergeする。consumerとworkspace grantはOFF。
+    </li>
+    <li>1 repositoryだけallowlistへ追加し、Task Revision Snapshotへpre assessment smokeを行う。</li>
+    <li>
+      SI-NW-03をdefault OFFのままmergeし、同じTaskの1 Runで明示post command、workspace
+      grant、Evidence Subject binding、Contract / condition / final judgment、rollback
+      drillを両runtime laneで確認する。
+    </li>
+    <li>10件以上のpre / post paired pilot後、Stage 2 decisionを作る。</li>
+    <li>
+      contextStill candidate ingressとNightWorkers candidate dispatcherを1 project / 1
+      batchで有効にする。
+    </li>
+    <li>
+      feedback ingress / dispatcherを1 project / 1 batchで有効にし、scope、replay、Knowledge
+      status不変を確認する。
+    </li>
+    <li>Stage 3 shadow sample後、別decisionを作る。</li>
+  </ol>
+  <h3 id="rollback-order">Rollback order</h3>
+  <ol>
+    <li>NightWorkers feedback dispatcherをOFFにする。</li>
+    <li>contextStill feedback ingressをOFFにする。</li>
+    <li>NightWorkers candidate dispatcherをOFFにする。</li>
+    <li>contextStill candidate ingressをOFFにする。</li>
+    <li>NightWorkers post assessment commandをOFFにする。</li>
+    <li>vulnWorkbench workspace target grantをOFFにする。</li>
+    <li>NightWorkers assessment consumerをOFFにする。</li>
+    <li>vulnWorkbench Security Intelligence endpointをOFFにする。</li>
+  </ol>
+  <p>Rollback後も次を保持する。</p>
+  <ul>
+    <li>既存Security Scan v1</li>
+    <li>Task / Runの既存実行機能</li>
+    <li>
+      受領済みassessment receipt、attempt / subject binding、Contract / condition / final judgment
+      audit history
+    </li>
+    <li>pending / failed outboxとreceipt</li>
+    <li>
+      expired / consumed workspace grantのprivacy-safe audit metadata。canonical workspace
+      pathはretention policyに従いcleanupする
+    </li>
+    <li>contextStillの既存validated Knowledge</li>
+  </ul>
+  <h2 id="section-13-stop-conditions">13. STOP conditions</h2>
+  <p>次のいずれかが1件でも発生した場合、そのstageのrolloutを停止し、flagをOFFにする。</p>
+  <ul>
+    <li>
+      identity mapping versionまたはrevision roleを誤り、wrong project、wrong revision、wrong target
+      digestへassessmentを関連付けた。
+    </li>
+    <li>
+      pre receiptをpost evidenceとして、または別Run / workspace / Evidence Subjectのreceiptをcurrent
+      evidenceとして関連付けた。
+    </li>
+    <li>
+      workspace target grantが別Git common directory、別provider Project、expired / drifted
+      workspaceでscanを作成した。
+    </li>
+    <li>
+      assessment内のclaim / verification evidence refを同じpayloadのbounded evidence
+      recordまたは許可されたproducer artifact refへ解決できない。
+    </li>
+    <li>
+      secret、credential、source本文、absolute private pathがassessment / candidate / feedback
+      response、durable cross-product payload、prompt、telemetryへ漏れた。既存scan v1
+      requestと5.3のauthenticated短命grant request以外でpathを送った。
+    </li>
+    <li>unavailable / inconclusive / unknownをverified successとして表示した。</li>
+    <li>explicit conditionのないRunへSecurity固有gateを追加した。</li>
+    <li>
+      stale Contract head、旧Todo revision、欠落conditionを含むfinal
+      judgmentを保存した、またはjudgment保存前にRun terminal statusをpublishした。
+    </li>
+    <li>
+      provenanceだけを理由にUser / Mission Pilot / Coding
+      Agentのruntime、tool、completion処理を変えた。
+    </li>
+    <li>contextStill candidate ingressがactive Knowledgeを直接作った。</li>
+    <li>
+      idempotency replayでcandidate / feedback eventが重複した、または異なるbatch
+      payloadを同一receiptとして受理した。
+    </li>
+    <li>
+      candidate / feedbackのpartial item transactionでreceiptとenqueue / event rowが不一致になった。
+    </li>
+    <li>candidate / feedback failureがTaskまたはscanの確定結果を巻き戻した。</li>
+    <li>既存Security Scan v1または通常Coding Agent Runに重大regressionを起こした。</li>
+  </ul>
+  <h2 id="section-14-stage-exit-criteria">14. Stage exit criteria</h2>
+  <h3 id="stage-0-complete">Stage 0 complete</h3>
+  <ul>
+    <li>
+      3 repositoryが同じidentity / revision role / digest / redaction
+      primitivesを解釈し、assessmentとcandidate batchの各producer / consumer pairが対応するfailure /
+      receipt semanticsをfixtureで解釈する。
+    </li>
+    <li>existing behavior / cost / coverage baselineが保存される。</li>
+    <li>wrong project / revision / secret fixtureが全consumerでrejectされる。</li>
+  </ul>
+  <h3 id="stage-1-complete">Stage 1 complete</h3>
+  <ul>
+    <li>
+      dependency changeとauthorization guard
+      changeについて、producerが既存evidenceから説明可能なassessmentを返す。
+    </li>
+    <li>NightWorkersがそのassessmentをexact targetへbindingできる。</li>
+    <li>
+      working-treeのbase revisionとassessed revisionを別roleとして保持し、未対応full / local
+      CLIをavailable表示しない。
+    </li>
+    <li>existing scan / task completionが非劣化である。</li>
+  </ul>
+  <h3 id="stage-2-complete">Stage 2 complete</h3>
+  <ul>
+    <li>
+      pre assessmentがTask Revision Snapshotへ、post assessmentが同じRunのcanonical Evidence Subject
+      Snapshotへbindingされ、Security
+      Contractのconstraintが実装後verificationとevidenceまでtraceできる。
+    </li>
+    <li>
+      post scanがshort-lived workspace target grantで同じprovider Projectへ結合され、別Project
+      auto-create、path leak、workspace driftが0件である。
+    </li>
+    <li>
+      Contract headとcompletion condition source revisionがCASで固定され、stale Contract /
+      Todoからcurrent judgmentを作れない。
+    </li>
+    <li>direct Runとhandoff Runが同じContract / runtime contractを使う。</li>
+    <li>explicit completion conditionの有無が構造化され、hostが本文から推測しない。</li>
+    <li>conditionなしの通常Runを固定gateで止めない。</li>
+    <li>native API / Codex両laneが同じstructured final judgmentをterminal publish前に保存する。</li>
+    <li>1-pair smoke、10件以上のpaired pilot、rollback drillが完了する。</li>
+  </ul>
+  <h3 id="stage-3-complete">Stage 3 complete</h3>
+  <ul>
+    <li>contextStillの全初期backend / runtimeでcandidateが自動active化されない。</li>
+    <li>candidateとfeedbackの各outbox、idempotency、receipt、dedupeがrestartを跨いで安定する。</li>
+    <li>harmful / irrelevant retrievalとoutcome feedbackを測定できる。</li>
+    <li>
+      feedbackがappend-only observationとして保存され、Knowledge本文、status、promotion
+      stateを直接変更しない。
+    </li>
+    <li>automatic active promotion、verification省略、policy緩和が存在しない。</li>
+  </ul>
+  <h2 id="section-15-implementation-definition-of-done">15. Implementation Definition of Done</h2>
+  <p>
+    本計画の「実行できる状態」は、Stage 3
+    completeまでを意味する。ただし実装承認は次の二つに分割できる。
+  </p>
+  <ul>
+    <li>
+      Tranche A: SI-00からSI-NW-03とStage 2 pilot。identity-normalized pre / post assessment +
+      Evidence Subject binding + CAS付きSecurity Contract + structured completion
+      traceを成立させる。
+    </li>
+    <li>
+      Tranche B: SI-CS-01、SI-CS-02、SI-NW-04、SI-INT-00、SI-INT-01とStage 3 pilot。candidate +
+      append-only feedback shadow loopを成立させる。
+    </li>
+  </ul>
+  <p>
+    Tranche AのGOなしにTranche BのNightWorkers dispatcherを有効化しない。Tranche
+    Bが未承認またはSTOPでも、Tranche Aのassessment / Contract loopは独立して利用できる。
+  </p>
+  <h2 id="section-16-approval-checkpoints">16. Approval checkpoints</h2>
+  <p>実装開始前にこの文書で次を確認する。</p>
+  <ol>
+    <li>
+      Stage 2までを第一trancheとし、preはTask Revision Snapshot、postはRun / Evidence
+      Subjectへbindingする順序。
+    </li>
+    <li>
+      Security Scan v1とSecurity Intelligence v1のidentity / revision role mappingをSI-00
+      fixtureで固定し、既存strict v1 responseを変更しない方式。
+    </li>
+    <li>
+      Tranche Aのassessment transportはHTTP(S)とし、local CLI / full
+      targetを誤advertiseせず、対応追加は別version work packageとする方式。
+    </li>
+    <li>
+      post scanはsame Git common directoryを検証する短命workspace target grantで元provider
+      Projectへ結合し、Task worktreeを別Projectとしてauto-createしない方式。
+    </li>
+    <li>
+      Security Contractにactivation enumを持たせず、採用済みcompletion conditionから参照し、Contract
+      head / Todo revisionをCASで固定する方式。
+    </li>
+    <li>
+      structured final judgmentを両runtime laneから同じcommandへ提出し、terminal
+      publish前に保存する方式。
+    </li>
+    <li>既存settings bindingを推測backfillせず、legacy unverifiableとして残す方式。</li>
+    <li>Candidate Batchのbatch / item digestとpartial item transaction semantics。</li>
+    <li>contextStillのTypeScript SQLite / Rust native direct-active経路を先に修正する方式。</li>
+    <li>
+      contextStill mutationをscoped local HTTP JSON + CLI
+      adapterで実装し、MCPをbridgeにせず、candidate / feedback scopeを分離する方式。
+    </li>
+    <li>
+      default OFFを維持し、pre / post 1-pair smoke、10-pair pilot、dated
+      decisionを経て次stageへ進む方式。
+    </li>
+  </ol>
+  <p>
+    code実装後もrolloutを一括で有効化しない。各packageのmerge gateとSTOP
+    conditionを満たした証跡を確認してから、依存する次stageのflagを有効化する。
+  </p>
+  <h2 id="section-17-implementation-record">17. Implementation record</h2>
+  <p>記録日: 2026-08-15</p>
+  <h3 id="section-171-work-package-status">17.1 Work package status</h3>
+  <table>
+    <caption>
+      17.1 Work package status
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Work package</th>
+        <th scope="col">Status</th>
+        <th scope="col">Implemented result</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SI-00</td>
+        <td>Implemented</td>
+        <td>
+          3 repositoryでidentity / revision role fixtureとSHA-256を固定し、NightWorkers /
+          contextStillでcandidate・feedback fixtureのschema、item / batch
+          digestを検証する。working-tree assessed
+          revisionは<code>working-tree/&lt;digest&gt;</code>へ統一した。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-VW-01</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          Security Intelligence capabilityとbinding proofを追加し、working-tree
+          HTTPだけをadvertiseする。既存Security Scan v1 fixtureは変更しない。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-VW-02</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          same Git common directory、owner、HEAD、expiry、state drift、single
+          consumeを検証する短命workspace target grant、migration、restart cleanupを追加した。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-NW-01</td>
+        <td>Implemented</td>
+        <td>
+          provider project、scan ref、revision role、source revision、target digestを持つdurable
+          binding、migration / bootstrap、legacy read-only fallbackを追加した。通常scanではconsumer
+          flagとallowlistが一致しない限り追加provider callを行わない。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-NW-02</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          bounded response、strict parse、start / proof / assessment三者検証、immutable
+          receipt、repository / scan projectionを追加した。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-NW-03</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          pre / post attempt・subject binding、workspace grant post scan、Security Contract /
+          condition head CAS、両runtime lane共通tool、Task Operator command、Run
+          context、evidence-bound Final Judgment、terminal
+          publish前gateを追加した。conditionなしのRunはgate対象外である。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-CS-01</td>
+        <td>Implemented</td>
+        <td>
+          PostgreSQL、TypeScript SQLite、Rust native SQLiteをcandidate
+          pipelineへ揃え、ingress直後のactive Knowledge作成を廃止した。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-CS-02</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          candidate専用HTTP / CLI ingress、candidate scope token、loopback default、external bind
+          guard、batch / item digest、partial receipt、idempotent replayを追加した。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-NW-04</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          candidate durable outbox、strict receipt、bounded exponential retry、dead-letter、restart
+          dispatcher、Run projectionを追加した。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-INT-00</td>
+        <td>Implemented, default OFF</td>
+        <td>
+          candidateとは別schema / token / tableを持つappend-only feedback
+          ingressとoutboxを追加した。feedbackはKnowledge本文、status、promotion stateを変更しない。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-INT-01</td>
+        <td>Implemented as shadow</td>
+        <td>
+          structured Security Contract contextがある場合だけcandidate /
+          draftのrefをshadow取得し、通常compile pack / markdownへ混入させず、retrieved
+          eventをfeedback outboxへ記録する。本文keyword分類は行わない。
+        </td>
+      </tr>
+      <tr>
+        <td>SI-PILOT-01</td>
+        <td>Pending deployment evidence</td>
+        <td>
+          1-pair smoke、両runtime lane rollback drill、10-pair sample、Stage 3 shadow sample、dated
+          decisionは実環境producer / consumerを有効化して別途実施する。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-172-rollout-state">17.2 Rollout state</h3>
+  <ul>
+    <li>
+      vulnWorkbench Security Intelligence endpointとworkspace grantはdefault OFF、project allowlist
+      emptyを維持する。
+    </li>
+    <li>
+      NightWorkers assessment consumer、candidate exporter、feedback exporterは個別flagでdefault
+      OFFを維持する。
+    </li>
+    <li>
+      contextStill candidate ingressとfeedback ingressは個別flag・個別tokenでdefault OFFを維持する。
+    </li>
+    <li>
+      contextStillのSecurity Intelligence retrievalはshadow metadataだけを返し、validated active
+      Knowledgeの通常retrievalを変更しない。
+    </li>
+    <li>
+      SI-PILOT-01の証跡がないため、14節のStage 2 complete / Stage 3 completeは未達として扱う。
+    </li>
+  </ul>
+  <h3 id="section-173-verification-evidence">17.3 Verification evidence</h3>
+  <ul>
+    <li>
+      vulnWorkbench: Security Intelligence / NightWorkers integration focused test 168件（534
+      assertions）、contract verifier、app / scripts typecheckを通過した。
+    </li>
+    <li>
+      NightWorkers: cross-repository fixture、runtime lane parity、Task Operator action
+      schema、bootstrap table、outbox default OFF / strict receipt / retry分類、既存Security Scan
+      routeを含むfocused testを通過した。typecheckとmodule / role boundary checksを通過した。
+    </li>
+    <li>
+      contextStill: fixture / scoped auth test 6件、SQLite candidate / feedback ingress 6件（21
+      assertions）、TypeScript typecheck、Rust native candidate lifecycle 25件を通過した。
+    </li>
+    <li>
+      repository全体の<code>check:architecture</code>は、本変更外で既に作業中の<code>run-project-exploration-paired-pilot.ts</code>と<code>SettingsLlmPanel.tsx</code>が600行上限を超えているためlarge-file
+      checkだけ未通過である。本変更で上限を超えた既存fileは分割し、Security
+      Intelligence追加fileはすべて600行以下にした。large-file以外のmodule、Mission
+      Pilot、SystemContext、Coding Agent、Task Operator、ontology boundary checkは通過した。
+    </li>
+  </ul>
+  <h3 id="section-174-post-implementation-review-hardening">
+    17.4 Post-implementation review hardening
+  </h3>
+  <p>
+    実装後の再レビューでは、正常系の追加ではなく、同時実行、再送、境界不整合、運用時の失敗を中心に再検査し、次を補強した。
+  </p>
+  <ul>
+    <li>
+      NightWorkersのoutbox dispatcherはresponseを512 KiBでstreaming制限し、redirect時にBearer
+      tokenを転送せず、非成功response bodyを解放する。receiptはbatch refだけでなくcandidate /
+      eventの完全な集合、区分の排他性、永続target ref、既存receiptとのcanonical一致まで検証する。
+    </li>
+    <li>
+      assessment attempt、scan binding、subject binding、assessment / outbox
+      receiptはinsert競合後に正本rowを再読し、同時retryで異なる内容を同一idempotency結果として返さない。成功済みoutboxを並行failureが上書きしない。
+    </li>
+    <li>
+      post assessmentはconsumerとは独立したdefault OFF
+      flagを持つ。無変更workspaceは<code>not_applicable</code>、provider未到達はtyped
+      <code>unavailable</code
+      >とし、設定復旧後の明示rerunを旧unavailable結果へ固定しない。grant作成、preview、scan開始をadditive
+      migrationで永続checkpoint化し、restart後は同じrequest digestとprovider idempotency
+      keyで再開する。checkpointは<code>grant_created</code>、<code>previewed</code>、<code>started</code>の順にだけ進み、同時retryの古い書込みで後退しない。retryableなprovider
+      409 / 422は固定failureへ変換せず、明示rerun可能な<code>unavailable</code>として保持する。
+    </li>
+    <li>
+      Task OperatorはSecurity Intelligence内部repositoryやDBへ直接依存せず、role moduleのpublic
+      application surfaceだけを利用する。
+    </li>
+    <li>
+      contextStillのPostgreSQL / SQLite ingressは同時receipt作成とcandidate
+      fingerprintを直列化する。duplicate candidateでは新しいevidence provenanceをitem
+      rowへappendし、削除済みtargetへのstale refを返さず新しいpipeline targetを作る。
+    </li>
+    <li>
+      contextStill ingressはprincipal、固定scope、endpoint、batch / receipt
+      refを同じtransactionのauditへ保存し、token値やsource本文を保存しない。body
+      size、byte単位top-level制約、rate limit、request timeoutをserver側で強制する。
+    </li>
+    <li>
+      candidate / feedback receipt schemaは成功itemのdurable target ref、candidate
+      ref一意性、feedback event refの区分横断一意性をproducer / consumer双方で強制する。
+    </li>
+  </ul>
+  <p>
+    再レビュー後のfocused verificationでは、NightWorkers Security Intelligence / migration 6 files /
+    42 tests、contextStill ingress 9 tests（31 assertions）とfixture / auth 10 tests、Rust native
+    candidate 25 tests、SQLite schema migration 7 tests、vulnWorkbench integration 8 files / 46
+    tests（187 assertions）が通過した。3 repositoryすべてでTypeScript
+    typecheckが通過し、共有fixtureはJSON正規化後に一致する。SI-PILOT-01は引き続きdeployment
+    evidence待ちであり、このcode reviewをpilot完了証跡として扱わない。
+  </p>
+</article>

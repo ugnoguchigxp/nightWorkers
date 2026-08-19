@@ -1,0 +1,647 @@
+<article lang="ja">
+  <h1 id="security-intelligence-integrity-smoke--rollout-implementation-plan">
+    Security Intelligence Integrity Smoke / Rollout Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Status: completed and archived</li>
+    <li>Created: 2026-08-16</li>
+    <li>Last updated: 2026-08-17</li>
+    <li>Completed: 2026-08-17</li>
+    <li>Scope: NightWorkers、vulnWorkbench、contextStill</li>
+    <li>
+      Completion authority:
+      <a href="./security-intelligence-pilot-rollout-todo.html"
+        >Security Intelligence Integrity Smoke / Rollout TODO</a
+      >
+    </li>
+    <li>
+      Canonical evidence:
+      <code
+        >vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json</code
+      >
+    </li>
+    <li>Evidence schema: <code>security-intelligence-nightworkers-integrity-evidence-v2</code></li>
+    <li>Default activation: this plan does not authorize default ON</li>
+  </ul>
+  <h3 id="current-implementation-checkpoint">Current implementation checkpoint</h3>
+  <ul>
+    <li>
+      3 repositoryの専用clean worktreeと固定commitでP0を実行し、cross-repository fixture
+      5群をPASSした。
+    </li>
+    <li>
+      P1 single-Run lifecycleを実行し、pre/post assessment、Security Contract、verification
+      artifact、structured final judgmentまで到達した。
+    </li>
+    <li>smoke中に検出した3件のintegrity defectを修正し、各repositoryへcommitした。</li>
+    <li>candidate配送の停止・再試行・永続receipt・同一batch replayを実配送で確認した。</li>
+    <li>
+      最新修正後のsingle Runを再取得し、P1/P2、rollback、cleanup、terminal
+      evidence検証を完了した。default activationは未承認のままである。
+    </li>
+  </ul>
+  <h2 id="section-1-goal">1. Goal</h2>
+  <p>
+    1つのauthoritative implementation Runを使い、Security Intelligenceのpre assessment、 Security
+    Contract、post assessment、structured final judgmentをend-to-endで検証する。 Stage 2 integrity
+    PASS後に限り、candidate、feedback、shadow retrievalを1 project / 1 batchで
+    検証し、capability別の<code>GO | ITERATE | STOP</code>をv2 evidenceへ保存する。
+  </p>
+  <p>
+    この計画はproduction codeの再実装ではなく、既に実装済みの機能を安全に有効化し、
+    実行証跡を作り、rollbackとcleanupまで完了させるための実装・実行手順である。
+  </p>
+  <h2 id="section-2-non-goals">2. Non-goals</h2>
+  <ul>
+    <li>baseline Runとのpaired比較や10-pair sampleを復活させない。</li>
+    <li>default ON、全project rollout、production activationを行わない。</li>
+    <li>smokeのためにSecurity Intelligence contract versionを変更しない。</li>
+    <li>candidateまたはfeedbackからKnowledgeを直接activeへ昇格させない。</li>
+    <li>Mission PilotとCoding Agentの責務境界を変更しない。</li>
+    <li>smoke中に見つかった一般的な改善を、停止条件の修正と混ぜて実装しない。</li>
+    <li>secret、source本文、absolute filesystem pathをevidence、report、logへ保存しない。</li>
+  </ul>
+  <h2 id="section-3-authoritative-inputs">3. Authoritative inputs</h2>
+  <ul>
+    <li>
+      NightWorkersの未完了条件: <code>spec/docs/security-intelligence-pilot-rollout-todo.html</code>
+    </li>
+    <li>
+      cross-projectの責務境界: <code>spec/docs/security-intelligence-integration-concept.html</code>
+    </li>
+    <li>
+      v2 evidence template:
+      <code>vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-template.json</code>
+    </li>
+    <li>
+      v2 evidence schema:
+      <code
+        >vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.ts</code
+      >
+    </li>
+    <li>
+      cross-repository fixture verifier:
+      <code>vulnWorkbench/scripts/verify-security-intelligence-cross-repo-fixtures.ts</code>
+    </li>
+    <li>
+      terminal evidence verifier:
+      <code>vulnWorkbench/scripts/verify-security-intelligence-integrity-evidence.ts</code>
+    </li>
+  </ul>
+  <p>
+    旧<code>security-intelligence-nightworkers-pilot-evidence-v1</code>、旧decision
+    template、旧paired pilot planは履歴互換専用とし、新しいevidenceや完了判断の入力にしない。
+  </p>
+  <h2 id="section-4-repository-ownership">4. Repository ownership</h2>
+  <h3 id="nightworkers">NightWorkers</h3>
+  <ul>
+    <li>Task Revision Snapshot、implementation Run、canonical Evidence Subjectを所有する。</li>
+    <li>
+      pre assessment binding、Security Contract、completion condition、post assessment、 final
+      judgmentを保存する。
+    </li>
+    <li>candidate / feedbackをRun-bound outboxへ保存し、contextStillへdispatchする。</li>
+    <li>native API laneとCodex laneのadapter / tool contractを検証する。</li>
+    <li>smoke完了後にTODOを更新し、完了時だけTODOを<code>spec/docs/.archived</code>へ移す。</li>
+  </ul>
+  <h3 id="vulnworkbench">vulnWorkbench</h3>
+  <ul>
+    <li>
+      Security Intelligence endpoint、workspace grant、assessment生成、binding proofを所有する。
+    </li>
+    <li>cross-repository fixture検証とv2 evidence schema / verifierを所有する。</li>
+    <li>completedまたはstopped evidence artifactを正本として保存する。</li>
+    <li>既存Security Scan v1がrollback後も継続することを確認する。</li>
+  </ul>
+  <h3 id="contextstill">contextStill</h3>
+  <ul>
+    <li>candidate / feedback ingressのscope、idempotency、receiptを所有する。</li>
+    <li>candidateをshadow状態で保持し、Knowledge本文、status、promotion stateを変更しない。</li>
+    <li>retrieved、selected、actually-used、verification outcomeをappend-onlyで記録する。</li>
+  </ul>
+  <h2 id="section-5-planned-changes-and-artifacts">5. Planned changes and artifacts</h2>
+  <h3 id="section-51-prerequisite-changes-to-land-first">5.1 Prerequisite changes to land first</h3>
+  <p>
+    実行前に、現在作業中の次のv2 assetsをreviewし、対応する3 repository fixture更新と同じ
+    integration baselineとして確定する。
+  </p>
+  <ul>
+    <li>
+      <code
+        >vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.ts</code
+      >
+    </li>
+    <li>
+      <code
+        >vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.test.ts</code
+      >
+    </li>
+    <li><code>vulnWorkbench/scripts/verify-security-intelligence-cross-repo-fixtures.ts</code></li>
+    <li><code>vulnWorkbench/scripts/verify-security-intelligence-integrity-evidence.ts</code></li>
+    <li>
+      <code>vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-template.json</code>
+    </li>
+    <li>3 repositoryのcross-repository fixture</li>
+    <li>各package scriptの<code>verify:security-intelligence-*</code> entry</li>
+  </ul>
+  <p>
+    これらが未commit、fixture不一致、またはschema test失敗の状態ではP0へ進まない。 既存のunrelated
+    working tree変更をstash、reset、削除して解消しない。所有者が変更を確定し、
+    各repositoryをcleanにしてから開始する。
+  </p>
+  <h3 id="section-52-per-run-artifacts">5.2 Per-run artifacts</h3>
+  <p>templateを直接編集せず、次を新規作成する。</p>
+  <ul>
+    <li>
+      <code
+        >vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json</code
+      >
+    </li>
+  </ul>
+  <p>artifactは次を満たす。</p>
+  <ul>
+    <li><code>smokeId</code>は再利用しないopaque IDに置き換える。</li>
+    <li><code>generatedAt</code>はterminal decision確定時のUTC timestampにする。</li>
+    <li>raw payloadやlog全文ではなく、再取得可能なopaque evidence refを保存する。</li>
+    <li>capability decisionの全項目にdecisionと1件以上のevidence refを保存する。</li>
+    <li><code>defaultActivationAuthorized</code>は常に<code>false</code>のままにする。</li>
+    <li>failureで停止した場合も削除せず、<code>status: stopped</code>とstop reasonを保存する。</li>
+  </ul>
+  <p>
+    実行時だけ使用するtoken、temporary database、workspace、process、raw logはartifactへ含めず、
+    cleanup対象として別の一時台帳で管理する。一時台帳にもtoken値は書かず、識別名だけを記録する。
+  </p>
+  <h2 id="section-6-feature-flag-and-credential-matrix">6. Feature flag and credential matrix</h2>
+  <table>
+    <caption>
+      6. Feature flag and credential matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Capability</th>
+        <th scope="col">Producer / receiver</th>
+        <th scope="col">Enable flag</th>
+        <th scope="col">Credential / allowlist</th>
+        <th scope="col">P0</th>
+        <th scope="col">P1</th>
+        <th scope="col">P2</th>
+        <th scope="col">Cleanup</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>assessment endpoint</td>
+        <td>vulnWorkbench</td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_ENABLED</code></td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_ALLOWED_PROJECT_IDS</code></td>
+        <td>OFF→1 project</td>
+        <td>ON</td>
+        <td>ON</td>
+        <td>OFF / empty</td>
+      </tr>
+      <tr>
+        <td>workspace grant</td>
+        <td>vulnWorkbench</td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_WORKSPACE_GRANT_ENABLED</code></td>
+        <td>same 1 project</td>
+        <td>OFF→ON</td>
+        <td>ON</td>
+        <td>ON</td>
+        <td>OFF</td>
+      </tr>
+      <tr>
+        <td>authorization shadow</td>
+        <td>vulnWorkbench</td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_AUTHORIZATION_SHADOW_ENABLED</code></td>
+        <td>same 1 project</td>
+        <td>OFF</td>
+        <td>必要時だけON</td>
+        <td>P1と同じ</td>
+        <td>OFF</td>
+      </tr>
+      <tr>
+        <td>pre consumer</td>
+        <td>NightWorkers</td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_CONSUMER_ENABLED</code></td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_PROJECT_ALLOWLIST</code></td>
+        <td>OFF→1 project</td>
+        <td>ON</td>
+        <td>ON</td>
+        <td>OFF / empty</td>
+      </tr>
+      <tr>
+        <td>post assessment</td>
+        <td>NightWorkers</td>
+        <td><code>NIGHTWORKERS_SECURITY_INTELLIGENCE_POST_ASSESSMENT_ENABLED</code></td>
+        <td>Run workspace grant</td>
+        <td>OFF→ON</td>
+        <td>ON</td>
+        <td>ON</td>
+        <td>OFF</td>
+      </tr>
+      <tr>
+        <td>candidate export</td>
+        <td>NightWorkers</td>
+        <td><code>NIGHTWORKERS_SECURITY_KNOWLEDGE_CANDIDATE_EXPORT_ENABLED</code></td>
+        <td><code>NIGHTWORKERS_CONTEXT_STILL_CANDIDATE_TOKEN</code></td>
+        <td>OFF</td>
+        <td>OFF</td>
+        <td>ON</td>
+        <td>OFF / remove</td>
+      </tr>
+      <tr>
+        <td>feedback export</td>
+        <td>NightWorkers</td>
+        <td><code>NIGHTWORKERS_SECURITY_KNOWLEDGE_FEEDBACK_EXPORT_ENABLED</code></td>
+        <td><code>NIGHTWORKERS_CONTEXT_STILL_FEEDBACK_TOKEN</code></td>
+        <td>OFF</td>
+        <td>OFF</td>
+        <td>ON</td>
+        <td>OFF / remove</td>
+      </tr>
+      <tr>
+        <td>candidate ingress</td>
+        <td>contextStill</td>
+        <td><code>CONTEXT_STILL_SECURITY_INTELLIGENCE_CANDIDATE_ENABLED</code></td>
+        <td><code>CONTEXT_STILL_SECURITY_INTELLIGENCE_CANDIDATE_TOKEN</code></td>
+        <td>OFF</td>
+        <td>OFF</td>
+        <td>ON</td>
+        <td>OFF / remove</td>
+      </tr>
+      <tr>
+        <td>feedback ingress</td>
+        <td>contextStill</td>
+        <td><code>CONTEXT_STILL_SECURITY_INTELLIGENCE_FEEDBACK_ENABLED</code></td>
+        <td><code>CONTEXT_STILL_SECURITY_INTELLIGENCE_FEEDBACK_TOKEN</code></td>
+        <td>OFF</td>
+        <td>OFF</td>
+        <td>ON</td>
+        <td>OFF / remove</td>
+      </tr>
+      <tr>
+        <td>shadow retrieval</td>
+        <td>contextStill</td>
+        <td>request-scoped <code>securityIntelligenceShadow.enabled</code></td>
+        <td>project / Task / Run refs</td>
+        <td>OFF</td>
+        <td>OFF</td>
+        <td>ON for 1 compile</td>
+        <td>omit</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    candidate tokenとfeedback tokenには異なる値を発行する。NightWorkersの送信tokenと
+    contextStillの対応する受信tokenだけを一致させ、cross-scope tokenを受理しない。
+  </p>
+  <h2 id="section-7-phase-0-contract-readiness">7. Phase 0: Contract readiness</h2>
+  <h3 id="implementation">Implementation</h3>
+  <ol>
+    <li>v2 schema、template、2 verifier、package scriptsをreviewして確定する。</li>
+    <li>NightWorkersとvulnWorkbenchのassessment bundle / scan binding fixtureを同期する。</li>
+    <li>NightWorkersとcontextStillのcandidate / feedback fixtureを同期する。</li>
+    <li>3 repositoryのidentity mapping fixtureを同期する。</li>
+    <li>
+      contextStillの専用SQLite ingress testは、必ず先頭に<code>./</code>を付けた明示pathで実行する。
+    </li>
+  </ol>
+  <h3 id="verification">Verification</h3>
+  <p>vulnWorkbench:</p>
+  <pre><code class="language-bash">bun run verify:security-intelligence-cross-repo-fixtures
+bunx vitest run shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.test.ts
+bun run typecheck
+</code></pre>
+  <p>contextStill:</p>
+  <pre><code class="language-bash">bun test ./test/security-intelligence-ingress.bun.ts
+bun run typecheck
+</code></pre>
+  <h3 id="exit-criteria">Exit criteria</h3>
+  <ul>
+    <li>verifierが5 fixture groupすべてをPASSにする。</li>
+    <li>v2 incomplete templateがterminal completionとして受理されない。</li>
+    <li>contextStill ingressのcandidate、feedback、idempotency、shadow不変条件が通る。</li>
+    <li>prerequisite changesがreview済みcommitとして固定されている。</li>
+  </ul>
+  <p>いずれかが失敗したらP0へ進まない。</p>
+  <h2 id="section-8-phase-1-p0-preflight">8. Phase 1: P0 preflight</h2>
+  <h3 id="section-81-baseline-capture">8.1 Baseline capture</h3>
+  <p>各repositoryで次を取得し、v2 artifactの<code>preflight</code>へ保存する。</p>
+  <pre><code class="language-bash">git rev-parse HEAD
+git status --porcelain
+</code></pre>
+  <p>
+    <code>repositoryCommits</code>には40桁SHAを保存する。<code>git status --porcelain</code
+    >が空の場合だけ対応する
+    <code>cleanWorkingTrees</code
+    >を<code>true</code>にする。smoke開始後にcodeまたはfixtureが変わった場合は、そのrunを
+    無効化し、新しいpilot IDでP0からやり直す。
+  </p>
+  <h3 id="section-82-project-and-declaration-scope">8.2 Project and declaration scope</h3>
+  <ol>
+    <li>実データを含まない専用pilot repositoryを1つ選ぶ。</li>
+    <li>
+      NightWorkers repository ID、vulnWorkbench project ID、workspace targetの対応を固定する。
+    </li>
+    <li>repository declarationのrevisionとdigestを検証する。</li>
+    <li>検証できる場合だけ<code>verified_repository_declarations</code>を選ぶ。</li>
+    <li>
+      検証できない場合は<code>transport_integrity_only</code>を選び、Project Loop完成を主張しない。
+    </li>
+  </ol>
+  <h3 id="section-83-initial-configuration">8.3 Initial configuration</h3>
+  <ol>
+    <li>全flag OFF、allowlist empty、temporary tokenなしの状態を記録する。</li>
+    <li>candidate、feedback、shadowをOFFのまま維持する。</li>
+    <li>
+      assessment endpoint、workspace grant、consumer、post assessmentだけを1 projectでONにする。
+    </li>
+    <li>
+      service起動順をvulnWorkbench → NightWorkers API / workerとし、healthと既存scan APIを確認する。
+    </li>
+    <li>
+      rollback順をNightWorkers consumer / post OFF → vulnWorkbench endpoint / grant OFFと固定する。
+    </li>
+  </ol>
+  <h3 id="exit-criteria-1">Exit criteria</h3>
+  <ul>
+    <li>3 repository SHAとclean working treeが記録されている。</li>
+    <li>fixture 5群が再度一致する。</li>
+    <li>allowlist対象がちょうど1 projectである。</li>
+    <li>P2用flagとtokenがまだ無効である。</li>
+    <li>既存Security Scan v1と通常Runのbaseline結果が保存されている。</li>
+  </ul>
+  <h2 id="section-9-phase-2-p1-single-run-integrity-smoke">
+    9. Phase 2: P1 single-Run integrity smoke
+  </h2>
+  <h3 id="section-91-authoritative-identity">9.1 Authoritative identity</h3>
+  <ol>
+    <li>1 Taskとcurrent Task Revision Snapshotを作成または選択する。</li>
+    <li>base revisionと、baseとは異なるsource revision / target digestを固定する。</li>
+    <li>1 implementation Runと1 canonical Evidence Subjectを割り当てる。</li>
+    <li>primary laneを<code>native_api</code>または<code>codex</code>から1つ選ぶ。</li>
+    <li>secondary laneはprimaryと異なるlaneに固定する。</li>
+  </ol>
+  <p>このidentity tupleは途中で差し替えない。</p>
+  <pre><code class="language-text">taskRef
+taskRevisionSnapshotRef
+runRef
+evidenceSubjectRef
+projectRef
+baseRevision
+sourceRevision
+targetDigest
+primaryLane
+secondaryLane
+</code></pre>
+  <h3 id="section-92-lifecycle-execution">9.2 Lifecycle execution</h3>
+  <p>同じRun内で次の順序を守る。</p>
+  <ol>
+    <li>vulnWorkbench assessment endpointからpre assessmentとbinding proofを取得する。</li>
+    <li>
+      NightWorkersの<code>security.assessment.pre.bind</code>でcurrent Task Revision
+      Snapshotへbindingする。
+    </li>
+    <li><code>security.contract.write</code>でpre assessment由来のSecurity Contractを保存する。</li>
+    <li>必要な<code>security.condition.write</code>を保存する。</li>
+    <li>Coding Agentが確定済みTask / Contractに基づき実装と検証を行う。</li>
+    <li>
+      <code>security.assessment.post.request</code
+      >または<code>request_post_security_assessment</code>でpost assessmentを要求する。
+    </li>
+    <li>preとは異なるpost assessment refを同じRun / Evidence Subjectへbindingする。</li>
+    <li><code>submit_security_final_judgment</code>でstructured final judgmentを保存する。</li>
+    <li>selected verification / evidence ref、unresolved ref、outcomeをv2 artifactへ転記する。</li>
+  </ol>
+  <p>Runを複製せず、pre / post assessmentの区別はassessment lifecycleで表す。</p>
+  <h3 id="section-93-secondary-lane-contract-smoke">9.3 Secondary lane contract smoke</h3>
+  <p>
+    primary laneで実行したsemantic inputと同等のfixtureを使い、secondary laneのadapter / tool
+    contractが同じstructured judgment schemaを生成・保存できることをdeterministic testで確認する。
+    secondary laneで別implementation Runを実行しない。
+  </p>
+  <h3 id="exit-criteria-2">Exit criteria</h3>
+  <ul>
+    <li><code>integrityRun</code>の全refとidentityが再取得できる。</li>
+    <li>lifecycle 4項目がすべてtrueである。</li>
+    <li>preとpost assessment refが異なる。</li>
+    <li>base revisionとsource revisionが異なる。</li>
+    <li>primary / secondary laneが異なり、secondary adapter contractがPASSしている。</li>
+    <li>required verification failure、unavailable、inconclusiveをsuccessへ変換していない。</li>
+  </ul>
+  <h2 id="section-10-phase-3-negative-integrity-checks">10. Phase 3: Negative integrity checks</h2>
+  <p>保存済みの正しいidentityを変更せず、各negative requestを独立に送る。</p>
+  <ol>
+    <li>wrong project: allowlist外project refを使用して拒否を確認する。</li>
+    <li>wrong revision: Task Revision Snapshotと一致しないrevisionを使用して拒否を確認する。</li>
+    <li>wrong target digest: binding proofと異なるdigestを使用して拒否を確認する。</li>
+    <li>wrong subject: current Runと異なるEvidence Subjectを使用して拒否を確認する。</li>
+  </ol>
+  <p>
+    拒否結果はerror code、HTTP / tool status、opaque request refだけを保存する。negative requestから
+    assessment receipt、contract、judgment、outbox rowが作成されていないことをDB read
+    modelで確認する。
+  </p>
+  <h3 id="exit-criteria-3">Exit criteria</h3>
+  <ul>
+    <li><code>negativeChecks</code>の4項目がすべてtrueである。</li>
+    <li>cross-Run evidence採用が0件である。</li>
+    <li>secret、source本文、absolute path漏洩が0件である。</li>
+  </ul>
+  <p>1件でも拒否されなかった場合は<code>STOP</code>候補とし、P2へ進まない。</p>
+  <h2 id="section-11-phase-4-stage-2-rollback-drill">11. Phase 4: Stage 2 rollback drill</h2>
+  <ol>
+    <li>NightWorkers consumerとpost assessmentをOFFにする。</li>
+    <li>vulnWorkbench endpointとworkspace grantをOFFにする。</li>
+    <li>allowlistをemptyへ戻す。</li>
+    <li>Security Intelligenceなしの通常Runを1件実行する。</li>
+    <li>既存Security Scan v1を1件実行する。</li>
+    <li>
+      Security Intelligence endpointがadvertiseされない、または明示的disabledを返すことを確認する。
+    </li>
+    <li>通常Runと既存scanの結果をbaselineと比較する。</li>
+  </ol>
+  <h3 id="stage-2-integrity-pass">Stage 2 integrity PASS</h3>
+  <p>次の全条件が満たされた場合だけStage 2 integrity PASSとする。</p>
+  <ul>
+    <li>fixture 5群一致</li>
+    <li>single-Run lifecycle完了</li>
+    <li>secondary lane contract PASS</li>
+    <li>negative integrity checks 4件PASS</li>
+    <li>privacy assertions 3件PASS</li>
+    <li>rollback後の通常Runと既存Security Scan v1が正常</li>
+  </ul>
+  <p>このPASSはP2開始を許可するだけで、rollout <code>GO</code>やdefault ONを意味しない。</p>
+  <h2 id="section-12-phase-5-p2-stage-3-shadow-smoke">12. Phase 5: P2 Stage 3 shadow smoke</h2>
+  <h3 id="section-121-isolated-enablement">12.1 Isolated enablement</h3>
+  <ol>
+    <li>contextStillをisolated SQLite databaseで起動する。</li>
+    <li>candidate tokenとfeedback tokenを別々に発行する。</li>
+    <li>contextStill candidate / feedback ingressをONにする。</li>
+    <li>NightWorkers candidate / feedback exportをONにする。</li>
+    <li>allowlistはP1と同じ1 projectだけにする。</li>
+    <li>
+      context compile inputの<code>securityIntelligenceShadow.enabled</code>を、同じproject / Task /
+      Runに bindingした1 compileだけでtrueにする。
+    </li>
+    <li>1 candidate batchと1 feedback batchだけを対象にする。</li>
+  </ol>
+  <h3 id="section-122-candidate-checks">12.2 Candidate checks</h3>
+  <ol>
+    <li>Final Judgmentへbindingしたcandidate batchをoutboxへ保存する。</li>
+    <li>dispatchし、strict receiptがoutbox status更新前に保存されることを確認する。</li>
+    <li>same key / same digestをreplayし、同じdurable resultを返すことを確認する。</li>
+    <li>same key / different digestを送り、mutationなしでconflictになることを確認する。</li>
+    <li>contextStillを停止して1回dispatchし、bounded retryとなることを確認する。</li>
+    <li>contextStillを再起動して再dispatchし、lossやduplicate mutationなしでreceiptを得る。</li>
+  </ol>
+  <h3 id="section-123-feedback-and-shadow-checks">12.3 Feedback and shadow checks</h3>
+  <ol>
+    <li>retrieved、selected、actually-used、verification outcomeを区別したfeedbackを送る。</li>
+    <li>同じfeedbackを再送し、duplicate replayとして受理されることを確認する。</li>
+    <li>candidate tokenでfeedback endpointへ送り、scope rejectionを確認する。</li>
+    <li>実行前後でKnowledge本文、status、promotion stateを比較し、不変であることを確認する。</li>
+    <li>shadow itemあり / なしでCoding Agentのconstraintとverification requirementを比較する。</li>
+    <li>shadow itemがconstraint追加やverification省略を起こしていないことを確認する。</li>
+  </ol>
+  <h3 id="exit-criteria-4">Exit criteria</h3>
+  <ul>
+    <li>candidate / feedback batch refとreceipt refがすべて保存されている。</li>
+    <li><code>shadowSmoke.checks</code>の7項目がすべてtrueである。</li>
+    <li>outage / retry / receiptのcross-process経路が1件確認されている。</li>
+    <li>KnowledgeとCoding Agent behaviorの不変条件が確認されている。</li>
+  </ul>
+  <h2 id="section-13-phase-6-decision-and-evidence-finalization">
+    13. Phase 6: Decision and evidence finalization
+  </h2>
+  <h3 id="section-131-observations">13.1 Observations</h3>
+  <p>次をaggregate値としてv2 artifactへ保存する。</p>
+  <ul>
+    <li>assessment build latency</li>
+    <li>endpoint request count</li>
+    <li>endpoint error count</li>
+    <li>payload size</li>
+  </ul>
+  <p>
+    source本文、raw request / response、token、absolute pathは保存しない。terminal
+    <code>completed</code>には endpoint error count 0が必要である。intentional
+    outageは通常trafficのerror countと混同せず、 retry drill evidence refとして記録する。
+  </p>
+  <h3 id="section-132-capability-decisions">13.2 Capability decisions</h3>
+  <p>次の5 capabilityを独立に判定する。</p>
+  <ul>
+    <li>assessment consumer</li>
+    <li>post-assessment grant</li>
+    <li>candidate export</li>
+    <li>feedback export</li>
+    <li>shadow retrieval</li>
+  </ul>
+  <p>各decisionは次で判断する。</p>
+  <ul>
+    <li><code>GO</code>: 対象capabilityのintegrity、privacy、rollbackがすべてPASSした。</li>
+    <li>
+      <code>ITERATE</code>: integrity
+      incidentはないが、coverage、cost、reliabilityに未解決事項がある。
+    </li>
+    <li><code>STOP</code>: identity、privacy、evidence、failure presentationのincidentがある。</li>
+  </ul>
+  <p>
+    全capabilityに1件以上のopaque evidence
+    refを関連付ける。artifact全体の<code>generatedAt</code>をdecision
+    dateとし、<code>defaultActivationAuthorized</code>はdecisionにかかわらずfalseを維持する。
+  </p>
+  <h3 id="section-133-terminal-validation">13.3 Terminal validation</h3>
+  <pre><code class="language-bash">bun run verify:security-intelligence-integrity-evidence -- \
+  --evidence spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json
+</code></pre>
+  <p>検証成功前に<code>status: completed</code>またはTODO完了を宣言しない。</p>
+  <h2 id="section-14-phase-7-cleanup">14. Phase 7: Cleanup</h2>
+  <p>decisionにかかわらず、次の順序でcleanupする。</p>
+  <ol>
+    <li>NightWorkers candidate exportをOFFにする。</li>
+    <li>NightWorkers feedback exportをOFFにする。</li>
+    <li>NightWorkers post assessmentとconsumerをOFFにする。</li>
+    <li>contextStill candidate / feedback ingressをOFFにする。</li>
+    <li>vulnWorkbench workspace grant、authorization shadow、endpointをOFFにする。</li>
+    <li>3 repositoryのallowlistをemptyへ戻す。</li>
+    <li>candidate / feedback tokenを失効・削除する。</li>
+    <li>temporary contextStill database、pilot workspace、processを削除する。</li>
+    <li>Security Intelligenceなしの通常Runと既存Security Scan v1を再確認する。</li>
+    <li>cleanup後のflag状態とregression結果をv2 artifactへ保存する。</li>
+  </ol>
+  <p>失敗evidenceとcompleted evidenceは削除しない。一時resourceだけを削除する。</p>
+  <h2 id="section-15-final-verification">15. Final verification</h2>
+  <h3 id="nightworkers-1">NightWorkers</h3>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run \
+  tests/security-intelligence-contract-fixtures.test.ts \
+  tests/security-intelligence-runtime.test.ts \
+  tests/security-intelligence-review-regressions.test.ts \
+  tests/security-finalization-gate.test.ts \
+  tests/security-knowledge-outbox-dispatcher.test.ts
+bun run typecheck
+git diff --check
+</code></pre>
+  <h3 id="vulnworkbench-1">vulnWorkbench</h3>
+  <pre><code class="language-bash">bunx vitest run \
+  shared/schemas/security-intelligence-assessment.schema.test.ts \
+  shared/schemas/nightworkers-security-intelligence.schema.test.ts \
+  shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.test.ts \
+  shared/schemas/security-intelligence-authorization.schema.test.ts \
+  shared/schemas/security-intelligence-contract-fixtures.test.ts \
+  api/modules/integrations/nightworkers/nightworkers-security-intelligence.service.test.ts \
+  api/modules/integrations/nightworkers/nightworkers-security-intelligence.routes.test.ts \
+  api/modules/integrations/nightworkers/nightworkers-security-intelligence-telemetry.test.ts
+bun run verify:security-intelligence-contract
+bun run verify:security-intelligence-cross-repo-fixtures
+bun run verify:security-intelligence-integrity-evidence -- \
+  --evidence spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json
+bun run typecheck
+git diff --check
+</code></pre>
+  <h3 id="contextstill-1">contextStill</h3>
+  <pre><code class="language-bash">bunx vitest run \
+  test/security-intelligence-auth.test.ts \
+  test/security-intelligence-contract-fixtures.test.ts
+bun test ./test/security-intelligence-ingress.bun.ts
+bun run typecheck
+git diff --check
+</code></pre>
+  <h2 id="section-16-stop-and-restart-rules">16. Stop and restart rules</h2>
+  <p>次のいずれかで即時停止し、flagをrollbackする。</p>
+  <ul>
+    <li>cross-repository fixture mismatch</li>
+    <li>wrong project、revision、target digest、Evidence Subjectの受理</li>
+    <li>source本文、secret、absolute pathの漏洩</li>
+    <li>unavailable、inconclusive、required failureのsuccess化</li>
+    <li>cross-Run evidenceの採用</li>
+    <li>receipt保存前のdelivered化、idempotency conflict後のmutation</li>
+    <li>feedbackによるKnowledge本文、status、promotion stateの変更</li>
+    <li>shadow itemによるconstraint変更またはverification省略</li>
+    <li>rollback後の通常Runまたは既存Security Scan v1の回帰</li>
+  </ul>
+  <p>
+    code、fixture、project identity、Task Revision
+    Snapshotのいずれかを変更した場合は、同じartifactを 継続編集せず、新しいsmoke
+    IDとartifactでP0から再開する。
+  </p>
+  <h2 id="section-17-done-when">17. Done when</h2>
+  <ul>
+    <li>
+      v2 prerequisite assetsとcross-repository fixtureがreview済みcommitとして固定されている。
+    </li>
+    <li>P0 preflightが1 project、clean working tree、5 fixture group PASSで完了している。</li>
+    <li>single-Run integrity lifecycleとsecondary lane contract smokeが完了している。</li>
+    <li>negative integrity checks 4件とrollback drillがPASSしている。</li>
+    <li>Stage 3 shadow smoke 1 batchの全checkがPASSしている。</li>
+    <li>5 capabilityのdated decisionとevidence refが保存されている。</li>
+    <li>v2 evidence verifierがterminal artifactを受理している。</li>
+    <li>temporary token、settings、database、workspace、processがcleanupされている。</li>
+    <li>3 repositoryのfocused test、typecheck、fixture verifierがPASSしている。</li>
+    <li>全flag OFF、allowlist empty、<code>defaultActivationAuthorized: false</code>である。</li>
+    <li>
+      authoritative
+      TODOが更新され、完了した場合だけTODOとこの計画が<code>spec/docs/.archived</code>へ移されている。
+    </li>
+  </ul>
+</article>

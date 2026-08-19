@@ -1,0 +1,1615 @@
+<article lang="ja">
+  <h1 id="mission-pilot-user-equivalent-recovery-implementation-plan">
+    Mission Pilot User-Equivalent Recovery Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Concept status: <code>locked</code></li>
+    <li>Plan status: <code>completed</code></li>
+    <li>Implementation status: <code>completed</code></li>
+    <li>Review baseline: <code>2026-07-29</code></li>
+    <li>Implementation verified: <code>2026-07-30</code></li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>
+      Primary scope: Mission Pilot、Task Operator、Mission Pilotが利用するAgent非依存application
+      boundary
+    </li>
+    <li>Explicitly excluded scope: Coding Agent production implementation</li>
+    <li>
+      Authority:
+      <ul>
+        <li>
+          Role/module境界は<code>spec/docs/mission-pilot-coding-agent-module-separation-plan.html</code>を継承する。
+        </li>
+        <li>
+          S11t
+          runtime、CLI、生成物、canary、検証規則は<code>spec/s11t-coding-agent-guide.md</code>を継承する。
+        </li>
+        <li>本計画は、現在のMission Pilotを復旧するための修正順序と完了条件を定める。</li>
+      </ul>
+    </li>
+  </ul>
+  <p>この計画の完成条件は、次の一文に集約する。</p>
+  <blockquote>
+    <p>
+      Mission Pilotを、人間ユーザーがNightWorkers上で読めるFactと実行できるapplication
+      commandだけを、委任された範囲内で代行する作業者として復旧し、Coding
+      Agentの実装、保存形式、event本文、runtime、tool、repositoryへ直接・間接に依存しない状態を、静的検査、integration
+      test、実provider live testで証明する。
+    </p>
+  </blockquote>
+  <p>
+    Mission Pilotは管理者、特権Supervisor、Coding Agentの内部coordinatorではない。 Mission
+    Pilotに許される能力の上限は、現在の人間ユーザーに許された能力である。
+    Play時の委任はユーザー権限を拡張せず、必ずその部分集合として扱う。
+  </p>
+  <h3 id="implementation-result">Implementation result</h3>
+  <p>本計画はM0からM8まで完了した。実装結果は次のとおり。</p>
+  <ul>
+    <li>Mission PilotのmutationはTask Operatorの公開commandへ統一した。</li>
+    <li>
+      Action definition、input schema、completion metadataはTask
+      Operatorの正本registryから生成する。
+    </li>
+    <li>
+      Mission PilotはDelegated User Principalを使い、各commandでcurrent user
+      capabilityを再評価する。
+    </li>
+    <li>
+      Run、Queue、Questionnaire、Artifactの正本tableをMission Pilot repositoryから直接読まない。
+    </li>
+    <li>Runの関連付けと復旧はTask Operator receipt / resource refを正本にした。</li>
+    <li>
+      <code>questionnaire.submit</code>はMission Pilotへ公開せず、20秒のユーザー介入契約を維持した。
+    </li>
+    <li>
+      <code>plan.artifact.regenerate</code>はorphan actionとして残さず、型別の共通Artifact
+      commandへ統一した。
+    </li>
+    <li>
+      旧plan coordinator、phase continuation、queue handoff、post-queue
+      review、closeout経路をproductionから削除した。
+    </li>
+    <li>Mission Pilot thoughtとCoding Agent chatはowner / channel別のread modelで分離した。</li>
+    <li>Coding Agent production implementationは変更していない。</li>
+    <li>
+      決定論E2E 7件、Mission Pilot / Task Operator契約157件、Coding Agent回帰131件、実Codex provider
+      canaryが成功した。
+    </li>
+  </ul>
+  <p>
+    実装中に、provider fixtureが<code>implementation</code> scope未登録時にMission Pilot用<code
+      >default</code
+    >
+    scopeへfallbackする問題を検出した。scopeは完全一致へ変更し、異なるroleのturnを消費しない。
+    また、Bun SQLiteとlibSQLの同一DB併用によるwrite lockを検出し、同期queryもlibSQLへ統一した。
+  </p>
+  <hr />
+  <h2 id="section-0-non-negotiable-constraints">0. Non-Negotiable Constraints</h2>
+  <h3 id="section-01-mission-pilotはユーザーの代替作業者である">
+    0.1 Mission Pilotはユーザーの代替作業者である
+  </h3>
+  <p>Mission Pilotは次の原則に従う。</p>
+  <ol>
+    <li>ユーザーがTask画面または対応する公開application APIから読めるFactだけを読む。</li>
+    <li>ユーザーが同じTask上で実行できるapplication commandだけを実行する。</li>
+    <li>
+      ユーザーと同じauthorization、precondition、revision、idempotency、confirmation、resource
+      ownership検証を通る。
+    </li>
+    <li>Playで与えられた委任範囲がユーザー権限より狭い場合は、狭い方を採用する。</li>
+    <li>ユーザーが介入できるQuestionnaire、不可逆操作、追加権限確認を迂回しない。</li>
+    <li>
+      Taskの意味、次action、Questionnaire回答案、Plan、Artifact、Run結果、完了判断はLLMが行う。
+    </li>
+    <li>
+      hostはschema、authorization、revision、lease、idempotency、resource budget、event
+      delivery等の構造的不変条件だけを強制する。
+    </li>
+  </ol>
+  <p>有効権限は、次の積集合として扱う。</p>
+  <pre><code class="language-text">effective capability
+  = current user capability
+  ∩ Play delegation
+  ∩ current Task Operator action availability
+</code></pre>
+  <p>
+    Mission Pilot専用scope、内部route、DB更新、service
+    methodによって、この積集合を超える能力を追加してはならない。
+  </p>
+  <h3 id="section-02-coding-agent側は一行も変更しない">0.2 Coding Agent側は一行も変更しない</h3>
+  <p>本計画では、次のproduction implementationを変更しない。</p>
+  <pre><code class="language-text">api/modules/codingAgent/**
+src/modules/codingAgent/**
+shared/modules/codingAgent/**
+</code></pre>
+  <p>加えて、次を禁止する。</p>
+  <ul>
+    <li>
+      Coding AgentのSystemContext、runtime、tool、Todo、repository、handler、routeを変更する。
+    </li>
+    <li>
+      Mission Pilotの都合でCoding Agentへ新しいmode、workflow、event、status、provenance
+      fieldを要求する。
+    </li>
+    <li>Coding Agentの既存start、resume、stop、terminal outcomeの意味を変更する。</li>
+    <li>Coding Agentのtest assertionをMission Pilotの都合で弱める。</li>
+    <li>Coding Agentの保存データをMission Pilotが直接更新する。</li>
+  </ul>
+  <p>
+    既存Coding Agent実装の読み取りと既存回帰testの実行は許可する。 Mission
+    Pilot側の修正だけで成立しない要求が見つかった場合は、Coding
+    Agentへ変更を加えず、そのCheckpointを停止する。
+  </p>
+  <h3 id="section-03-直接依存だけでなく隠れた依存も禁止する">
+    0.3 直接依存だけでなく隠れた依存も禁止する
+  </h3>
+  <p>次をすべて依存違反として扱う。</p>
+  <ul>
+    <li>Mission PilotからCoding Agent moduleへのimport。</li>
+    <li>Mission PilotからCoding Agent public indexへのimport。</li>
+    <li>
+      Mission Pilotから<code>agentsShare</code>のCoding
+      Agent固有portまたはrole名付きcontractへのimport。
+    </li>
+    <li>Mission PilotからCoding Agent routeをHTTP経由で呼ぶ実装。</li>
+    <li>
+      Mission PilotがCoding AgentのDB table、context snapshot、ledger、Todo tableを直接読む実装。
+    </li>
+    <li>
+      Mission PilotがCoding
+      Agent固有event名、message本文、payload内の文字列をparseしてRunを関連付ける実装。
+    </li>
+    <li>Mission PilotがCoding Agentのstatus文字列を独自解釈して次actionを固定する実装。</li>
+    <li>
+      Coding AgentからMission Pilot module、route、repository、prompt、event
+      subscriberへ到達する実装。
+    </li>
+    <li>
+      Queue、Task Operator、provider等の中立moduleへMission
+      Pilot固有fieldやrole分岐を置き、そこを介して結合する実装。
+    </li>
+    <li>
+      <code>agentsShare</code>へrole固有repository、route、continuation、semantic
+      decisionを移して境界を迂回する実装。
+    </li>
+  </ul>
+  <h3 id="section-04-許可する依存">0.4 許可する依存</h3>
+  <p>Mission Pilotから許可するproduction依存は、次に限定する。</p>
+  <pre><code class="language-text">Mission Pilot
+  -&gt; Mission Pilot自身のsession / conversation / receipt repository
+  -&gt; Task Operatorの公開query / command contract
+  -&gt; Agent非依存event envelope
+  -&gt; Mission Pilot provider adapter
+  -&gt; 汎用provider transport
+</code></pre>
+  <p>
+    Task、Questionnaire、Artifact、Queue、Runの正本は、それぞれのAgent非依存application query /
+    commandを通じて扱う。 Mission Pilot repositoryはMission Pilot固有tableだけを扱う。
+  </p>
+  <h3 id="section-05-mission-pilotに追加してはならない能力">
+    0.5 Mission Pilotに追加してはならない能力
+  </h3>
+  <ul>
+    <li>filesystem read / write tool。</li>
+    <li>shell / command tool。</li>
+    <li>Git primitiveへの直接アクセス。</li>
+    <li>repository pathへの直接アクセス。</li>
+    <li>Coding Agent runtime control API。</li>
+    <li>provider内部管理API。</li>
+    <li>Task、Run、Queue、Questionnaire、Artifact tableへの直接mutation。</li>
+    <li>ユーザーにないpush、merge、archive、complete権限。</li>
+    <li>confirmationや介入時間を迂回する専用command。</li>
+    <li>error messageやTask文言のkeyword分類による固定workflow。</li>
+  </ul>
+  <hr />
+  <h2 id="section-1-current-findings-to-correct">1. Current Findings to Correct</h2>
+  <table>
+    <caption>
+      1. Current Findings to Correct
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">現状</th>
+        <th scope="col">リスク</th>
+        <th scope="col">本計画の修正先</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>F1</td>
+        <td>
+          productionはpersistent Agent Runtimeだが、実provider live
+          testは旧<code>runMissionPilotPlanPipeline</code>を直接実行する
+        </td>
+        <td>green testがproduction動作を証明しない</td>
+        <td>R6、R7</td>
+      </tr>
+      <tr>
+        <td>F2</td>
+        <td>Mission Pilot action registryが38件、Task Operator catalogが37件で二重管理される</td>
+        <td>schema、availability、待機規則がdriftする</td>
+        <td>R2</td>
+      </tr>
+      <tr>
+        <td>F3</td>
+        <td><code>plan.artifact.regenerate</code>がMission Pilot registryにだけ存在する</td>
+        <td>Artifact再生成責務を実行できない</td>
+        <td>R2</td>
+      </tr>
+      <tr>
+        <td>F4</td>
+        <td><code>questionnaire.submit</code>がcomment、test、実行ログで異なる扱いになっている</td>
+        <td>ユーザー介入を迂回する、またはMission Pilotが停止する</td>
+        <td>R2、R3</td>
+      </tr>
+      <tr>
+        <td>F5</td>
+        <td>
+          <code>task.queue.enqueue</code
+          >と<code>run.implementation.start</code>が異なるprovenanceと結果契約を持つ
+        </td>
+        <td>同じ実装依頼に二つの不整合な経路がある</td>
+        <td>R4</td>
+      </tr>
+      <tr>
+        <td>F6</td>
+        <td>
+          Mission Pilot action復旧がRun DBと<code>coding_agent.requested</code> payloadを探索する
+        </td>
+        <td>Coding Agent保存形式への隠れた依存</td>
+        <td>R4</td>
+      </tr>
+      <tr>
+        <td>F7</td>
+        <td>Run update listenerのterminal分岐がearly return後にあり到達不能</td>
+        <td>event源が分裂し、復旧経路が一貫しない</td>
+        <td>R5</td>
+      </tr>
+      <tr>
+        <td>F8</td>
+        <td>Agent turn終了時にControl Summary version更新とrealtime publishが一貫しない</td>
+        <td>UI上、開始後に停止または固まったように見える</td>
+        <td>R5</td>
+      </tr>
+      <tr>
+        <td>F9</td>
+        <td>provider tool turn非対応をPlay前に検証しない</td>
+        <td>Play成功後、非同期にattentionへ落ちる</td>
+        <td>R5、R7</td>
+      </tr>
+      <tr>
+        <td>F10</td>
+        <td>QueueとTask OperatorにMission Pilot固有provenanceやmetadata名が漏れている</td>
+        <td>中立moduleを介したrole依存が残る</td>
+        <td>R1、R4</td>
+      </tr>
+      <tr>
+        <td>F11</td>
+        <td>旧coordinator、旧phase service、現行persistent runtimeが同じmodule内に併存する</td>
+        <td>修正対象、所有者、test対象を取り違える</td>
+        <td>R6</td>
+      </tr>
+    </tbody>
+  </table>
+  <hr />
+  <h2 id="section-2-target-responsibility-model">2. Target Responsibility Model</h2>
+  <h3 id="section-21-mission-pilotが所有するもの">2.1 Mission Pilotが所有するもの</h3>
+  <ul>
+    <li>Task Goal、完了条件、ユーザー指示、現在Factの解釈。</li>
+    <li>次に読むresourceの選択。</li>
+    <li>Questionnaireの要否、回答案、根拠、follow-up、review結果の評価。</li>
+    <li>ユーザー介入後のQuestionnaire Factの再評価。</li>
+    <li>Plan routingのinclude / omit判断。</li>
+    <li>Feature Plan、Blueprint、Data Model、Dedicated Viewの生成・再生成判断。</li>
+    <li>Artifact defectと維持事項の記述。</li>
+    <li>ユーザーと同じTask actionから次の一件を選ぶ判断。</li>
+    <li>repository作業が必要かどうかの判断。</li>
+    <li>Run開始時にユーザーとして渡す依頼本文。</li>
+    <li>Run terminal outcome、verification、blocker、changed path summaryの評価。</li>
+    <li>追加調査、修正依頼、再検証、ユーザー質問、Task complete、wait、finishの判断。</li>
+    <li>
+      Mission Pilot自身のsession、conversation、turn、tool call、delegation ref、action receipt。
+    </li>
+  </ul>
+  <h3 id="section-22-mission-pilotが所有しないもの">2.2 Mission Pilotが所有しないもの</h3>
+  <ul>
+    <li>repositoryの内容とfilesystem操作。</li>
+    <li>Coding Agent runtime。</li>
+    <li>Coding Agent Todo。</li>
+    <li>Coding Agent tool catalog。</li>
+    <li>command実行、build、test、lint、E2E。</li>
+    <li>Run内部transcript。</li>
+    <li>Coding Agentの最終報告生成。</li>
+    <li>Run statusの生成。</li>
+    <li>Task Run worker、Queue worker。</li>
+    <li>Task、Run、Questionnaire、Artifact、Queueの正本repository。</li>
+    <li>ユーザー権限を超える管理操作。</li>
+  </ul>
+  <h3 id="section-23-coding-agentが所有するもの">2.3 Coding Agentが所有するもの</h3>
+  <p>本計画はCoding Agentを変更しない。既存責務を外部契約として扱う。</p>
+  <ul>
+    <li>登録済みProject repo rootでの調査。</li>
+    <li>repository編集。</li>
+    <li>command実行。</li>
+    <li>Todoによる作業計画。</li>
+    <li>build、typecheck、lint、test、検証。</li>
+    <li>changed files、verification、blocker、final reportの生成。</li>
+    <li>ユーザー直結Runの単体完結。</li>
+  </ul>
+  <p>
+    Mission Pilotが停止中または存在しない場合のCoding Agent単体動作を、Mission
+    Pilot側の修正で妨げてはならない。
+  </p>
+  <h3 id="section-24-task-operatorが所有するもの">2.4 Task Operatorが所有するもの</h3>
+  <ul>
+    <li>ユーザーとMission Pilotが共通で利用するTask projection。</li>
+    <li>利用可能actionの正本。</li>
+    <li>action schema、説明、availability、expected revision。</li>
+    <li>principal、delegation、authorization、resource ownership、preconditionの検証。</li>
+    <li>command idempotency。</li>
+    <li>command receipt。</li>
+    <li>Task、Questionnaire、Artifact、Queue、Run application commandへのrouting。</li>
+    <li>bounded resource query。</li>
+    <li>role非依存failureへの変換。</li>
+  </ul>
+  <p>
+    Task OperatorはTaskの意味や次actionを判断しない。 Task
+    Operator内に<code>missionPilotAction</code>、<code>missionPilotActionKey</code>等のrole固有fieldや分岐を置かない。
+  </p>
+  <h3 id="section-25-hostが所有するもの">2.5 Hostが所有するもの</h3>
+  <ul>
+    <li>schema validation。</li>
+    <li>lease。</li>
+    <li>revision。</li>
+    <li>idempotency。</li>
+    <li>deadline。</li>
+    <li>resource budget。</li>
+    <li>provider capability preflight。</li>
+    <li>event persistenceとdelivery。</li>
+    <li>realtime publish。</li>
+    <li>process restart recovery。</li>
+  </ul>
+  <p>HostはQuestionnaire内容、Plan要否、Artifact要否、修正回数、Run成功の十分性を判断しない。</p>
+  <hr />
+  <h2 id="section-3-target-decision-loop">3. Target Decision Loop</h2>
+  <p>Mission Pilotは一つの永続LLM loopとして動作する。</p>
+  <pre><code class="language-text">PlayまたはTask event
+  -&gt; Task Operator projectionを読む
+  -&gt; 必要なbounded resourceだけを読む
+  -&gt; LLMが次actionを一件選ぶ
+  -&gt; action contractを読む
+  -&gt; Task Operator commandを実行する
+  -&gt; receiptを保存する
+  -&gt; 即時結果を再評価する、またはeventを待つ
+  -&gt; terminal outcomeをTask Operatorから読む
+  -&gt; Goalと完了条件を満たすかLLMが判断する
+  -&gt; 次action、質問、wait、complete、finishのいずれかを選ぶ
+</code></pre>
+  <h3 id="section-31-runtime-state">3.1 Runtime state</h3>
+  <p>Runtime stateはlifecycleだけを表す。</p>
+  <pre><code class="language-text">stopped
+running
+waiting
+attention
+completed
+</code></pre>
+  <p>
+    <code>questionnaire</code
+    >、<code>planning</code>、<code>queued</code>、<code>implementation</code>、<code>review</code>等のphaseを、次actionの決定に使わない。
+    既存UI互換のphaseが必要な場合は、観測済みFactから作る表示projectionに限定する。
+  </p>
+  <h3 id="section-32-questionnaire">3.2 Questionnaire</h3>
+  <p>Mission Pilotは回答案と根拠を作成し、ユーザーと同じdraft save commandを実行する。</p>
+  <pre><code class="language-text">Questionnaireを読む
+  -&gt; 回答案と根拠を判断
+  -&gt; questionnaire.draft.save
+  -&gt; 既存のユーザー介入時間
+  -&gt; user / timeout application pathによる確定
+  -&gt; state changed event
+  -&gt; Mission Pilotが確定後Factを再取得
+</code></pre>
+  <p>
+    Mission Pilotは介入時間を短縮せず、専用submit routeで迂回しない。
+    <code>questionnaire.submit</code>をMission
+    Pilotへ公開する場合は、通常ユーザーと同じpreconditionとconfirmationを持つことを別途証明しなければならない。
+    本計画の既定は、Mission Pilotへ直接公開しない。
+  </p>
+  <h3 id="section-33-artifact">3.3 Artifact</h3>
+  <p>
+    Mission PilotはArtifactの必要性、型、source selection、defect、維持事項を決める。
+    Artifact正本の生成・再生成は、ユーザーと共通のTask Operator commandを使用する。
+  </p>
+  <p><code>plan.artifact.regenerate</code>は次のどちらかをR2で確定する。</p>
+  <ol>
+    <li>
+      Agent非依存Artifact application commandとして実装し、Task Operatorの正本catalogへ追加する。
+    </li>
+    <li>
+      実行可能になるまでMission Pilot action definitionから削除し、型別generate
+      actionによる明示的再生成へ統一する。
+    </li>
+  </ol>
+  <p>registryにだけ存在する状態は禁止する。</p>
+  <h3 id="section-34-repository作業">3.4 Repository作業</h3>
+  <p>
+    Mission Pilotはrepositoryを見ない。 repository Factが必要な場合も、ユーザーがCoding
+    Agentへ依頼するのと同じTask actionを選ぶ。
+  </p>
+  <p>依頼本文には最低限、次を含める。</p>
+  <ul>
+    <li>Task Goal。</li>
+    <li>今回確認または実施してほしい範囲。</li>
+    <li>採用済みArtifact refs。</li>
+    <li>変更してはいけない範囲。</li>
+    <li>期待する検証。</li>
+    <li>前Runがある場合の不足、blocker、維持事項。</li>
+  </ul>
+  <p>Mission PilotはCoding Agent内部のtool、mode、Todo、実行順を指定しない。</p>
+  <h3 id="section-35-run評価とtask完了">3.5 Run評価とTask完了</h3>
+  <p>Run成功はTask完了ではない。</p>
+  <p>Mission PilotはTask Operatorの<code>run_outcome</code> resourceから次を読む。</p>
+  <ul>
+    <li>terminal status。</li>
+    <li>final report。</li>
+    <li>verification summary。</li>
+    <li>blocker。</li>
+    <li>changed path summary。</li>
+    <li>artifact refs。</li>
+    <li>source revision / digest。</li>
+  </ul>
+  <p>
+    その後、LLMがTask Goalと完了条件を満たすか判断する。 Taskを完了できるのは、ユーザーと同じ<code
+      >task.complete</code
+    >
+    commandがpreconditionを満たした場合だけである。
+  </p>
+  <p>
+    <code>agent.finish</code>はMission Pilot runtimeを終了するだけであり、Taskを暗黙完了しない。
+  </p>
+  <hr />
+  <h2 id="section-4-canonical-user-equivalent-task-operator-contract">
+    4. Canonical User-Equivalent Task Operator Contract
+  </h2>
+  <h3 id="section-41-action-definitionの正本を一つにする">
+    4.1 Action definitionの正本を一つにする
+  </h3>
+  <p>Action definitionはTask Operator側の一つのcatalogを正本とする。</p>
+  <pre><code class="language-ts">type TaskOperatorActionDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  inputSchema: JsonSchema;
+  effect: &quot;read&quot; | &quot;mutation&quot;;
+  completion:
+    | { kind: &quot;immediate&quot; }
+    | { kind: &quot;event&quot;; eventTypes: string[] }
+    | { kind: &quot;finish_candidate&quot; };
+};
+</code></pre>
+  <p>Mission Pilotは次だけを行う。</p>
+  <ol>
+    <li><code>list_available_task_actions</code></li>
+    <li><code>read_task_action_contract</code></li>
+    <li><code>execute_task_action</code></li>
+  </ol>
+  <p>
+    Mission Pilot moduleに個別action schema、説明、availability、wait listを複製しない。 Mission
+    Pilot固有なのは、generic tool contractと、LLMがどのactionを選ぶかという判断だけである。
+  </p>
+  <h3 id="section-42-availability">4.2 Availability</h3>
+  <p>Task Operator projectionは、すべてのactionについて次を返す。</p>
+  <pre><code class="language-ts">type TaskOperatorAvailableAction = {
+  id: string;
+  availability: &quot;available&quot; | &quot;unavailable&quot;;
+  unavailableReasonCode: string | null;
+  expectedRevision: number;
+};
+</code></pre>
+  <p>
+    Mission Pilotは<code>available</code>のactionだけを実行できる。 availabilityをMission
+    Pilot側のscope mapや固定phaseで上書きしない。
+  </p>
+  <h3 id="section-43-delegated-user-principal">4.3 Delegated user principal</h3>
+  <p>
+    Mission Pilot commandは、session
+    IDだけをactorとする特権automationではなく、ユーザー委任を構造的に保持する。
+  </p>
+  <pre><code class="language-ts">type DelegatedTaskOperatorPrincipal = {
+  kind: &quot;delegated_user&quot;;
+  subjectUserId: string;
+  delegationRef: {
+    sessionId: string;
+    taskId: string;
+    grantedAt: string;
+    capabilityDigest: string;
+  };
+};
+</code></pre>
+  <p>実装時に既存principal schemaとの互換が必要な場合も、次を満たす。</p>
+  <ul>
+    <li>元のユーザーidentityを失わない。</li>
+    <li>delegationのTaskとsessionを検証する。</li>
+    <li>delegation単独で新しい権限を作らない。</li>
+    <li>current user capabilityの変更を毎commandで反映する。</li>
+    <li>Stop後、失効後、Task移動後のdelegationを拒否する。</li>
+  </ul>
+  <h3 id="section-44-command-result">4.4 Command result</h3>
+  <p>Task Operator commandはraw domain objectやrole固有resultを返さない。</p>
+  <pre><code class="language-ts">type TaskOperatorCommandResult&lt;T&gt; =
+  | {
+      ok: true;
+      receipt: {
+        commandId: string;
+        idempotencyKey: string;
+        actionId: string;
+        operationRef: { kind: string; id: string } | null;
+        resourceRefs: Array&lt;{ kind: string; id: string }&gt;;
+        replayed: boolean;
+      };
+      data: T;
+    }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        kind:
+          | &quot;invalid_request&quot;
+          | &quot;permission&quot;
+          | &quot;revision_conflict&quot;
+          | &quot;domain_precondition&quot;
+          | &quot;outcome_unknown&quot;
+          | &quot;temporarily_unavailable&quot;;
+        message: string;
+        retryable: boolean;
+        currentRevision: number | null;
+      };
+    };
+</code></pre>
+  <p>
+    Mission Pilotはこのresultだけをconversationへ戻す。 Coding Agentやdomain
+    serviceの例外型を直接扱わない。 LLMから返された本文とapplication
+    error本文を固定文へ差し替えない。
+  </p>
+  <h3 id="section-45-action-catalogで解消する重複">4.5 Action catalogで解消する重複</h3>
+  <p>R2で次を明示的に解消する。</p>
+  <table>
+    <caption>
+      4.5 Action catalogで解消する重複
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">現状</th>
+        <th scope="col">目標</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <code>questionnaire.draft.update</code>と<code>questionnaire.draft.save</code>が同じ処理
+        </td>
+        <td>一つを正本にし、必要なら他方を期限付きcompatibility aliasとする</td>
+      </tr>
+      <tr>
+        <td><code>plan.artifact.regenerate</code>がMission Pilotだけに存在</td>
+        <td>Task Operator正本へ追加、または完全削除</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.submit</code>の公開方針が不一致</td>
+        <td>ユーザー介入契約を正本とし、Mission Pilotから非公開を既定にする</td>
+      </tr>
+      <tr>
+        <td>Queueとdirect Runの説明が曖昧</td>
+        <td>schedulingとimmediate executionを別のユーザー操作として明記する</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-46-queueとdirect-run">4.6 Queueとdirect Run</h3>
+  <p>両方を残す場合、意味を次に固定する。</p>
+  <ul>
+    <li>
+      <code>task.queue.enqueue</code>
+      <ul>
+        <li>現在のTaskを通常ユーザーと同じQueue policyでscheduleする。</li>
+        <li>Mission Pilot固有の依頼本文を隠して渡さない。</li>
+        <li>Queue entry refをreceiptで返す。</li>
+      </ul>
+    </li>
+    <li>
+      <code>run.implementation.start</code>
+      <ul>
+        <li>明示した依頼本文で現在のTask Runを即時開始する。</li>
+        <li>Run refをreceiptで返す。</li>
+      </ul>
+    </li>
+  </ul>
+  <p>
+    Mission
+    Pilotは通常、具体的な依頼や修正が必要な場合に<code>run.implementation.start</code>を選ぶ。
+    hostがTask文言からどちらかへ自動分類しない。
+  </p>
+  <hr />
+  <h2 id="section-5-run-boundary-without-mission-pilot--coding-agent-dependency">
+    5. Run Boundary Without Mission Pilot / Coding Agent Dependency
+  </h2>
+  <h3 id="section-51-mission-pilotから見える境界">5.1 Mission Pilotから見える境界</h3>
+  <p>Mission Pilotから見えるものは、次だけとする。</p>
+  <pre><code class="language-text">Task Operator action:
+  run.implementation.start
+  run.todo.resume
+  run.stop
+
+Task Operator resource:
+  run_outcome
+  current_todo
+
+Agent非依存event:
+  task_run.started
+  task_run.terminal
+  task_run.failed
+</code></pre>
+  <p>
+    Mission Pilotは<code>startCodingAgentRun</code>、<code>resumeCodingAgentRunTodo</code>、Coding
+    Agent handler、Coding Agent eventを知らない。
+  </p>
+  <h3 id="section-52-task-operator内部adapter">5.2 Task Operator内部adapter</h3>
+  <p>
+    Task Operatorは、既存のRun開始結果をTask Operator receiptへ正規化する。 このadapterは既存Coding
+    Agent handlerの変更を要求しない。
+  </p>
+  <pre><code class="language-text">Mission Pilot
+  -&gt; Task Operator command
+  -&gt; existing Task Run application bridge
+  -&gt; existing Coding Agent execution registration
+</code></pre>
+  <p>
+    Mission Pilotからこのbridgeの型、保存形式、登録方法は見えない。 本計画中、既存Coding
+    Agent側のregistration contractを変更しない。
+  </p>
+  <h3 id="section-53-receiptによる関連付け">5.3 Receiptによる関連付け</h3>
+  <p>Run開始commandが成功した時点で、Task Operator receiptへRun refを保存する。</p>
+  <pre><code class="language-ts">resourceRefs: [
+  { kind: &quot;task_run&quot;, id: runId }
+]
+</code></pre>
+  <p>
+    Mission Pilotは自分のaction receiptへTask Operator receipt refだけを保存する。 復旧時はTask
+    Operator command receiptをqueryする。
+  </p>
+  <p>次を廃止する。</p>
+  <ul>
+    <li><code>taskRuns</code>全件走査。</li>
+    <li><code>contextSnapshot.missionPilotAgent</code>探索。</li>
+    <li>Task event payload内の<code>coding_agent.requested</code>探索。</li>
+    <li><code>requestedBy.actorId</code>とMission Pilot session IDの文字列比較。</li>
+    <li>Queue内部の<code>missionPilotAgentJson</code>探索。</li>
+  </ul>
+  <h3 id="section-54-terminal-event">5.4 Terminal event</h3>
+  <p>Terminal eventはAgent非依存のRun application eventとする。</p>
+  <pre><code class="language-ts">type TaskRunTerminalEvent = {
+  eventId: string;
+  taskRef: { id: string; revision: number };
+  runRef: { id: string };
+  status: string;
+  outcomeRef: { kind: &quot;run_outcome&quot;; id: string };
+  occurredAt: string;
+};
+</code></pre>
+  <p>
+    Mission Pilot subscriberは、Task IDに対応するplaying
+    sessionがある場合だけ、自身のinboxへeventを写し、wakeする。 publisherはMission
+    Pilotの存在を知らない。
+  </p>
+  <p>同じterminal eventを複数listener経路で生成しない。 event IDでidempotentに保存する。</p>
+  <h3 id="section-55-outcome">5.5 Outcome</h3>
+  <p>
+    Mission PilotはRun DBを直接読まず、Task Operatorのbounded <code>run_outcome</code> queryを使う。
+    reportが大きい場合はdigestとpagingを返し、正本を改変しない。
+  </p>
+  <hr />
+  <h2 id="section-6-data-and-module-placement-rules">6. Data and Module Placement Rules</h2>
+  <h3 id="section-61-mission-pilot-repositoryで許可するtable">
+    6.1 Mission Pilot repositoryで許可するtable
+  </h3>
+  <ul>
+    <li>Mission Pilot session。</li>
+    <li>Mission Pilot Agent session。</li>
+    <li>Mission Pilot turn。</li>
+    <li>Mission Pilot conversation item。</li>
+    <li>Mission Pilot tool call。</li>
+    <li>Mission Pilot task event inbox。</li>
+    <li>Mission Pilot action execution receipt。</li>
+    <li>Mission Pilot context snapshot。</li>
+  </ul>
+  <h3 id="section-62-mission-pilot-repositoryから禁止するtable">
+    6.2 Mission Pilot repositoryから禁止するtable
+  </h3>
+  <ul>
+    <li>Task。</li>
+    <li>Task Run。</li>
+    <li>Task Run commit record。</li>
+    <li>Task Run action record。</li>
+    <li>Coding Agent ledger。</li>
+    <li>Coding Agent Todo。</li>
+    <li>Implementation Queue entry。</li>
+    <li>Questionnaire正本。</li>
+    <li>Artifact正本。</li>
+  </ul>
+  <p>これらはTask Operator query / commandからのみ扱う。</p>
+  <h3 id="section-63-中立moduleから除去するrole固有情報">6.3 中立moduleから除去するrole固有情報</h3>
+  <p>次のようなfield、型、optionを中立名へ置換する。</p>
+  <ul>
+    <li><code>missionPilotAction</code></li>
+    <li><code>missionPilotActionKey</code></li>
+    <li><code>missionPilotAdmissionKey</code></li>
+    <li><code>missionPilotAgent</code></li>
+    <li><code>MissionPilotAgentRunProvenance</code></li>
+  </ul>
+  <p>置換先は、role非依存の次の概念とする。</p>
+  <ul>
+    <li>command provenance。</li>
+    <li>delegated principal。</li>
+    <li>orchestration ref。</li>
+    <li>command receipt ref。</li>
+    <li>request trace。</li>
+  </ul>
+  <p>中立moduleで<code>role === &quot;mission_pilot&quot;</code>分岐を作らない。</p>
+  <h3 id="section-64-coding-agent固有port">6.4 Coding Agent固有port</h3>
+  <p>
+    既存<code>agentsShare/contracts/coding-agent-run.ts</code>と<code>ports/coding-agent-run.ts</code>は、Mission
+    Pilotからimportしない。 本計画ではCoding Agent実装を変更しないため、既存Task Run application
+    bridgeの内部互換境界として扱う。
+  </p>
+  <p>
+    Mission Pilotが利用する正本contractはTask Operatorだけである。
+    この既存portのrename、削除、handler変更は本計画に含めない。
+  </p>
+  <hr />
+  <h2 id="section-7-implementation-work-packages">7. Implementation Work Packages</h2>
+  <h2 id="r0-baseline-and-change-ledger">R0: Baseline and Change Ledger</h2>
+  <h3 id="目的">目的</h3>
+  <p>既存差分を保護し、production経路、旧経路、境界違反を実装前に固定する。</p>
+  <h3 id="作業">作業</h3>
+  <ol>
+    <li>working treeを記録する。</li>
+    <li>Mission Pilot、Task Operator、Queue、agentsShareの関連fileを分類する。</li>
+    <li>production <code>/play</code>からpersistent runtimeまでのimport graphを記録する。</li>
+    <li>旧coordinatorの全consumerを記録する。</li>
+    <li>action registryとTask Operator catalogの差分を機械的に記録する。</li>
+    <li>Mission Pilot moduleから共有DB tableへのimportを列挙する。</li>
+    <li>中立moduleに残るMission Pilot固有symbolを列挙する。</li>
+    <li>provider route capabilityとlive test有効条件を記録する。</li>
+  </ol>
+  <h3 id="coding-agent不変更gate">Coding Agent不変更gate</h3>
+  <pre><code class="language-bash">git diff --name-only -- \
+  api/modules/codingAgent \
+  src/modules/codingAgent \
+  shared/modules/codingAgent
+</code></pre>
+  <p>結果が実装開始前から存在する差分を除いて増えていないことを確認する。</p>
+  <h3 id="完了条件">完了条件</h3>
+  <ul>
+    <li>change ledgerがある。</li>
+    <li>current failure pathを観測する手順がある。</li>
+    <li>productionとlegacy testの対応表がある。</li>
+    <li>Coding Agent側の変更を計画に含めていない。</li>
+  </ul>
+  <h3 id="停止条件">停止条件</h3>
+  <ul>
+    <li>既存dirty changeと同じ行を安全に分離できない。</li>
+    <li>productionでどのruntimeが起動するか一意に確認できない。</li>
+  </ul>
+  <hr />
+  <h2 id="r1-boundary-guardrails">R1: Boundary Guardrails</h2>
+  <h3 id="目的-1">目的</h3>
+  <p>直接import以外の依存を、実装前にfail-first testで検出する。</p>
+  <h3 id="追加する検査">追加する検査</h3>
+  <ol>
+    <li>Mission Pilotから<code>api/modules/codingAgent</code>へのimport禁止。</li>
+    <li>Mission Pilotからrole名付きCoding Agent contractへのimport禁止。</li>
+    <li>
+      Mission Pilot repositoryから共有Task / Run / Queue / Questionnaire / Artifact
+      tableへのimport禁止。
+    </li>
+    <li>
+      Mission Pilotで<code>coding_agent.requested</code>等のCoding Agent
+      event文字列をparseする実装禁止。
+    </li>
+    <li>Task Operator、Queue、provider共通層のMission Pilot固有field、type、branch禁止。</li>
+    <li>Mission Pilot tool catalogへのfilesystem、shell、Git primitive登録禁止。</li>
+    <li>Coding AgentからMission Pilotへのimportが0件である既存contractを維持。</li>
+    <li>Agent固有production code配置検査のbaselineを更新し、新規違反追加を禁止。</li>
+  </ol>
+  <h3 id="test名候補">Test名候補</h3>
+  <ul>
+    <li><code>tests/mission-pilot-user-equivalent-boundary.test.ts</code></li>
+    <li><code>tests/mission-pilot-shared-storage-boundary.test.ts</code></li>
+    <li><code>tests/task-operator-role-neutrality.test.ts</code></li>
+    <li><code>tests/mission-pilot-coding-agent-independence.test.ts</code></li>
+  </ul>
+  <h3 id="完了条件-1">完了条件</h3>
+  <ul>
+    <li>現在の隠れた依存をfail-firstで検出できる。</li>
+    <li>新規Coding Agent変更がなくてもtestを追加できる。</li>
+    <li>architecture checkが新規違反を拒否する。</li>
+  </ul>
+  <hr />
+  <h2 id="r2-single-canonical-action-contract">R2: Single Canonical Action Contract</h2>
+  <h3 id="目的-2">目的</h3>
+  <p>Mission Pilot action registryとTask Operator command catalogの二重管理を解消する。</p>
+  <h3 id="作業-1">作業</h3>
+  <ol>
+    <li>Task Operator action definitionを一つの正本へ集約する。</li>
+    <li>schema、title、description、availability、completion metadataを同じ定義から生成する。</li>
+    <li>Mission Pilot registryから個別action schemaとwait listを削除する。</li>
+    <li>Mission Pilotのprovider toolはgenericな7 toolだけを維持する。</li>
+    <li>
+      <code>plan.artifact.regenerate</code>を実行可能な正本commandへ追加するか、Mission Pilot
+      definitionから削除する。
+    </li>
+    <li><code>questionnaire.submit</code>をMission Pilot delegated catalogから除外する。</li>
+    <li>
+      <code>questionnaire.draft.update</code
+      >と<code>questionnaire.draft.save</code>の正本を一つにする。
+    </li>
+    <li>action catalogとcommand switchの集合一致testを追加する。</li>
+    <li>
+      すべてのevent completion actionに、実在するterminal event contractがあることを検証する。
+    </li>
+  </ol>
+  <h3 id="完了条件-2">完了条件</h3>
+  <ul>
+    <li>Action ID集合が一つのsourceから生成される。</li>
+    <li>registry-only、catalog-only、switch-only actionが0件。</li>
+    <li>Mission Pilot独自schemaが0件。</li>
+    <li>Artifact再生成方針が一意。</li>
+    <li>Questionnaire介入契約が一意。</li>
+  </ul>
+  <h3 id="ロールバック">ロールバック</h3>
+  <p>
+    正本切替前に新definitionをdirect testする。 切替はcatalog reader、contract
+    reader、executorを同一Checkpointで行い、二重正本状態をcommitしない。
+  </p>
+  <hr />
+  <h2 id="r3-delegated-user-authorization">R3: Delegated User Authorization</h2>
+  <h3 id="目的-3">目的</h3>
+  <p>Mission Pilotの権限を、現在ユーザーの権限以下に構造的に固定する。</p>
+  <h3 id="作業-2">作業</h3>
+  <ol>
+    <li>Play時にユーザーidentity、Task、session、委任capability digestを保存する。</li>
+    <li>Task Operator commandごとにcurrent user capabilityを再評価する。</li>
+    <li>Play delegationとの積集合を計算する。</li>
+    <li>Stop、session失効、Task archive、user permission変更後のdelegationを拒否する。</li>
+    <li>Mission Pilot専用authorization scopeが権限を追加しないことをtestする。</li>
+    <li>push、merge、archive、complete等は既存ユーザーpreconditionをそのまま使う。</li>
+    <li>UI confirmationが必要な操作は、Mission Pilot専用bypassを作らない。</li>
+    <li>
+      permission failure本文をLLM
+      conversationへ保持し、LLMが質問、別action、finishを判断できるようにする。
+    </li>
+  </ol>
+  <h3 id="user-parity-tests">User parity tests</h3>
+  <ul>
+    <li>ユーザーが実行不可のactionはMission Pilotも実行不可。</li>
+    <li>ユーザー権限を失うと次commandからMission Pilotも実行不可。</li>
+    <li>
+      Play delegationで許可されていないactionは、ユーザーに権限があってもMission Pilotは実行不可。
+    </li>
+    <li>Mission Pilotだけが実行できるactionが0件。</li>
+    <li>Mission Pilot専用DB updateでTask状態を変更できない。</li>
+  </ul>
+  <h3 id="完了条件-3">完了条件</h3>
+  <ul>
+    <li>すべてのMission Pilot mutationがDelegated User Principalを持つ。</li>
+    <li>effective capabilityがserver側で検証される。</li>
+    <li>Mission Pilotにuser capabilityを超える経路がない。</li>
+  </ul>
+  <hr />
+  <h2 id="r4-run-receipt-and-outcome-boundary">R4: Run Receipt and Outcome Boundary</h2>
+  <h3 id="目的-4">目的</h3>
+  <p>
+    Mission PilotからCoding Agentの保存形式、event本文、runtime registrationへの間接依存を除去する。
+  </p>
+  <h3 id="作業-3">作業</h3>
+  <ol>
+    <li><code>run.implementation.start</code>のraw resultをTask Operator receiptへ正規化する。</li>
+    <li>Run refをreceiptの<code>resourceRefs</code>へ保存する。</li>
+    <li>
+      <code>run.todo.resume</code>と<code>run.stop</code>も同じreceipt / failure shapeへ統一する。
+    </li>
+    <li>Queue commandはQueue entry refを返す。</li>
+    <li>Mission Pilot action receiptはTask Operator receipt refだけを保存する。</li>
+    <li>
+      <code>mission-pilot-action-execution.repository.ts</code>からRun table scanとevent
+      payload解析を削除する。
+    </li>
+    <li>
+      <code>mission-pilot-run-outcome.adapter.ts</code>等の直接DB queryを削除し、Task Operator
+      resource queryへ統一する。
+    </li>
+    <li>Terminal eventはAgent非依存event IDでidempotentにinboxへ保存する。</li>
+    <li>
+      Run statusはTask Operator resource schemaでtyped normalizationし、Mission
+      Pilot側にstatus集合を複製しない。
+    </li>
+  </ol>
+  <h3 id="coding-agent不変更方法">Coding Agent不変更方法</h3>
+  <ul>
+    <li>既存Coding Agent start / resume handlerはそのまま使う。</li>
+    <li>Task Operator command層で既存resultをreceiptへwrapする。</li>
+    <li>Coding Agentへ新しい引数、event、status、provenanceを要求しない。</li>
+    <li>Mission Pilotは既存Coding Agent portをimportしない。</li>
+  </ul>
+  <h3 id="完了条件-4">完了条件</h3>
+  <ul>
+    <li>
+      Mission Pilot production
+      codeに<code>taskRuns</code>、<code>taskRunCommitRecords</code>、<code>taskRunActionRecords</code>のimportがない。
+    </li>
+    <li>Mission Pilot production codeに<code>coding_agent.requested</code>のparseがない。</li>
+    <li>crash後に同一Task Operator receiptからRun refを復元できる。</li>
+    <li>Start、resume、stop、outcome、terminal eventが同じRun refで結ばれる。</li>
+    <li>QueueのMission Pilot固有provenance fieldへ依存しない。</li>
+  </ul>
+  <hr />
+  <h2 id="r5-persistent-runtime-lifecycle-and-realtime">
+    R5: Persistent Runtime Lifecycle and Realtime
+  </h2>
+  <h3 id="目的-5">目的</h3>
+  <p>現行persistent runtimeの状態遷移、event、UI projectionを一つの正本にする。</p>
+  <h3 id="作業-4">作業</h3>
+  <ol>
+    <li>Run update listenerの到達不能terminal分岐を削除する。</li>
+    <li>Run startedとterminal eventのsourceを一つずつにする。</li>
+    <li>event IDによる重複排除を行う。</li>
+    <li><code>finishMissionPilotAgentTurn</code>でControl Summary projectionを更新する。</li>
+    <li>公開状態が変わる場合はversionを増やす。</li>
+    <li>transaction完了後に<code>mission_pilot.updated</code>をpublishする。</li>
+    <li>waiting、attention、completed、stoppedのすべてでUIが最新状態を受け取るtestを追加する。</li>
+    <li>Play前にprovider tool-turn capabilityをpreflightする。</li>
+    <li>provider非対応時はPlayを開始済みにせず、typed failureを返す。</li>
+    <li>retryable provider failureだけを上限付きretry対象にする。</li>
+    <li>provider本文、tool result、failure本文を固定文へ置換しない。</li>
+  </ol>
+  <h3 id="完了条件-5">完了条件</h3>
+  <ul>
+    <li>Play後の全terminal runtime stateがrealtimeで観測できる。</li>
+    <li>UI summary versionが単調増加する。</li>
+    <li>terminal Run eventの二重生成がない。</li>
+    <li>provider非対応をPlay前に検出できる。</li>
+    <li>Stop後に遅延wakeやretry callbackが再開しない。</li>
+  </ul>
+  <hr />
+  <h2 id="r6-legacy-runtime-isolation-and-removal">R6: Legacy Runtime Isolation and Removal</h2>
+  <h3 id="目的-6">目的</h3>
+  <p>旧coordinatorと現行persistent runtimeを同じMission Pilot production経路に残さない。</p>
+  <h3 id="作業-5">作業</h3>
+  <ol>
+    <li><code>runMissionPilotPlanPipeline</code>の全consumerを再確認する。</li>
+    <li>
+      <code>mission-pilot-plan-intake.service.ts</code>からのdynamic
+      importがproduction到達不能であることをtestするか、削除する。
+    </li>
+    <li>
+      旧plan coordinator、queue handoff、post-queue review、closeout、phase
+      continuationをlegacy分類する。
+    </li>
+    <li>現行persistent runtimeが旧serviceをimportしないことを全entrypointで検査する。</li>
+    <li>旧serviceを直接呼ぶtestは<code>legacy characterization</code>として明示する。</li>
+    <li>現行runtimeで同じproduct contractを証明した後に旧testを削除する。</li>
+    <li>旧runtime用authorization V2 fixtureを現行live testで使用しない。</li>
+    <li>docsのImplementation statusとCheckpoint ledgerを現在実装に合わせて更新する。</li>
+  </ol>
+  <h3 id="禁止">禁止</h3>
+  <ul>
+    <li>feature flagで旧runtimeと新runtimeを同時稼働する。</li>
+    <li>二重listener、二重write、dual completionを残す。</li>
+    <li>旧phaseから現行Agentの次actionを推測する。</li>
+    <li>旧serviceを「念のため」のfallbackとして呼ぶ。</li>
+  </ul>
+  <h3 id="完了条件-6">完了条件</h3>
+  <ul>
+    <li>production activation graphから旧coordinatorへの経路が0件。</li>
+    <li>現行runtimeのintegration / live testが旧testの必要contractを代替する。</li>
+    <li>旧runtimeの状態やphaseがsemantic decisionに使われない。</li>
+  </ul>
+  <hr />
+  <h2 id="r7-production-path-integration-and-live-verification">
+    R7: Production-Path Integration and Live Verification
+  </h2>
+  <h3 id="目的-7">目的</h3>
+  <p>
+    fixtureだけでなく、実際の<code>/play</code>、persistent runtime、provider、Task Operator、Run
+    eventを通して動作を証明する。
+  </p>
+  <h3 id="integration-scenarios">Integration scenarios</h3>
+  <ol>
+    <li>Play → Fact read → assistant response → wait。</li>
+    <li>Questionnaire draft save → intervention → state changed →再評価。</li>
+    <li>Artifact生成 →不備評価 →再生成。</li>
+    <li>
+      <code>run.implementation.start</code> → Run ref receipt → terminal event → outcome read。
+    </li>
+    <li>Run failure →具体的な修正依頼 →別Run →再評価。</li>
+    <li>
+      Run success → verification評価 → <code>task.complete</code> → <code>agent.finish</code>。
+    </li>
+    <li>user message割り込み →同じconversationで再評価。</li>
+    <li>Stop → in-flight provider/tool停止 →再起動しない。</li>
+    <li>process restart → receipt/eventから同じsessionを復元。</li>
+    <li>provider unsupported → Play前typed failure。</li>
+    <li>user permission変更 →次actionを拒否。</li>
+    <li>Coding Agent単体Run → Mission Pilotなしで従来通り完結。</li>
+  </ol>
+  <h3 id="live-testの修正">Live testの修正</h3>
+  <p>
+    既存<code>tests/live/mission-pilot-plan-pipeline-live.test.ts</code>をproduction証拠として扱わない。
+    新しいlive testは次を満たす。
+  </p>
+  <ul>
+    <li>公開<code>/mission-pilot/tasks/:taskId/play</code>を呼ぶ。</li>
+    <li>現行delegation contractを使う。</li>
+    <li>persistent Agent session / turn / conversationを生成する。</li>
+    <li>実provider tool turnを使う。</li>
+    <li>Task Operatorのgeneric toolだけを通る。</li>
+    <li>旧<code>runMissionPilotPlanPipeline</code>をimportしない。</li>
+    <li>Coding Agent実装を変更しない。</li>
+    <li>provider call、selected action、receipt、event、outcome、finishを監査できる。</li>
+  </ul>
+  <h3 id="release-gate">Release gate</h3>
+  <p>
+    fixture E2E成功だけでrelease可能としない。 少なくとも一つの実provider routeで、normal
+    pathと一回のfailure/re-evaluation pathを通す。
+  </p>
+  <hr />
+  <h2 id="r8-cleanup-canary-and-final-gate">R8: Cleanup, Canary, and Final Gate</h2>
+  <h3 id="目的-8">目的</h3>
+  <p>compatibility、role漏れ、未使用経路を除去し、canary後に切替を完了する。</p>
+  <h3 id="cleanup">Cleanup</h3>
+  <ol>
+    <li>Mission Pilot個別action registryを削除する。</li>
+    <li>Mission Pilot独自wait listを削除する。</li>
+    <li>直接Run DB query adapterを削除する。</li>
+    <li>Coding Agent event payload reconciliationを削除する。</li>
+    <li>Queue / Task OperatorのMission Pilot固有field名を中立provenanceへ置換する。</li>
+    <li>旧runtime activation pathを削除する。</li>
+    <li>期限付きcompatibility aliasを削除する。</li>
+    <li>architecture baseline例外を0にする。</li>
+  </ol>
+  <h3 id="canary">Canary</h3>
+  <p>canaryは現行persistent runtimeだけを対象にする。 旧runtimeとのtraffic splitは行わない。</p>
+  <p>観測項目:</p>
+  <ul>
+    <li>Play成功率。</li>
+    <li>provider preflight failure率。</li>
+    <li>first tool turn到達率。</li>
+    <li>Task Operator command成功／typed failure率。</li>
+    <li>receiptからresource refを復元できた割合。</li>
+    <li>terminal event重複数。</li>
+    <li>waiting / attention滞留時間。</li>
+    <li>realtime version gap。</li>
+    <li>user permission拒否数。</li>
+    <li>action <code>outcome_unknown</code>数。</li>
+    <li>Stop後wake発生数。</li>
+  </ul>
+  <h3 id="canary停止条件">Canary停止条件</h3>
+  <ul>
+    <li>Mission Pilotだけが実行できるactionが見つかる。</li>
+    <li>Coding Agent側の変更が必要になる。</li>
+    <li>Run refをCoding Agent event本文から復元する必要が生じる。</li>
+    <li>Task Operator以外のmutation経路が使われる。</li>
+    <li>terminal eventが重複する。</li>
+    <li>provider failure後にUI状態が更新されない。</li>
+    <li>Stop後にmutationが実行される。</li>
+  </ul>
+  <hr />
+  <h2 id="section-8-file-disposition">8. File Disposition</h2>
+  <table>
+    <caption>
+      8. File Disposition
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current file / family</th>
+        <th scope="col">Planned action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/modules/missionPilot/agent/mission-pilot-task-action.registry.ts</code></td>
+        <td>個別action正本を削除し、generic toolからTask Operator contractを読む</td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-action-execution-metadata.ts</code>
+        </td>
+        <td>completion metadataをTask Operator action正本へ移し、Mission Pilot複製を削除</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/missionPilot/agent/mission-pilot-task-read.adapter.ts</code></td>
+        <td>Task Operator action definitionをそのまま返す</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/missionPilot/agent/mission-pilot-task-action.adapter.ts</code></td>
+        <td>Delegated User PrincipalとTask Operator receiptだけを扱う</td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-action-command-executor.ts</code>
+        </td>
+        <td>Task Operator public command以外の依存を禁止</td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-action-execution.repository.ts</code>
+        </td>
+        <td>Run / Queue DB探索とCoding Agent event payload解析を削除</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/missionPilot/agent/mission-pilot-run-outcome.adapter.ts</code></td>
+        <td>削除し、Task Operator <code>run_outcome</code> queryへ統一</td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-conversation-query.repository.ts</code>
+        </td>
+        <td>runtime state更新とControl Summary version / realtime連携を分離・明示</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/missionPilot/mission-pilot.service.ts</code></td>
+        <td>terminal event source、provider preflight、realtime publishを整理</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/missionPilot/mission-pilot-plan-intake.service.ts</code></td>
+        <td>旧coordinator dynamic importを削除またはproduction到達不能化</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/missionPilot/mission-pilot-plan-coordinator.service.ts</code>等</td>
+        <td>legacy隔離後に削除</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/taskOperator/policies/task-operator-command-catalog.ts</code></td>
+        <td>action definitionの唯一の正本へ拡張</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/taskOperator/application/task-operator.command.ts</code></td>
+        <td>typed result / receipt、role非依存execution contextへ整理</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/taskOperator/application/task-operator.detail-query.ts</code></td>
+        <td>Run outcomeを含むbounded resource queryの正本を維持</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/queue/queue-admission.service.ts</code></td>
+        <td>Mission Pilot固有optionをrole非依存command provenanceへ置換</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/queue/queue-repository-command.types.ts</code></td>
+        <td>Mission Pilot固有型importを削除</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/agentsShare/events/task-run-events.ts</code></td>
+        <td>Agent非依存terminal eventとして維持し、event identityを強化</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/agentsShare/contracts/coding-agent-run.ts</code></td>
+        <td>本計画では変更せず、Mission Pilotから参照しない</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/agentsShare/ports/coding-agent-run.ts</code></td>
+        <td>本計画では変更せず、Task Run application bridge内部に隔離</td>
+      </tr>
+      <tr>
+        <td><code>tests/live/mission-pilot-plan-pipeline-live.test.ts</code></td>
+        <td>legacy characterizationへ降格または削除</td>
+      </tr>
+      <tr>
+        <td>新規persistent runtime live test</td>
+        <td>公開Play routeと実providerを通すproduction証拠として追加</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><code>api/modules/codingAgent/**</code>はDisposition対象に含めない。</p>
+  <hr />
+  <h2 id="section-9-verification-matrix">9. Verification Matrix</h2>
+  <table>
+    <caption>
+      9. Verification Matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Contract</th>
+        <th scope="col">Required evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Mission Pilotはユーザー以下の権限</td>
+        <td>delegated-user parity integration</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot専用の追加能力がない</td>
+        <td>available action差分test</td>
+      </tr>
+      <tr>
+        <td>Mission PilotはCoding Agentをimportしない</td>
+        <td>module boundary</td>
+      </tr>
+      <tr>
+        <td>Mission PilotはCoding Agent固有contractをimportしない</td>
+        <td>source architecture test</td>
+      </tr>
+      <tr>
+        <td>Coding AgentはMission Pilotをimportしない</td>
+        <td>existing boundary regression</td>
+      </tr>
+      <tr>
+        <td>Mission PilotはRun / Queue DBを直接読まない</td>
+        <td>repository boundary test</td>
+      </tr>
+      <tr>
+        <td>Coding Agent event本文をparseしない</td>
+        <td>forbidden marker test</td>
+      </tr>
+      <tr>
+        <td>Action definitionが一つ</td>
+        <td>catalog / executor set equality</td>
+      </tr>
+      <tr>
+        <td>orphan actionがない</td>
+        <td>every advertised action executable test</td>
+      </tr>
+      <tr>
+        <td>Questionnaire介入を迂回しない</td>
+        <td>draft / intervention / submit integration</td>
+      </tr>
+      <tr>
+        <td>Artifact再生成contractが一意</td>
+        <td>artifact action contract test</td>
+      </tr>
+      <tr>
+        <td>Run start receiptにRun refがある</td>
+        <td>command receipt integration</td>
+      </tr>
+      <tr>
+        <td>resume / stop / outcomeが同じRun refを使う</td>
+        <td>Run lifecycle integration</td>
+      </tr>
+      <tr>
+        <td>terminal eventが一度だけ届く</td>
+        <td>event idempotency test</td>
+      </tr>
+      <tr>
+        <td>Run成功でTaskを暗黙完了しない</td>
+        <td>completion negative test</td>
+      </tr>
+      <tr>
+        <td><code>task.complete</code>だけがTask完了を確定</td>
+        <td>explicit completion integration</td>
+      </tr>
+      <tr>
+        <td>waiting / attentionがrealtime更新される</td>
+        <td>websocket projection test</td>
+      </tr>
+      <tr>
+        <td>provider unsupportedをPlay前に検出</td>
+        <td>capability preflight test</td>
+      </tr>
+      <tr>
+        <td>旧runtimeがproduction到達不能</td>
+        <td>activation graph test</td>
+      </tr>
+      <tr>
+        <td>実providerでpersistent runtimeが動く</td>
+        <td>live test</td>
+      </tr>
+      <tr>
+        <td>Coding Agent単体動作が維持される</td>
+        <td>existing standalone regression</td>
+      </tr>
+      <tr>
+        <td>Coding Agent file差分がない</td>
+        <td>path diff gate</td>
+      </tr>
+    </tbody>
+  </table>
+  <hr />
+  <h2 id="section-10-verification-commands">10. Verification Commands</h2>
+  <h3 id="focused">Focused</h3>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run \
+  tests/mission-pilot-user-equivalent-boundary.test.ts \
+  tests/mission-pilot-shared-storage-boundary.test.ts \
+  tests/task-operator-role-neutrality.test.ts \
+  tests/mission-pilot-coding-agent-independence.test.ts \
+  tests/mission-pilot-agent-runtime.test.ts \
+  tests/mission-pilot-agent-action-idempotency.test.ts \
+  tests/mission-pilot-agent-questionnaire.test.ts \
+  tests/task-operator-contract.test.ts \
+  tests/role-module-boundary.test.ts
+</code></pre>
+  <h3 id="architecture">Architecture</h3>
+  <pre><code class="language-bash">node scripts/check-module-boundaries.mjs
+node scripts/check-task-operator-boundary.mjs
+node scripts/check-coding-agent-semantic-control.mjs
+bun run check:architecture
+</code></pre>
+  <h3 id="quality">Quality</h3>
+  <pre><code class="language-bash">bun run typecheck
+bun run lint
+bun run verify:base
+</code></pre>
+  <h3 id="coding-agent-untouched-gate">Coding Agent untouched gate</h3>
+  <p>実装開始前のdirty差分をledgerへ記録した上で、Checkpointごとに次を確認する。</p>
+  <pre><code class="language-bash">git diff --name-only -- \
+  api/modules/codingAgent \
+  src/modules/codingAgent \
+  shared/modules/codingAgent
+</code></pre>
+  <p>本計画による追加差分が一件でもあればCheckpointを失敗とする。</p>
+  <h3 id="live">Live</h3>
+  <p>release用の明示環境でのみ実行する。</p>
+  <pre><code class="language-bash">NIGHTWORKERS_LIVE_MISSION_PILOT=1 \
+NIGHTWORKERS_LIVE_MISSION_PILOT_PROVIDER=codex \
+NIGHTWORKERS_LIVE_MISSION_PILOT_MODEL=gpt-5.6-sol \
+  node scripts/run-vitest.mjs run \
+  --config vitest.live.config.ts \
+  tests/live/mission-pilot-persistent-agent-live.test.ts
+</code></pre>
+  <p>live testが実行できない環境では、release gateをpassedにしない。</p>
+  <hr />
+  <h2 id="section-11-checkpoint-sequence">11. Checkpoint Sequence</h2>
+  <table>
+    <caption>
+      11. Checkpoint Sequence
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">Work package</th>
+        <th scope="col">Required evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>M0</td>
+        <td>R0 baseline / ledger</td>
+        <td>baseline、production graph、dirty change record</td>
+      </tr>
+      <tr>
+        <td>M1</td>
+        <td>R1 boundary guardrails</td>
+        <td>fail-first boundary tests</td>
+      </tr>
+      <tr>
+        <td>M2</td>
+        <td>R2 canonical action contract</td>
+        <td>action set equality、Questionnaire / Artifact contract</td>
+      </tr>
+      <tr>
+        <td>M3</td>
+        <td>R3 delegated user authorization</td>
+        <td>user parity tests</td>
+      </tr>
+      <tr>
+        <td>M4</td>
+        <td>R4 Run receipt / outcome boundary</td>
+        <td>receipt recovery、DB / event payload dependency zero</td>
+      </tr>
+      <tr>
+        <td>M5</td>
+        <td>R5 runtime lifecycle / realtime</td>
+        <td>event idempotency、version、provider preflight</td>
+      </tr>
+      <tr>
+        <td>M6</td>
+        <td>R6 legacy isolation</td>
+        <td>production activation residue zero</td>
+      </tr>
+      <tr>
+        <td>M7</td>
+        <td>R7 integration / live</td>
+        <td>persistent runtime normal + repair live</td>
+      </tr>
+      <tr>
+        <td>M8</td>
+        <td>R8 cleanup / canary</td>
+        <td>architecture baseline zero、canary exit criteria</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Checkpoint statusは次だけを使用する。</p>
+  <ul>
+    <li><code>pending</code></li>
+    <li><code>in_progress</code></li>
+    <li><code>blocked</code></li>
+    <li><code>passed</code></li>
+  </ul>
+  <p>
+    Coding Agent側の追加差分、未実行live test、legacy
+    production経路、境界baseline例外が残る状態を<code>passed</code>にしない。
+  </p>
+  <hr />
+  <h2 id="section-12-rollback-rules">12. Rollback Rules</h2>
+  <ul>
+    <li>一つのCheckpointだけを進める。</li>
+    <li>Checkpoint開始時に対象fileと既存dirty hunksを記録する。</li>
+    <li>
+      <code>git reset --hard</code>、<code>git checkout --</code>、<code>git restore</code>、working
+      tree全体のstashを使用しない。
+    </li>
+    <li>rollbackはそのCheckpointで追加したhunkだけを明示的に戻す。</li>
+    <li>canonical action contract切替はreader、contract、executorを同じCheckpointで扱う。</li>
+    <li>terminal event source切替は旧listenerと新listenerを同時にproduction登録しない。</li>
+    <li>legacy runtimeをfallbackとして再有効化しない。</li>
+    <li>
+      provider live failure時に未確認mutationがある場合は、receiptとTask Operator
+      resourceを確認してから再試行する。
+    </li>
+    <li>rollbackのためにCoding Agentへ互換処理を追加しない。</li>
+  </ul>
+  <hr />
+  <h2 id="section-13-stop-conditions">13. Stop Conditions</h2>
+  <p>次の場合は実装を停止する。</p>
+  <ol>
+    <li>Coding Agent production implementationの変更が必要になった。</li>
+    <li>Mission PilotからCoding Agent固有portを直接呼ばないと成立しない。</li>
+    <li>Coding AgentのDB、event本文、context snapshotを読まないとRunを関連付けられない。</li>
+    <li>ユーザーより強い権限をMission Pilotへ与えないと既存動作を再現できない。</li>
+    <li>Task OperatorへMission Pilot固有branchを追加しないとcommandを実行できない。</li>
+    <li>Questionnaire介入を迂回しないと自動化できない。</li>
+    <li>Artifact再生成をCoding Agentへ移さないと実装できない。</li>
+    <li>旧runtimeとpersistent runtimeの同時稼働が必要になった。</li>
+    <li>provider実経路を検証できない。</li>
+    <li>既存dirty changeを安全に保持できない。</li>
+  </ol>
+  <p>
+    停止時は、該当file、import
+    chain、必要とされた権限、ユーザー共通APIに不足しているcontractを記録する。
+    境界を破って先へ進まない。
+  </p>
+  <hr />
+  <h2 id="section-14-definition-of-done">14. Definition of Done</h2>
+  <h3 id="user-equivalence">User equivalence</h3>
+  <ul>
+    <li>Mission Pilotが読めるFactはユーザー共通Task Operator projection / resourceだけ。</li>
+    <li>Mission Pilotが実行できるactionはユーザー共通Task Operator commandだけ。</li>
+    <li>有効権限がuser capability、Play delegation、action availabilityの積集合。</li>
+    <li>Mission Pilot専用の特権route、DB mutation、confirmation bypassが0件。</li>
+    <li>Mission Pilotのfilesystem、shell、Git primitiveが0件。</li>
+  </ul>
+  <h3 id="responsibility">Responsibility</h3>
+  <ul>
+    <li>
+      Mission PilotがTask解釈、Questionnaire回答案、Plan
+      routing、Artifact判断、Run依頼、結果評価、次action、完了判断を所有する。
+    </li>
+    <li>Coding Agentがrepository調査、編集、command、Todo、検証、結果生成を所有する。</li>
+    <li>Run成功だけでTaskが完了しない。</li>
+    <li><code>task.complete</code>と<code>agent.finish</code>が分離される。</li>
+    <li>hostが意味判断や固定workflowを所有しない。</li>
+  </ul>
+  <h3 id="dependency">Dependency</h3>
+  <ul>
+    <li>Mission PilotからCoding Agentへの直接importが0件。</li>
+    <li>Mission PilotからCoding Agent固有contractへのimportが0件。</li>
+    <li>Coding AgentからMission Pilotへのimportが0件。</li>
+    <li>Mission PilotからCoding Agent DB / event本文 / context snapshotへの依存が0件。</li>
+    <li>Task Operator、Queue、provider共通層のMission Pilot固有branchが0件。</li>
+    <li>agentsShareにrole固有semantic decisionが0件。</li>
+  </ul>
+  <h3 id="contract">Contract</h3>
+  <ul>
+    <li>Action definitionの正本が一つ。</li>
+    <li>orphan actionが0件。</li>
+    <li><code>plan.artifact.regenerate</code>の扱いが一意。</li>
+    <li>Questionnaire submit / intervention contractが一意。</li>
+    <li>Start、resume、stop、outcome、terminal eventが同じRun refで結ばれる。</li>
+    <li>crash recoveryがTask Operator receiptだけで成立する。</li>
+  </ul>
+  <h3 id="runtime">Runtime</h3>
+  <ul>
+    <li>persistent Agent Runtimeだけがproduction activationされる。</li>
+    <li>旧coordinatorへのproduction経路が0件。</li>
+    <li>waiting、attention、completed、stoppedがrealtimeで反映される。</li>
+    <li>provider capabilityをPlay前に検証する。</li>
+    <li>Stop後に遅延mutationがない。</li>
+    <li>LLM本文とfailure本文を固定文へ差し替えない。</li>
+  </ul>
+  <h3 id="evidence">Evidence</h3>
+  <ul>
+    <li>focused testが成功。</li>
+    <li>architecture checkが成功。</li>
+    <li>typecheck、lint、verify:baseが成功。</li>
+    <li>persistent runtimeの実provider live testが成功。</li>
+    <li>normal pathとfailure / re-evaluation pathが成功。</li>
+    <li>Coding Agent単体回帰が成功。</li>
+    <li>Coding Agent production implementationに本計画由来の差分が0件。</li>
+    <li>canary停止条件に該当しない。</li>
+  </ul>
+  <hr />
+  <h2 id="section-15-checkpoint-ledger">15. Checkpoint Ledger</h2>
+  <table>
+    <caption>
+      15. Checkpoint Ledger
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">Status</th>
+        <th scope="col">Commit</th>
+        <th scope="col">Verification</th>
+        <th scope="col">Evidence / Remaining risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>M0 Baseline / ledger</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>baseline、activation graph、Coding Agent digestを記録</td>
+        <td>baseline failureをM2からM5で解消</td>
+      </tr>
+      <tr>
+        <td>M1 Boundary guardrails</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>architecture、user-equivalent boundary test</td>
+        <td>新規role境界違反0件</td>
+      </tr>
+      <tr>
+        <td>M2 Canonical action contract</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>catalog / executor / fixture catalog test</td>
+        <td>orphan action 0件、submit非公開</td>
+      </tr>
+      <tr>
+        <td>M3 Delegated user authorization</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>delegated authorization test、live permission revocation</td>
+        <td>user capabilityとの積集合をcommandごとに検証</td>
+      </tr>
+      <tr>
+        <td>M4 Run receipt / outcome boundary</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>Task Operator contract / regression、repair E2E</td>
+        <td>Run / Queue scanとCoding Agent event本文parseを除去</td>
+      </tr>
+      <tr>
+        <td>M5 Runtime lifecycle / realtime</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>runtime / completion / action trace、全E2E</td>
+        <td>provider preflight、version publish、finish retryを検証</td>
+      </tr>
+      <tr>
+        <td>M6 Legacy isolation</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>legacy ownership firewall、activation graph、source boundary</td>
+        <td>旧coordinator production consumer 0件</td>
+      </tr>
+      <tr>
+        <td>M7 Integration / live</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td>Mission Pilot E2E 7/7、実Codex provider 1/1</td>
+        <td>normal、repair、restart、interrupt、permission failureを通過</td>
+      </tr>
+      <tr>
+        <td>M8 Cleanup / canary</td>
+        <td>passed</td>
+        <td>uncommitted</td>
+        <td><code>verify:base</code>、Coding Agent 20 files / 131 tests</td>
+        <td>production deployは未実施。隔離canaryとrelease gateは通過</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    各Checkpointで、Coding Agent untouched gate、変更file、実行test、未解決riskを必ず更新する。
+    時間やtokenの都合だけで、未検証のCheckpointを<code>passed</code>にしない。
+  </p>
+</article>

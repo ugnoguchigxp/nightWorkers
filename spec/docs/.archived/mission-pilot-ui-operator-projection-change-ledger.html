@@ -1,0 +1,327 @@
+<article lang="ja">
+  <h1 id="mission-pilot-ui-operator-projection-change-ledger">
+    Mission Pilot UI Operator Projection Change Ledger
+  </h1>
+  <h2 id="baseline">Baseline</h2>
+  <ul>
+    <li>Baseline HEAD: <code>f21999f7</code></li>
+    <li>Captured: 2026-07-17</li>
+    <li>
+      Working-tree policy:
+      implementation開始前から存在する変更を保持し、このrefactorの差分へ混在させない。
+    </li>
+    <li>
+      Pre-existing/concurrent dirty paths:
+      このrefactorが追加したpathを除いて45件。作業中にも別scopeの変更が増えているため、各Checkpointで<code
+        >git status --short</code
+      >とpath限定diffを再確認する。
+    </li>
+  </ul>
+  <p>このrefactorが最初のCheckpointで所有するpath:</p>
+  <ul>
+    <li><code>.agent-ontology/boundary-policy.json</code></li>
+    <li><code>shared/modules/taskOperator/**</code></li>
+    <li><code>tests/task-operator-contract.test.ts</code></li>
+    <li><code>spec/docs/mission-pilot-ui-operator-projection-refactor-plan.html</code></li>
+    <li><code>spec/docs/mission-pilot-ui-operator-projection-change-ledger.html</code></li>
+  </ul>
+  <h2 id="legacy-provider-input-baseline">Legacy provider input baseline</h2>
+  <p>
+    現行の<code>missionPilotToolDefinitions()</code>を全action利用可能としてserializeしたbaseline:
+  </p>
+  <table>
+    <caption>
+      Legacy provider input baseline
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Metric</th>
+        <th scope="col">Baseline</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>常時送信tool数</td>
+        <td>50</td>
+      </tr>
+      <tr>
+        <td>action tool数</td>
+        <td>39</td>
+      </tr>
+      <tr>
+        <td>serialized bytes</td>
+        <td>20,215</td>
+      </tr>
+      <tr>
+        <td>approximate tokens (<code>length / 4</code>)</td>
+        <td>4,737</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    この値はtool definitionだけのbaselineであり、System Context、Task read model、conversation
+    replay、tool resultを含まない。Phase 5でsection別計測へ置き換え、選択したaction
+    contract一件以外がprovider入力へ入らないことをfixtureで比較する。
+  </p>
+  <h2 id="boundary-inventory">Boundary inventory</h2>
+  <h3 id="coding-agent内のmission-pilot-semantic-reference">
+    Coding Agent内のMission Pilot semantic reference
+  </h3>
+  <ul>
+    <li><code>api/modules/codingAgent/context/context-packet.ts</code></li>
+    <li><code>api/modules/codingAgent/context/system-context.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/task-status-projection.ts</code></li>
+    <li><code>api/modules/codingAgent/index.ts</code></li>
+  </ul>
+  <h3 id="mission-pilotのdomainruntime直接依存">Mission Pilotのdomain/runtime直接依存</h3>
+  <ul>
+    <li>
+      <code>api/modules/missionPilot/agent/mission-pilot-task-read.adapter.ts</code>がTask、Task
+      Message、Queue、Run tableを直接読む。
+    </li>
+    <li>
+      <code>api/modules/missionPilot/agent/mission-pilot-task-action.adapter.ts</code>がTask、Run
+      tableを直接読む。
+    </li>
+    <li>
+      <code>api/modules/missionPilot/agent/mission-pilot-action-command-executor.ts</code
+      >が<code>startTaskRun</code>をdynamic importして直接開始する。
+    </li>
+  </ul>
+  <h3 id="domain-public-api-inventory">Domain public API inventory</h3>
+  <ul>
+    <li><code>review</code>はpublic <code>index.ts</code>を持つ。</li>
+    <li>
+      <code>task</code
+      >、<code>run</code>は独立moduleが未作成で、正本query/commandは主に<code>nightworkers</code>配下にある。
+    </li>
+    <li>
+      <code>queue</code
+      >、<code>questionnaire</code>、<code>specification</code>はmoduleが存在するがpublic
+      <code>index.ts</code>がない。
+    </li>
+    <li>
+      <code>gitCloseout</code
+      >は独立moduleが未作成で、正本処理は主に<code>nightworkers</code>配下にある。
+    </li>
+    <li><code>taskOperator</code> moduleとshared contractは実装開始時点で存在しない。</li>
+  </ul>
+  <h2 id="initial-command-parity-gaps">Initial command parity gaps</h2>
+  <table>
+    <caption>
+      Initial command parity gaps
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Operation</th>
+        <th scope="col">UI path / canonical candidate</th>
+        <th scope="col">Mission Pilot current path</th>
+        <th scope="col">Gap</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Task update/message/archive</td>
+        <td>Task routes/services</td>
+        <td>action executorの個別service呼び出し</td>
+        <td>共通command facadeがない</td>
+      </tr>
+      <tr>
+        <td>Questionnaire submit</td>
+        <td>Questionnaire route</td>
+        <td>registryで利用不能</td>
+        <td>actor roleによる不一致</td>
+      </tr>
+      <tr>
+        <td>Start Coding Agent Run</td>
+        <td><code>/tasks/:id/run</code></td>
+        <td>internal <code>startTaskRun</code> dynamic import</td>
+        <td>entry pointとrequest contractが異なる</td>
+      </tr>
+      <tr>
+        <td>Test/review/rework</td>
+        <td>専用互換route/service</td>
+        <td><code>run.test.start</code>、<code>review.*</code></td>
+        <td>通常runとは別の意味的開始経路</td>
+      </tr>
+      <tr>
+        <td>needs_human resume</td>
+        <td>Run resume route/service</td>
+        <td>action catalogになし</td>
+        <td>Mission Pilot parityがない</td>
+      </tr>
+      <tr>
+        <td>Task complete</td>
+        <td>Task/run closeout</td>
+        <td>Mission Pilot-owned Runを要求</td>
+        <td>requester provenanceによる不一致</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="checkpoints">Checkpoints</h2>
+  <table>
+    <caption>
+      Checkpoints
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Phase</th>
+        <th scope="col">Status</th>
+        <th scope="col">Evidence / next gate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Phase 0</td>
+        <td>complete</td>
+        <td>dirty tree、tool schema baseline、boundary/parity inventoryを採取</td>
+      </tr>
+      <tr>
+        <td>Phase 1</td>
+        <td>complete</td>
+        <td>
+          domain public query/command wrapper、strict Task Operator contract、neutral Coding Agent
+          portを追加
+        </td>
+      </tr>
+      <tr>
+        <td>Phase 2</td>
+        <td>complete</td>
+        <td>canonical head/detail projection、digest、cursor、paging、UI/MP read adapterを実装</td>
+      </tr>
+      <tr>
+        <td>Phase 3</td>
+        <td>complete</td>
+        <td>
+          UI routeとMission Pilot actionをTask Operator command facadeへ統一。Questionnaire
+          submit、Todo resume、Task completeを同契約化
+        </td>
+      </tr>
+      <tr>
+        <td>Phase 4</td>
+        <td>complete</td>
+        <td>
+          Coding Agentのrequester mode、Mission Pilot prompt/runtime dependency、Queue handoff
+          dependencyを除去
+        </td>
+      </tr>
+      <tr>
+        <td>Phase 5</td>
+        <td>complete</td>
+        <td>
+          generic 7-tool surface、bounded conversation/tool receipt/current-step/compactionを実装
+        </td>
+      </tr>
+      <tr>
+        <td>Phase 6</td>
+        <td>complete</td>
+        <td>pseudo initial promptを削除し、Task Operator headとtimeline pagingへ切替</td>
+      </tr>
+      <tr>
+        <td>Phase 7</td>
+        <td>complete</td>
+        <td>
+          missing agent rowのadditive stopped migrationを追加し、legacy production
+          activationとownership resultを削除
+        </td>
+      </tr>
+      <tr>
+        <td>Phase 8</td>
+        <td>complete</td>
+        <td>source scan、boundary test、token regression、typecheck/lint/docs/full testを実行</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="implemented-token-result">Implemented token result</h2>
+  <table>
+    <caption>
+      Implemented token result
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Metric</th>
+        <th scope="col">Baseline</th>
+        <th scope="col">Implemented</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>常時送信tool数</td>
+        <td>50</td>
+        <td>7</td>
+      </tr>
+      <tr>
+        <td>serialized tool bytes</td>
+        <td>20,215</td>
+        <td>2,732</td>
+      </tr>
+      <tr>
+        <td>approximate tool tokens</td>
+        <td>4,737</td>
+        <td>683</td>
+      </tr>
+      <tr>
+        <td>head projection budget</td>
+        <td>未設定</td>
+        <td>3,000 tokens以下</td>
+      </tr>
+      <tr>
+        <td>provider conversation budget</td>
+        <td>unbounded risk</td>
+        <td>48,000 bytes以下</td>
+      </tr>
+      <tr>
+        <td>compaction input budget</td>
+        <td>unbounded risk</td>
+        <td>64,000 bytes以下</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    大量履歴fixtureはTask message 1,000件、Artifact 100件、terminal Run 100件、Questionnaire 20
+    revision、tool result 1,000件、unread event
+    1,000件で検証した。headへ本文全件を入れず、detailを12,000 bytes
+    page、digest、cursorで再取得できる。
+  </p>
+  <h2 id="migration-and-rollback">Migration and rollback</h2>
+  <ul>
+    <li>
+      startup migrationはagent rowがないMission Pilot sessionだけを停止状態へ移し、agent
+      rowを追加する。
+    </li>
+    <li>
+      migration中にPlay、wake、provider call、Task mutation、Coding Agent Run stopを実行しない。
+    </li>
+    <li>
+      existing Task message、Run、Artifact、Questionnaire、tool receipt、usage rowを削除しない。
+    </li>
+    <li>
+      rollbackは旧application versionへ戻す。schema破壊がないため追加agent
+      rowは保持可能で、厳密な移行前状態が必要な場合だけ事前DB backupを復元する。
+    </li>
+  </ul>
+  <h2 id="verification-log">Verification log</h2>
+  <ul>
+    <li><code>npm run typecheck</code>: pass</li>
+    <li><code>npm run lint</code>: pass (1,681 files)</li>
+    <li><code>npm run check:docs</code>: pass (12 documents)</li>
+    <li>
+      Task Operator contract/token regression、Mission Pilot runtime/migration、Coding Agent
+      negative boundary targeted tests: pass
+    </li>
+    <li>
+      full test（直列、除外なし）: 329 files / 2,050 tests pass。reviewで検出したRun
+      association、Task本文paging、idempotency、resource ownership、revision、migration
+      raceの回帰を追加検証済み。
+    </li>
+    <li><code>node scripts/check-module-boundaries.mjs</code>: pass (1,274 files)</li>
+    <li><code>node scripts/check-coding-agent-semantic-control.mjs</code>: pass</li>
+    <li><code>node scripts/check-coding-agent-standalone-boundary.mjs</code>: pass</li>
+    <li><code>node scripts/check-task-operator-boundary.mjs</code>: pass</li>
+    <li><code>node scripts/agent-ontology/validate-manifests.mjs</code>: pass</li>
+    <li>
+      <code>npm run check:architecture</code>: Task Operator/module/Coding
+      Agent/ontology/large-source baselineを含む全gateがpass。
+    </li>
+  </ul>
+</article>

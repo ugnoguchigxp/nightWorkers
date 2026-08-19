@@ -1,0 +1,848 @@
+<article lang="ja">
+  <h1 id="受け入れ条件と検証証跡の厳密化-実装計画">受け入れ条件と検証証跡の厳密化 実装計画</h1>
+  <p>
+    Status: proposed<br />Last updated: 2026-08-01<br />Target: NightWorkers Coding Agent Run<br />Related:
+  </p>
+  <ul>
+    <li><code>spec/multi-language-test-evidence-quality-gate-implementation-plan.md</code></li>
+    <li><code>spec/docs/coding-agent-balanced-execution-plan.html</code></li>
+    <li><code>spec/docs/evidence-review-closeout-retention-implementation-plan.html</code></li>
+    <li><code>spec/s11t-coding-agent-guide.md</code></li>
+  </ul>
+  <h2 id="section-1-目的">1. 目的</h2>
+  <p>
+    必須の受け入れ条件を、現在のrepository sourceに対応するmanaged
+    evidenceが条件単位で揃った場合だけ完了扱いにする。
+  </p>
+  <p>
+    この計画は既存のtest inventory、test-condition
+    mapping、<code>run_check</code>、<code>completion_check</code>、completion
+    readinessを作り直す計画ではない。現在までに実装済みの基盤を正本として再利用し、次の残存gapを閉じる差分計画である。
+  </p>
+  <ul>
+    <li>
+      Feature Plan作成時の<code>commands: []</code>は有効だが、Codex
+      closeoutが静的command配列だけから成功条件を算出している。
+    </li>
+    <li>
+      test-condition
+      mappingが存在しても、対応するtestcaseが実行され成功したことまでは保証していない。
+    </li>
+    <li>
+      現在のQuality
+      Gateは、同一sourceで成功したtest実行が1件あれば、mapping済みの全条件を成功扱いにできる。
+    </li>
+    <li>
+      <code>expectedEvidence</code
+      >の<code>unit_test</code>、<code>e2e_test</code>、<code>typecheck</code>等が条件判定に使われていない。
+    </li>
+    <li>
+      checklistの<code>covered</code>や<code>manual</code>が、current
+      sourceや明示的な確認証跡なしで完了statusになり得る。
+    </li>
+    <li>
+      Codex SDK
+      laneでは、最終回答候補を受け取った後に不整合を検出して<code>needs_review</code>へ落とすだけで、同じRun内でCoding
+      Agentへ修正・再検証の機会を返していない。
+    </li>
+  </ul>
+  <h2 id="section-2-現状確認と原因">2. 現状確認と原因</h2>
+  <table>
+    <caption>
+      2. 現状確認と原因
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">観測点</th>
+        <th scope="col">現在の挙動</th>
+        <th scope="col">問題</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/modules/specification/specification-verification-sidecar.ts</code></td>
+        <td>検証sectionのbacktick commandだけを<code>commands</code>へ抽出する</td>
+        <td>
+          Plan時に具体commandを固定しない方針のため、自然に<code>commands: []</code
+          >になり得る。これは仕様上妥当である
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/codingAgent/application/codex-verification-closeout.service.ts</code>
+        </td>
+        <td>
+          <code>plan.commands</code
+          >だけを実行し、その成功commandの<code>conditionIds</code>だけを成功条件にする
+        </td>
+        <td>
+          runtime中に作成済みのmanaged evidenceを集約せず、空command planでは全required
+          conditionがmissingになる
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/verification/quality-gate.service.ts</code></td>
+        <td>current sourceの成功test evidenceが1件あれば<code>testExecution=true</code>にする</td>
+        <td>mappingされた個別caseの実行成功を確認していない</td>
+      </tr>
+      <tr>
+        <td><code>api/services/verification/checklist-matcher.ts</code></td>
+        <td>command-level exit 0で<code>covered</code>にする</td>
+        <td>
+          <code>verificationKind</code>と<code>expectedEvidence</code>の適合性、source
+          freshness、case実行結果を完了条件にしていない
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/nightworkers/nightworkers.verification.repository.ts</code></td>
+        <td>manual conditionを作成時から<code>manual</code>にする</td>
+        <td>manual確認が必要という分類と、manual確認済みという結果が混同されている</td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/run-check.ts</code></td>
+        <td>managed evidenceを保存できるが、structured testcaseは主にJUnit XMLに依存する</td>
+        <td>Vitest等でexit 0だけがあり、どのcaseが成功したか不明な証跡が残る</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/application/completion-readiness.service.ts</code></td>
+        <td>typed discrepancyを構築できる</td>
+        <td>
+          Native API laneでは再調整に使われるが、Codex SDK
+          laneのterminal前reconciliationへ統合されていない
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    直近の再現Runでは、required conditionが7件、test-condition mappingが0件、verification evidence
+    runが0件、Verification Documentの<code>commands</code>が0件だった。Coding Agentはraw
+    shellで検証を実行して完了本文を返したが、structured
+    closeoutは全条件を未確認として<code>needs_review</code>へ遷移した。
+  </p>
+  <p>
+    この結果から、直接shellの成功をmanaged evidenceへ昇格するのではなく、Coding Agentがmanaged
+    verification capabilityを自然に使い、不足時にはterminal前にtyped discrepancyを返す必要がある。
+  </p>
+  <h2 id="section-3-固定する設計判断">3. 固定する設計判断</h2>
+  <h3 id="section-31-完了判定の正本">3.1 完了判定の正本</h3>
+  <p>
+    <code>verification_checklist_items.status</code
+    >は表示用projectionとし、完了判定の正本にしない。完了時点でVerification Document、current source
+    snapshot、inventory、mapping、execution evidence、manual
+    confirmationを再結合して、各conditionのassuranceを導出する。
+  </p>
+  <pre><code class="language-text">required condition passed
+  = conditionが構造的に有効
+  AND expectedEvidenceの各要求を満たすmanaged evidenceがある
+  AND evidenceがcurrent sourceStateHashに属する
+  AND evidence実行中にsourceが変化していない
+  AND conditionとevidenceの対応が明示されている
+  AND failed / skipped / unknownの反証が残っていない
+
+Run completion ready
+  = open Todoがない
+  AND 全required conditionのassuranceがsafe_pass
+  AND Taskで要求されるrepository-level gateが成功
+  AND final candidateとrevisionがcurrent
+</code></pre>
+  <p>
+    stored statusは履歴として維持する。source変更後に過去の<code>passed</code>を削除せず、read
+    model上で<code>stale</code>へ投影する。
+  </p>
+  <h3 id="section-32-commands-の意味">3.2 <code>commands: []</code>の意味</h3>
+  <p>Feature Planの<code>commands</code>は任意の初期hintであり、完了条件の一覧ではない。</p>
+  <ul>
+    <li><code>commands: []</code>だけを理由にPlan生成を失敗させない。</li>
+    <li>
+      static commandがある場合はcloseoutで実行できるが、条件との対応を全条件へ自動展開しない。
+    </li>
+    <li>
+      runtime中にCoding Agentが選択した<code>run_check</code>のmanaged
+      evidenceをcompletion時に必ず再利用する。
+    </li>
+    <li>static commandがなくても、current managed evidenceが全条件を満たせば完了できる。</li>
+    <li>
+      static commandもruntime evidenceも不足していれば、条件単位のdiscrepancyをCoding Agentへ返す。
+    </li>
+  </ul>
+  <h3 id="section-33-test-mappingとtest-executionを分離する">
+    3.3 test mappingとtest executionを分離する
+  </h3>
+  <p>
+    <code>record_test_condition_mapping</code
+    >は「このtestcaseがこのconditionを検証する」という明示的対応を保存するtoolであり、実行成功の証明ではない。
+  </p>
+  <p>automated test conditionには、次の両方を要求する。</p>
+  <ol>
+    <li>current inventory上のactive testcaseとconditionの明示mapping。</li>
+    <li>同じcase identityを持つcurrent execution evidenceの<code>passed</code>。</li>
+  </ol>
+  <p>
+    repository全体で何らかのtest commandがexit
+    0になったことを、個別conditionのtest成功へ拡張しない。
+  </p>
+  <h3 id="section-34-raw-shell結果の扱い">3.4 raw shell結果の扱い</h3>
+  <p>
+    直接shell commandのstdout、exit code、assistant本文は観測履歴として保持するが、managed
+    evidenceの正本にはしない。<code>run_check</code>と同じserver-side authority、workspace
+    snapshot、revision、artifact freshness検証を通っていない結果を後付けで自動昇格しない。
+  </p>
+  <p>
+    Coding Agentがraw shellを先に使った場合は、completion
+    discrepancyを読んで必要な範囲を<code>run_check</code>で再実行する。どのcheckを再実行するかはLLMがTask、Todo、source、失敗内容から判断する。
+  </p>
+  <h3 id="section-35-hostが意味推論しない">3.5 hostが意味推論しない</h3>
+  <p>hostはtest名、file名、ユーザー文言のkeywordや類似度からconditionの意味対応を推論しない。</p>
+  <ul>
+    <li>schema evidence setとしてCoding Agentが明示したmappingを受理する。</li>
+    <li>
+      source内markerを使う場合は、adapterが特定test
+      declarationへ構造的に結び付けられたmarkerだけを受理する。
+    </li>
+    <li>
+      file内で見つかった全<code>AC-nnn</code>を、そのfileの全testcaseへ展開する現在のfallbackは完了証跡に使わない。
+    </li>
+    <li>
+      identity照合の90%
+      thresholdは、LLMが指定したtest参照を実在caseへ解決する構造検証にだけ使用する。
+    </li>
+  </ul>
+  <h2 id="section-4-condition別の証跡契約">4. condition別の証跡契約</h2>
+  <p>
+    <code>expectedEvidence</code
+    >配列は原則ANDとして扱う。<code>automated_test</code>は具体種別が指定されていない場合のgeneric
+    requirementであり、対応する成功test evidenceが1種類あれば満たせる。
+  </p>
+  <table>
+    <caption>
+      4. condition別の証跡契約
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">verification kind / expected evidence</th>
+        <th scope="col">safe passに必要な証跡</th>
+        <th scope="col">safe passにしない状態</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <code>automated_test</code> / <code>unit_test</code> / <code>integration_test</code> /
+          <code>e2e_test</code>
+        </td>
+        <td>
+          current active case、明示mapping、適合するevidence kind、同一case keyの<code>passed</code>
+          execution
+        </td>
+        <td>mappingだけ、command exit 0だけ、case不明、skip、0件、runner不一致</td>
+      </tr>
+      <tr>
+        <td>
+          <code>command_gate</code> / <code>typecheck</code> / <code>lint</code> /
+          <code>format_check</code> / <code>build</code> / <code>coverage</code> /
+          <code>migration_check</code>
+        </td>
+        <td>
+          conditionIdsを明示したcurrent managed check、expected kindとの適合、exit 0、source stable
+        </td>
+        <td>unrelatedなverify成功、conditionIdsなし、kind不一致、stale evidence</td>
+      </tr>
+      <tr>
+        <td><code>manual</code> / <code>manual_evidence</code></td>
+        <td>
+          task/run/conditionへboundされたuserまたはreviewerの明示確認、actor
+          provenance、対象revision/source
+        </td>
+        <td>condition作成時の<code>manual</code> status、Coding Agentの自己申告だけ</td>
+      </tr>
+      <tr>
+        <td><code>not_applicable</code></td>
+        <td>requiredでないconditionだけ</td>
+        <td>required conditionの対象外化</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Full Verifyはrepository-level gateとしてcondition evidenceと分離する。Full
+    Verify成功だけでrequired conditionをpassにせず、condition
+    evidenceが揃っていてもTaskで要求されるFull Verifyが失敗していればRunを完了しない。
+  </p>
+  <p>
+    repository-level gateのapplicabilityはVerification Documentの構造から決める。manual
+    conditionだけのTaskへactive test inventoryやtest executionを一律要求せず、automated test
+    conditionがある場合だけtest Quality Gateを有効にする。Taskで明示されたFull Verifyやcommand
+    gateは、manual conditionとは独立して評価する。
+  </p>
+  <h2 id="section-5-共通contract">5. 共通contract</h2>
+  <p>
+    <code>shared/modules/codingAgent</code>に、Native API lane、Codex MCP lane、completion
+    readiness、UI
+    projectionが共有するcontractを一元化する。既存<code>EvidenceCheckAssuranceStatus</code>を拡張せず再利用し、reason
+    codeだけを共通定数へまとめる。
+  </p>
+  <pre><code class="language-ts">type AcceptanceConditionAssurance = {
+  conditionId: string;
+  required: boolean;
+  verificationKind: VerificationKind;
+  expectedEvidence: ExpectedEvidence[];
+  assuranceStatus:
+    | &quot;safe_pass&quot;
+    | &quot;failed&quot;
+    | &quot;stale&quot;
+    | &quot;not_run&quot;
+    | &quot;unmapped&quot;
+    | &quot;details_missing&quot;
+    | &quot;manual&quot;
+    | &quot;not_applicable&quot;
+    | &quot;pending&quot;;
+  reasonCode: AcceptanceConditionReasonCode | null;
+  evidenceRefs: Array&lt;{
+    evidenceRunId: string;
+    caseKey?: string;
+    evidenceKind: ExpectedEvidence;
+    sourceStateHash: string;
+  }&gt;;
+};
+</code></pre>
+  <p>最低限、次のreason codeを共通化する。</p>
+  <ul>
+    <li><code>CONDITION_MAPPING_MISSING</code></li>
+    <li><code>CONDITION_CASE_EXECUTION_MISSING</code></li>
+    <li><code>CONDITION_CASE_DETAILS_MISSING</code></li>
+    <li><code>CONDITION_CASE_FAILED</code></li>
+    <li><code>CONDITION_CASE_SKIPPED</code></li>
+    <li><code>CONDITION_EVIDENCE_KIND_MISMATCH</code></li>
+    <li><code>CONDITION_EVIDENCE_STALE</code></li>
+    <li><code>CONDITION_SOURCE_MUTATED</code></li>
+    <li><code>CONDITION_COMMAND_SCOPE_MISSING</code></li>
+    <li><code>MANUAL_CONFIRMATION_MISSING</code></li>
+    <li><code>FULL_VERIFY_MISSING</code></li>
+  </ul>
+  <p>
+    tool description、JSON schema、reason code、result
+    projectorは同じ定数またはbuilderから生成し、runtime lane別に文言や判定を複製しない。
+  </p>
+  <h2 id="section-6-persistence変更">6. persistence変更</h2>
+  <h3 id="section-61-execution-case-identity">6.1 execution case identity</h3>
+  <p><code>verification_evidence_cases</code>へ次を追加する。</p>
+  <ul>
+    <li>
+      <code>case_key</code>: inventory caseと同じcanonical identity。structured
+      adapterが解決できない場合はnull。
+    </li>
+    <li><code>runner</code>: 実行caseのrunner。</li>
+    <li>
+      <code>evidence_kind</code>:
+      <code>unit_test</code>、<code>integration_test</code>、<code>e2e_test</code>等の明示種別。
+    </li>
+  </ul>
+  <p>
+    <code>verification_evidence_runs</code>へ、command gateとcase
+    evidenceの分類に使う<code>evidence_kinds_json</code>を追加する。旧rowは空配列として読み、strict
+    evaluatorでは<code>details_missing</code>とする。旧rowを推測でpassへmigrationしない。
+  </p>
+  <h3 id="section-62-manual-confirmation">6.2 manual confirmation</h3>
+  <p>manual conditionを作成時から完了扱いにしない。初期statusを<code>pending</code>に変更する。</p>
+  <p>
+    既存のReview/evidence
+    eventからactor、task、run、condition、source/revisionを構造的に検証できる場合はそれを利用する。現在のeventで不足する場合だけ、Coding
+    Agent moduleが所有する<code>record_condition_confirmation</code> application
+    commandを追加し、user/reviewer操作から呼ぶ。Coding Agent自身のtool callだけではmanual
+    confirmationを作成できないようserver側でactor authorityを検証する。
+  </p>
+  <h3 id="section-63-checklist-status">6.3 checklist status</h3>
+  <p>既存columnは削除しない。migration後の意味を次に限定する。</p>
+  <ul>
+    <li>
+      <code>pending</code
+      >、<code>covered</code>、<code>verified_by_gate</code>、<code>manual</code>:
+      中間projectionでありcompletion statusではない。
+    </li>
+    <li>
+      <code>passed</code>: 保存時点でadmissibleだった証跡のprojection。current判定は必ず再評価する。
+    </li>
+    <li><code>failed</code>: 最新の明示的反証projection。</li>
+    <li><code>not_applicable</code>: requiredでないconditionだけ。</li>
+  </ul>
+  <h2 id="section-7-module配置">7. module配置</h2>
+  <p>
+    Coding Agent固有の新規production
+    codeは<code>api/modules/codingAgent</code>、<code>src/modules/codingAgent</code>、<code>shared/modules/codingAgent</code>に置く。
+  </p>
+  <pre><code class="language-text">shared/modules/codingAgent/
+  acceptance-condition-assurance-contract.ts
+
+api/modules/codingAgent/
+  verification/
+    acceptance-condition-assurance.service.ts
+    acceptance-condition-evidence.repository.ts
+    evidence-kind-compatibility.ts
+    execution-case-identity.ts
+  application/
+    completion-readiness.service.ts
+    codex-completion-boundary.service.ts
+  tools/
+    run-check.tool.ts
+    completion-check.tool.ts
+
+src/modules/codingAgent/
+  acceptance-condition-assurance-projection.ts
+</code></pre>
+  <p>
+    現在<code>api/modules/nightworkers</code>と<code>api/services/worker-tools</code>にあるCoding
+    Agent固有のverification判定、repository、tool実装は、今回触る範囲を上記moduleへ移す。outer
+    dispatcherとrun orchestrationは公開application commandまたはportだけを呼ぶ。Mission Pilot
+    packageからCoding Agent内部service/repositoryをimportしない。
+  </p>
+  <p>
+    SystemContextは例外として<code>api/systemContexts</code>が所有する。host
+    compositionが必要な場合は既存のcomposition
+    layerへ限定し、<code>agentsShare</code>へrole固有toolやrepositoryを置かない。
+  </p>
+  <h2 id="section-8-実装フェーズ">8. 実装フェーズ</h2>
+  <h3 id="phase-0-regression-fixtureを先に固定する">Phase 0: regression fixtureを先に固定する</h3>
+  <p>実装前に、現在誤判定するケースをfailing testとして固定する。</p>
+  <ol>
+    <li>
+      required automated conditions、<code>commands: []</code>、raw shell成功、managed
+      evidenceなしは未完了。
+    </li>
+    <li>mappingあり、repository内の別testが成功しただけでは未完了。</li>
+    <li>mappingしたcase自身のcurrent executionが成功すれば完了。</li>
+    <li>manual conditionは作成直後に未完了。</li>
+    <li>command gateの過去successはsource変更後にstale。</li>
+    <li>
+      UI
+      conditionが<code>unit_test</code>と<code>e2e_test</code>を要求する場合、片方だけでは未完了。
+    </li>
+  </ol>
+  <p>
+    直近Runの再現には実DB dumpをfixture化せず、Verification Document、source
+    snapshot、inventory、mapping、evidence rowの最小deterministic fixtureを使う。
+  </p>
+  <h3 id="phase-1-shared-contractとmigration">Phase 1: shared contractとmigration</h3>
+  <ol>
+    <li><code>AcceptanceConditionAssurance</code>、reason code、JSON schemaを追加する。</li>
+    <li>execution case identityとevidence kindのmigrationを追加する。</li>
+    <li>
+      Native API tool manifest、Codex MCP schema、result
+      projectorが同じcontractを参照するようにする。
+    </li>
+    <li>legacy evidence rowを保持し、分類不能なrowは<code>details_missing</code>として返す。</li>
+  </ol>
+  <p>完了条件:</p>
+  <ul>
+    <li>invalid evidence kind、unknown condition ID、別Task/Run/Documentの参照を拒否する。</li>
+    <li>migration前後で既存証跡の履歴とartifact参照が失われない。</li>
+    <li>schemaのruntime lane差分がない。</li>
+  </ul>
+  <h3 id="phase-2-condition-assurance-evaluator">Phase 2: condition assurance evaluator</h3>
+  <ol>
+    <li>current <code>sourceStateHash</code>にboundされたevidenceだけを候補にする。</li>
+    <li>
+      active inventory case、declared case-scoped markerまたはschema mapping、execution
+      caseを<code>caseKey</code>で結合する。
+    </li>
+    <li><code>expectedEvidence</code>ごとにcompatible evidenceを評価する。</li>
+    <li>failed、skipped、unknown、0 test、source mutationを反証として扱う。</li>
+    <li>manual confirmationをactor provenance付きで評価する。</li>
+    <li>checklist statusを参照せず、condition assuranceからchecklist projectionを再構成する。</li>
+  </ol>
+  <p>
+    同じconditionにpassとfailがある場合は、current sourceに対する最新execution
+    scopeを比較する。scopeが異なり優先関係を構造的に決められない場合は<code>details_missing</code>とし、hostがtest名や時刻だけで意味上の勝者を推論しない。
+  </p>
+  <h3 id="phase-3-structured-execution-evidence">Phase 3: structured execution evidence</h3>
+  <ol>
+    <li>
+      <code>run_check</code>へ<code>evidenceKinds</code>を追加し、conditionIdsとexpected
+      evidenceの構造的適合をserver側で検証する。
+    </li>
+    <li>
+      Vitestのstructured result adapterを初回vertical
+      sliceとして追加し、inventoryと同じ<code>caseKey</code>へ正規化する。
+    </li>
+    <li>既存JUnit adapterもcase identityとevidence kindを出力する。</li>
+    <li>
+      structured testcaseを取得できないtest commandはcommand成功として保存するが、automated
+      conditionには<code>details_missing</code>を返す。
+    </li>
+    <li>
+      command-level evidenceは<code>command_gate</code>だけを満たし、automated
+      conditionへ流用しない。
+    </li>
+    <li>
+      <code>run_check</code>実行前後のsource snapshot、report artifact digest、作成時刻を検証する。
+    </li>
+  </ol>
+  <p>
+    Vitest commandをhostが隠れて書き換えない。Coding Agentは必要に応じてstructured
+    reporterを出すcommandを選び、toolは指定されたartifactまたはstdoutをadapterで解析する。dependencyやrunnerの自動installは行わない。
+  </p>
+  <h3 id="phase-4-completion-checkとcloseoutの統合">Phase 4: completion checkとcloseoutの統合</h3>
+  <ol>
+    <li>
+      <code>completion_check</code>、<code>evaluateCodingAgentCompletionReadiness</code>、Codex
+      closeoutをPhase 2の同一evaluatorへ統合する。
+    </li>
+    <li>
+      closeoutはstatic <code>plan.commands</code>を実行した後、既存runtime evidenceを含む全current
+      evidenceを再評価する。
+    </li>
+    <li><code>successfulConditionIds</code>をcommand exit codeから直接作らない。</li>
+    <li><code>commands: []</code>でもcurrent evidenceが揃っていればpassさせる。</li>
+    <li>
+      不足時はcondition ID、reason code、expected evidence、利用可能なevidence refsをtyped
+      discrepancyとして返す。
+    </li>
+    <li>Todo、Task、Run statusをevaluatorやtoolが暗黙更新しない。</li>
+  </ol>
+  <h3 id="phase-5-terminal前reconciliation">Phase 5: terminal前reconciliation</h3>
+  <p>
+    Native API laneの既存<code>runFinalizeController</code> loopを正本とし、Codex SDK
+    laneも最終candidateをterminal resultとして確定する前に同じreadiness判定へ通す。
+  </p>
+  <p>不整合がある場合:</p>
+  <ol>
+    <li>最終candidate本文を改変・固定文へ置換せず、digestとraw referenceを保持する。</li>
+    <li>
+      current Todo、source hash、condition discrepancies、candidateを同じrecovery packetに入れる。
+    </li>
+    <li>同じCodex threadへ追加turnとして返す。</li>
+    <li>Coding Agentがmapping、再実行、source修正、Todo更新、回答再生成の次actionを選ぶ。</li>
+    <li>
+      cancel、timeout、provider到達不能、再調整上限到達時だけ<code>needs_review</code>へ遷移する。
+    </li>
+  </ol>
+  <p>
+    再調整回数には安全上限を設けるが、hostはtool順序や固定workflowを強制しない。同じdiscrepancyが継続する場合も、Todoを観測結果から暗黙更新しない。
+  </p>
+  <h3 id="phase-6-systemcontextとtool-guidance">Phase 6: SystemContextとtool guidance</h3>
+  <p><code>api/systemContexts/contexts/codingAgent</code>の日本語contextへ次を追加する。</p>
+  <ul>
+    <li>
+      required conditionがautomated evidenceを要求する場合、test定義mappingとcurrent
+      executionの両方が必要である。
+    </li>
+    <li>raw shell結果はmanaged evidenceではない。</li>
+    <li>
+      <code>completion_check</code
+      >のmissing/stale/details_missingを読んで、必要な次actionをTaskとTodoから判断する。
+    </li>
+    <li>Plan時の検証commandが空でも、repository調査後に適切なmanaged checkを選べる。</li>
+    <li>
+      特定toolの実行自体や固定順序ではなく、current evidenceが条件を満たすことを完了条件にする。
+    </li>
+  </ul>
+  <p>
+    tool名を必須順序として列挙せず、利用条件と保証範囲を説明する。TOML変更時は生成catalog
+    JSON/TypeScriptを同じchangeで更新する。
+  </p>
+  <h3 id="phase-7-uiとobservability">Phase 7: UIとobservability</h3>
+  <p>Evidence CheckとRun closeoutへ、condition単位で次を表示する。</p>
+  <ul>
+    <li>required expected evidence</li>
+    <li>mapped testcase</li>
+    <li>latest execution status</li>
+    <li>source freshness</li>
+    <li>assurance statusとreason</li>
+    <li>evidence run / artifact reference</li>
+  </ul>
+  <p>
+    「test定義あり」「mapping済み」「test実行成功」「Full Verify成功」「condition safe
+    pass」を別表示にする。UIはcommand、test名、reason文言を再解釈せず、shared
+    projectionだけを描画する。
+  </p>
+  <p>metric/eventには少なくとも次を残す。</p>
+  <ul>
+    <li>required condition総数と<code>safe_pass</code>数</li>
+    <li><code>unmapped</code>、<code>details_missing</code>、<code>stale</code>の件数</li>
+    <li>terminal前reconciliation回数と解消率</li>
+    <li>raw shell後にmanaged rerunが必要になった件数</li>
+    <li><code>commands: []</code>のRunにおけるcompletion率</li>
+  </ul>
+  <h2 id="section-9-受け入れ条件">9. 受け入れ条件</h2>
+  <ul>
+    <li>
+      [AC-001] Verification Documentの<code>commands</code>が空でも、current managed
+      evidenceが全required conditionを満たせばRunを完了できる。
+    </li>
+    <li>
+      [AC-002] raw shellのexit 0またはassistantの完了申告だけではrequired conditionを完了できない。
+    </li>
+    <li>
+      [AC-003] test-condition mappingだけではautomated
+      conditionを完了できず、mappingしたcaseのcurrent successful executionが必要である。
+    </li>
+    <li>[AC-004] repository内の別testの成功を、mapping済みconditionの成功へ拡張しない。</li>
+    <li>
+      [AC-005] failed、skipped、unknown、0件、case details不明のtest
+      evidenceを<code>safe_pass</code>にしない。
+    </li>
+    <li>
+      [AC-006] source変更またはcheck中のsource
+      mutationがある証跡はstaleとなり、再確認なしに完了へ使われない。
+    </li>
+    <li>
+      [AC-007]
+      <code>expectedEvidence</code
+      >が複数ある場合は全要求が評価され、kind不一致のevidenceで代替されない。
+    </li>
+    <li>
+      [AC-008] command gateはconditionIdsとevidence kindを明示したcurrent managed
+      checkだけで完了する。
+    </li>
+    <li>
+      [AC-009] manual conditionは作成時点ではpendingであり、authorityを検証したuser/reviewer
+      confirmationが必要である。
+    </li>
+    <li>
+      [AC-010] Full Verifyとcondition
+      assuranceは独立して評価され、一方の成功でもう一方を補完しない。
+    </li>
+    <li>
+      [AC-011] <code>completion_check</code>、Native API finalize、Codex SDK finalize、Evidence
+      Check UIが同じassurance contractとreason codeを使う。
+    </li>
+    <li>
+      [AC-012] Codex SDK laneは未達条件をterminal前に同じRunへ返し、Coding
+      Agentに修正・再検証の機会を与える。
+    </li>
+    <li>
+      [AC-013] evaluator、tool、closeoutはTodo、Task、Run
+      statusを暗黙更新せず、LLMまたは人間の明示actionを維持する。
+    </li>
+    <li>
+      [AC-014]
+      hostはuser文言、test名、file名のkeywordや類似度からconditionの意味mappingを生成しない。
+    </li>
+    <li>
+      [AC-015] Coding Agent固有のservice、repository、tool、projectionがCoding Agent role
+      moduleにあり、Mission Pilotとの境界を迂回しない。
+    </li>
+    <li>
+      [AC-016] SystemContextは日本語を維持し、managed evidenceの要件を説明するが、固定tool
+      workflowや意味別modeを追加しない。
+    </li>
+    <li>
+      [AC-017] focused test、S11t lint/check、architecture check、typecheck、backend build、<code
+        >bun run verify</code
+      >が成功する。
+    </li>
+  </ul>
+  <h2 id="section-10-受け入れ条件とtestのtraceability">10. 受け入れ条件とtestのtraceability</h2>
+  <p>
+    実装PRでは、次のmatrixをtest名まで具体化して更新する。各test titleには対象AC
+    IDを構造markerとして含めるか、<code>record_test_condition_mapping</code>へ渡すschema evidence
+    setをfixtureとして置く。
+  </p>
+  <table>
+    <caption>
+      10. 受け入れ条件とtestのtraceability
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">AC</th>
+        <th scope="col">test file</th>
+        <th scope="col">主なassertion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>AC-001, AC-002</td>
+        <td>
+          <code>tests/coding-agent-acceptance-condition-assurance.test.ts</code>、<code
+            >tests/coding-agent-test-evidence-mapping-integration.test.ts</code
+          >
+        </td>
+        <td>
+          <code>commands: []</code>相当でもcurrent managed evidenceはpassし、raw
+          shell参照や保存済みprojectionだけではpassしない
+        </td>
+      </tr>
+      <tr>
+        <td>AC-003, AC-004, AC-005</td>
+        <td><code>tests/coding-agent-acceptance-condition-assurance.test.ts</code></td>
+        <td>mapping、case identity、status、unrelated executionのmatrix</td>
+      </tr>
+      <tr>
+        <td>AC-006</td>
+        <td><code>tests/coding-agent-acceptance-condition-assurance.test.ts</code></td>
+        <td>source hash変更とexecution中mutationでstale</td>
+      </tr>
+      <tr>
+        <td>AC-007, AC-008, AC-010</td>
+        <td>
+          <code>tests/coding-agent-acceptance-condition-assurance.test.ts</code>、<code
+            >tests/coding-agent-run-check-evidence-scope.test.ts</code
+          >
+        </td>
+        <td>evidence kind AND評価、command scope、入力scope検証、Full Verify独立性</td>
+      </tr>
+      <tr>
+        <td>AC-009</td>
+        <td>
+          <code>tests/coding-agent-manual-condition-evidence.test.ts</code>、<code
+            >tests/coding-agent-run-check-evidence-scope.test.ts</code
+          >
+        </td>
+        <td>
+          initial pending、actor authority、Run/source
+          binding、<code>run_check</code>からのmanual証跡拒否
+        </td>
+      </tr>
+      <tr>
+        <td>AC-011</td>
+        <td>
+          <code>tests/coding-agent-completion-readiness.test.ts</code>、<code
+            >tests/coding-agent-evidence-check-query.test.ts</code
+          >
+        </td>
+        <td>service間でassurance/reasonが一致</td>
+      </tr>
+      <tr>
+        <td>AC-012</td>
+        <td><code>tests/codex-agent-runtime/completion-reconciliation.test.ts</code></td>
+        <td>candidate保持、discrepancy返却、追加turn後の完了、Run不在時のfail-closed</td>
+      </tr>
+      <tr>
+        <td>AC-013</td>
+        <td>
+          <code>tests/coding-agent-test-evidence-mapping-integration.test.ts</code>、<code
+            >tests/services.verification-checklist.test.ts</code
+          >
+        </td>
+        <td>evidence評価でTodo/Runが更新されない</td>
+      </tr>
+      <tr>
+        <td>AC-014</td>
+        <td><code>tests/coding-agent-test-evidence-mapping-integration.test.ts</code></td>
+        <td>未指定の意味mappingをhostが補完しない</td>
+      </tr>
+      <tr>
+        <td>AC-015</td>
+        <td>architecture scripts</td>
+        <td>forbidden import、role固有実装の配置を検査</td>
+      </tr>
+      <tr>
+        <td>AC-016</td>
+        <td>SystemContext catalog tests</td>
+        <td>日本語context、catalog同期、固定workflowなし</td>
+      </tr>
+      <tr>
+        <td>AC-017</td>
+        <td>verification commands</td>
+        <td>全体回帰なし</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>focused verification:</p>
+  <pre><code class="language-bash">bun run test -- tests/coding-agent-acceptance-condition-assurance.test.ts
+bun run test -- tests/coding-agent-run-check-evidence-scope.test.ts
+bun run test -- tests/coding-agent-evidence-scope.test.ts
+bun run test -- tests/coding-agent-manual-condition-evidence.test.ts
+bun run test -- tests/coding-agent-completion-readiness.test.ts
+bun run test -- tests/codex-completion-boundary.test.ts
+bun run test -- tests/coding-agent-test-evidence-mapping-integration.test.ts
+bun run test -- tests/coding-agent-evidence-check-query.test.ts
+bun run test -- tests/codex-agent-runtime/completion-reconciliation.test.ts
+bun run test -- tests/verification-adapters/vitest-json.test.ts
+</code></pre>
+  <p>full verification:</p>
+  <pre><code class="language-bash">bun run s11tnext:lint
+bun run s11tnext:check
+bun run check:architecture
+bun run typecheck
+bun run build:backend
+bun run verify
+</code></pre>
+  <h2 id="section-11-rolloutと互換性">11. rolloutと互換性</h2>
+  <ol>
+    <li>schema migrationとstrict evaluatorのread-only projectionを先に配備する。</li>
+    <li>terminal admissionへ接続する前に、現行判定との差分をevent/metricでcanary観測する。</li>
+    <li>
+      <code>details_missing</code>になった旧evidenceの比率、<code>commands: []</code>のRun、manual
+      condition、Codex reconciliationの収束を確認する。
+    </li>
+    <li>Native APIとCodex SDKを同じreleaseでstrict admissionへ切り替える。</li>
+    <li>旧判定との恒久的なdual path、legacy execution mode、Task文言による切替は残さない。</li>
+  </ol>
+  <p>
+    既存Runのevidenceは削除しない。strict evaluator導入前のrowがcase identityやevidence
+    kindを持たない場合は履歴として表示し、完了判定では<code>details_missing</code>にする。既存rowを推測で補完しない。
+  </p>
+  <p>
+    rollback時はadmission接続だけを戻し、migration済みcolumnと新規eventは保持する。証跡を削除・上書きしない。
+  </p>
+  <h2 id="section-12-非対象">12. 非対象</h2>
+  <ul>
+    <li>Coding Agentがtestを自動生成・自動修正する固定workflow。</li>
+    <li>dependency、runner、reporterの自動install。</li>
+    <li>直接shell結果をmanaged evidenceへ自動変換する処理。</li>
+    <li>LLMのtest-condition assessmentをhostのkeyword分類へ置き換える処理。</li>
+    <li>evidenceからTodo statusを暗黙更新する処理。</li>
+    <li>Mission Pilot固有route、service、repositoryへのverification実装追加。</li>
+    <li>すべての過去evidenceをstrict passへ自動migrationする処理。</li>
+  </ul>
+  <h2 id="section-13-実装開始時の順序">13. 実装開始時の順序</h2>
+  <ol>
+    <li>Phase 0の6 regressionを追加し、現行の誤判定と不足判定を再現する。</li>
+    <li>shared contractとmigrationを実装する。</li>
+    <li>pureなcondition assurance evaluatorを完成させる。</li>
+    <li>Vitest/JUnit structured execution evidenceを接続する。</li>
+    <li>completion check、両runtime lane、Evidence Checkを同じevaluatorへ収束させる。</li>
+    <li>S11t SystemContextとtool descriptionを更新する。</li>
+    <li>UI、observability、canary、full verificationを完了する。</li>
+  </ol>
+  <p>
+    最初のvertical sliceは、<code>commands: []</code>、Vitest testcase mapping、current structured
+    execution、completion reconciliationを1本のintegration
+    testで通す。これにより、toolやschemaだけを追加して実Runから利用されない状態を先に防ぐ。
+  </p>
+  <h2 id="section-14-実装結果">14. 実装結果</h2>
+  <p>2026-08-01時点で、Phase 1からPhase 7のproduction接続と受け入れtestを実装した。</p>
+  <ul>
+    <li>
+      condition assurance contract、reason code、evidence kind
+      compatibilityを<code>shared/modules/codingAgent</code>と<code>api/modules/codingAgent</code>へ集約した。
+    </li>
+    <li>
+      migration <code>0060_acceptance_condition_assurance.sql</code>でcase identity、evidence
+      kind、manual confirmationを追加し、legacy rowを保持した。
+    </li>
+    <li>
+      <code>run_check</code>は実行前のTask/Run/Document/condition/evidence kind検証、Vitest/JUnit
+      structured result、current source snapshotをmanaged evidenceとして保存する。
+    </li>
+    <li>
+      completion check、quality gate、Evidence Check、Native finalize、Codex SDK
+      finalizeは同じcondition assurance evaluatorを利用する。
+    </li>
+    <li>
+      Codex SDKはterminal前に同じthreadへdiscrepancyを返し、再調整回数と解消有無をeventへ残す。
+    </li>
+    <li>
+      Evidence Checkは要求証跡、mapping元、case実行、freshness、Full Verify、condition
+      assurance、evidence
+      referenceを別表示し、required/safe-pass/unmapped/details-missing/stale件数を返す。
+    </li>
+    <li>
+      SystemContextとtool
+      descriptionは日本語のまま更新し、固定tool順序や意味別modeは追加していない。
+    </li>
+  </ul>
+  <p>local verification結果:</p>
+  <ul>
+    <li>focused acceptance matrix: 14 test files、58 tests pass。</li>
+    <li>
+      <code>s11tnext:lint</code
+      >、<code>s11tnext:check</code>、<code>check:architecture</code>、<code>typecheck</code>、<code>build:backend</code>、<code
+        >bun run verify</code
+      >: pass。
+    </li>
+  </ul>
+  <p>
+    canary配備と本番metricの集計はrollout工程であり、このlocal
+    implementationの外部副作用には含めない。
+  </p>
+</article>

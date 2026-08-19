@@ -231,7 +231,7 @@ async function createCloseoutFixture(
 			.values({
 				taskId: task.id,
 				runId: run.id,
-				sourceSpecPath: "spec/docs/test.md",
+				sourceSpecPath: "spec/docs/test.html",
 				status: "active",
 				documentJson: {},
 				generatedAt: testStartedAt,

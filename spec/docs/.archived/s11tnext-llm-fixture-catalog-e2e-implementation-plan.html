@@ -1,0 +1,1074 @@
+<article lang="ja">
+  <h1 id="s11tnext-llm-fixture-catalog--e2e-mock-implementation-plan">
+    S11tnext LLM Fixture Catalog / E2E Mock Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>implementation-ready</code></li>
+    <li>Document created: 2026-07-29</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>
+      Primary scope: test専用S11tnext catalog、既存fixture provider接続、Mission Pilot / Coding
+      Agentの決定的E2E mock
+    </li>
+    <li>
+      Dependency policy:
+      現在固定済みの<code>s11tnext</code>と<code>s11tnext-cli</code>を使用し、新規npm
+      packageを追加しない
+    </li>
+    <li>Runtime policy: 新規Simulator process、HTTP server、SQLite、認証、GUIを追加しない</li>
+    <li>
+      Working tree policy: 認証削除を含む既存のtracked /
+      untracked変更をすべてユーザー所有として保持し、本計画の変更と混在させない
+    </li>
+    <li>
+      Source guidance:
+      <code>AGENTS.md</code>と<code>spec/s11t-coding-agent-guide.md</code>を実装時の上位規則とする
+    </li>
+  </ul>
+  <h2 id="section-1-目的">1. 目的</h2>
+  <p>
+    NightWorkersのE2Eで実LLMを呼ばずにMission PilotとCoding
+    Agentの制御loopを再現するため、LLMの固定応答本文をTOMLで管理し、S11tnextで決定的な型付きcatalogへ生成する。
+  </p>
+  <p>
+    既存のfixture providerが所有しているturn順序、tool
+    call、Task単位の登録、動的placeholderは維持する。S11tnextにはprovider、scenario
+    engine、状態機械の責務を追加せず、TOML authoring、deterministic build、typed text
+    catalogとしてのみ使用する。
+  </p>
+  <p>完成状態は次の一文に集約する。</p>
+  <blockquote>
+    <p>
+      E2Eで使用するLLM本文をtest専用S11tnext catalogから取得し、既存のMission Pilot / Coding Agent
+      runtimeとfixture provider contractを維持したまま通し、実LLM、外部HTTP、認証情報、永続fixture
+      stateなしで主要scenarioを決定的に再現できる。
+    </p>
+  </blockquote>
+  <h2 id="section-2-locked-decisions">2. Locked Decisions</h2>
+  <h3 id="section-21-新規simulatorを作らない">2.1 新規Simulatorを作らない</h3>
+  <p>次は追加しない。</p>
+  <ul>
+    <li>別repositoryのLLM Simulator。</li>
+    <li>常駐HTTP mock server。</li>
+    <li>OpenAI / Azure / Bedrock互換endpoint。</li>
+    <li>新規npm package。</li>
+    <li>React管理画面。</li>
+    <li>SQLiteによるscenario state保存。</li>
+    <li>OAuth、ログイン、user table、Frontend / Backend間の追加認証。</li>
+    <li>production trafficのrecord / replay。</li>
+  </ul>
+  <p>
+    Mockと実providerをHTTP wire levelで区別不能にすることは本計画の目的ではない。HTTP、SSE、provider
+    retry、provider固有error envelopeはprovider contract testの責務とし、Mission Pilot / Coding
+    AgentのE2EではNightWorkers内部のprovider portをfixture providerへ差し替える。
+  </p>
+  <h3 id="section-22-s11tnextの責務を拡張しない">2.2 S11tnextの責務を拡張しない</h3>
+  <p>S11tnextが所有するのは次だけである。</p>
+  <ul>
+    <li>TOML authoring。</li>
+    <li>lint。</li>
+    <li>deterministic build。</li>
+    <li>catalog JSON生成。</li>
+    <li>generated TypeScript factory / key / variable type生成。</li>
+    <li>runtime artifact / digest検証。</li>
+    <li>localeを固定したtext rendering。</li>
+  </ul>
+  <p>S11tnextに次を持たせない。</p>
+  <ul>
+    <li>turn counter。</li>
+    <li>scenario分岐。</li>
+    <li>tool call schema。</li>
+    <li>provider retry。</li>
+    <li>Task ID。</li>
+    <li>Run ID。</li>
+    <li>Mission Pilot / Coding Agentのrole判定。</li>
+    <li>E2E route。</li>
+    <li>fixture登録・消費。</li>
+  </ul>
+  <h3 id="section-23-production-systemcontext-catalogへ混ぜない">
+    2.3 production SystemContext catalogへ混ぜない
+  </h3>
+  <p>
+    <code>api/systemContexts/</code>はproduction
+    SystemContextの正本であり、単一catalogを維持する。LLM fixture本文はSystemContextではなくtest
+    dataであるため、別のtest専用S11tnext projectとして配置する。
+  </p>
+  <p>
+    test専用catalogを追加しても、production SystemContextをrole別catalogへ分割したことにはならない。
+  </p>
+  <h3 id="section-24-tomlへ移すのはllm本文">2.4 TOMLへ移すのはLLM本文</h3>
+  <p>原則として「LLMの一回答本文 = 一つの<code>.context.toml</code>」とする。</p>
+  <p>TOMLへ移すもの:</p>
+  <ul>
+    <li>assistant本文。</li>
+    <li>schema-first fixtureとして返すJSON本文。</li>
+    <li>parse failureやschema failureを再現する意図的な不正本文。</li>
+  </ul>
+  <p>TypeScriptへ残すもの:</p>
+  <ul>
+    <li>tool call ID。</li>
+    <li>tool名。</li>
+    <li>tool arguments。</li>
+    <li>turn順序。</li>
+    <li><code>previous_tool_failed</code>等の構造的condition。</li>
+    <li><code>taskRevision</code>、<code>latestRunId</code>等の動的placeholder。</li>
+    <li>scenario enum。</li>
+    <li>E2E routeのauthorization / isolation guard。</li>
+  </ul>
+  <p>
+    tool call全体をJSON文字列としてTOMLへ埋め込み、実行時に汎用scenario
+    schemaとして解釈する機能は作らない。
+  </p>
+  <h3 id="section-25-scenarioは明示指定する">2.5 scenarioは明示指定する</h3>
+  <p>
+    ScenarioはE2E requestに保存された<code>scenario</code>
+    enumまたはRunの構造的provenanceで選択する。Task本文、ユーザー文言、error message、prompt
+    keyword、正規表現で選択しない。
+  </p>
+  <h3 id="section-26-fixture-stateを永続化しない">2.6 fixture stateを永続化しない</h3>
+  <p>Taskごとのfixture turn / structured output queueはprocess memoryだけに保持する。</p>
+  <ul>
+    <li>SQLiteへ保存しない。</li>
+    <li>Authorization、API key、<code>.env</code>内容をfixtureへ渡さない。</li>
+    <li>raw provider requestを記録しない。</li>
+    <li>E2E process終了時に全stateを破棄する。</li>
+    <li>Task cleanup時にfixture stateを明示解放できるAPIを用意する。</li>
+  </ul>
+  <h3 id="section-27-unit-testの環境変数fixtureは維持する">
+    2.7 unit testの環境変数fixtureは維持する
+  </h3>
+  <p>
+    <code>SUPERVISOR_FIXTURE_OUTPUT</code
+    >、<code>SUPERVISOR_FIXTURE_ROUND1_OUTPUT</code>、<code>SUPERVISOR_FIXTURE_ROUND2_OUTPUT</code>は、個別のparse
+    / schema / repair unit testで任意本文を注入する用途があるため削除しない。
+  </p>
+  <p>優先順位は次とする。</p>
+  <ol>
+    <li><code>NIGHTWORKERS_E2E_ISOLATED=1</code>かつTask単位で登録済みのfixture。</li>
+    <li>unit testが明示設定した環境変数fixture。</li>
+    <li>未設定error。</li>
+  </ol>
+  <p>productionでは従来どおりfixture providerを使用不可とする。</p>
+  <h2 id="section-3-現状baseline">3. 現状Baseline</h2>
+  <h3 id="section-31-s11tnext">3.1 S11tnext</h3>
+  <ul>
+    <li>runtimeは<code>s11tnext</code>。</li>
+    <li>authoring / build CLIは<code>s11tnext-cli</code>。</li>
+    <li>
+      両packageは<code>package.json</code>と<code>bun.lock</code>で同じ公開versionへ固定されている。
+    </li>
+    <li>
+      production
+      SystemContextは<code>api/systemContexts/contexts/</code>から<code>api/systemContexts/generated/</code>へ生成される。
+    </li>
+    <li>runtimeは生成済みartifactとfactoryを使用し、TOML parserやCLIをimportしない。</li>
+  </ul>
+  <h3 id="section-32-structured-fixture-provider">3.2 structured fixture provider</h3>
+  <p>
+    <code>api/services/structured-llm/fixture-provider.ts</code>は、schema-first / text
+    responseを固定本文として返す。現在の本文sourceは環境変数である。
+  </p>
+  <p>このlaneは次を検証するために使用される。</p>
+  <ul>
+    <li>JSON extraction。</li>
+    <li>schema validation。</li>
+    <li>raw model body保持。</li>
+    <li>repair。</li>
+    <li>parse failure。</li>
+    <li>usage estimate。</li>
+  </ul>
+  <h3 id="section-33-tool-turn-fixture-provider">3.3 tool-turn fixture provider</h3>
+  <p>
+    <code>api/services/structured-llm/fixture-tool-provider.ts</code>はTask
+    IDごとのturn配列をprocess memoryへ登録し、provider-native tool turnとして順に返す。
+  </p>
+  <p>現在すでに存在する能力:</p>
+  <ul>
+    <li>Task単位のturn列。</li>
+    <li>assistant本文。</li>
+    <li>複数tool call。</li>
+    <li><code>previous_tool_failed</code> condition。</li>
+    <li>tool resultからの<code>taskRevision</code>解決。</li>
+    <li>tool resultからの<code>latestRunId</code>解決。</li>
+    <li>E2E isolated guard。</li>
+  </ul>
+  <p>本計画ではこのprovider contractを維持する。</p>
+  <h3 id="section-34-mission-pilot-e2e-fixture">3.4 Mission Pilot E2E fixture</h3>
+  <p>
+    <code>api/modules/missionPilot/routes/mission-pilot-agent-fixture-routes.ts</code
+    >は次のscenarioを持つ。
+  </p>
+  <ul>
+    <li>Questionnaire。</li>
+    <li><code>autopilot</code>。</li>
+    <li><code>repair</code>。</li>
+    <li><code>restart</code>。</li>
+    <li><code>user-interruption</code>。</li>
+  </ul>
+  <p>
+    現在、LLM assistant本文は同ファイル内のstring literalである。tool
+    call、arguments、condition、placeholderと本文が同じファイルに混在している。
+  </p>
+  <h3 id="section-35-coding-agent-nativeapi-lane">3.5 Coding Agent native/API lane</h3>
+  <p>
+    Coding Agentの<code>native-api-runner</code>は<code>callProviderToolTurn</code>をprovider
+    portとして使用する。したがって、Codex SDKを模倣せず、E2Eのruntime
+    laneを<code>native-api-runner</code>へ固定すれば、同じfixture providerとfixture
+    catalogを利用できる。
+  </p>
+  <p>Codex SDK laneそのもののprovider動作は本計画のmock対象外とする。</p>
+  <h2 id="section-4-target-architecture">4. Target Architecture</h2>
+  <pre><code class="language-text">TOML fixture source
+        |
+        v
+  s11tnext-cli
+  lint / build / check
+        |
+        +----------------------+
+        |                      |
+        v                      v
+ catalog.json        catalog.generated.ts
+        |                      |
+        +----------+-----------+
+                   |
+                   v
+         test-only catalog binding
+         bindText(ja-JP, no fallback,
+                  trailingNewline=false)
+                   |
+                   v
+       role-owned E2E scenario builder
+        content + typed tool calls
+                   |
+                   v
+      existing fixture provider maps
+                   |
+                   v
+   Mission Pilot / Coding Agent runtime
+</code></pre>
+  <p>依存方向:</p>
+  <pre><code class="language-text">role-owned E2E fixture route / builder
+                    |
+                    v
+test-only fixture text catalog facade
+                    |
+                    v
+generated S11tnext factory + artifact
+                    |
+                    v
+               s11tnext
+</code></pre>
+  <p>
+    test-only fixture catalog facadeはroute、repository、tool
+    contract、scenario分岐を持たない。role固有scenario builderから本文を取得するための純粋なtext
+    catalogとして扱う。
+  </p>
+  <h2 id="section-5-proposed-file-layout">5. Proposed File Layout</h2>
+  <pre><code class="language-text">api/
+  e2eFixtures/
+    llmCatalog/
+      s11tnext.config.toml
+      contexts/
+        missionPilot/
+          questionnaire/
+          autopilot/
+          repair/
+          restart/
+          userInterruption/
+        codingAgent/
+          directRun/
+      generated/
+        catalog.json
+        catalog.generated.ts
+      catalog.ts
+
+  services/
+    structured-llm/
+      fixture-provider.ts
+      fixture-tool-provider.ts
+      fixture-text-provider.ts       # Task単位のstructured本文queue
+
+tests/
+  llm-fixture-catalog.test.ts
+  fixture-text-provider.test.ts
+  mission-pilot-agent-fixture-catalog.test.ts
+  coding-agent-e2e-fixture-catalog.test.ts
+</code></pre>
+  <p>
+    <code>api/e2eFixtures/llmCatalog</code>にはtest
+    fixtureのTOML、生成物、純粋bindingだけを置く。Agent固有のroute、tool call、workflowは置かない。
+  </p>
+  <p>
+    production codeから一般利用できるpublic indexは作らない。importを許可するのはisolated E2E
+    fixture route / builderとfixture-focused testだけとし、architecture testで逆流を検出する。
+  </p>
+  <h2 id="section-6-s11tnext-authoring-contract">6. S11tnext Authoring Contract</h2>
+  <h3 id="section-61-project-config">6.1 project config</h3>
+  <p>test専用configは概ね次の契約を持つ。</p>
+  <pre><code class="language-toml">source_dir = &quot;contexts&quot;
+out_dir = &quot;generated&quot;
+
+[authoring]
+source_locale = &quot;ja-JP&quot;
+
+[governance]
+require_owner = true
+
+[keyspaces.&quot;missionPilot&quot;]
+owner = &quot;mission-pilot-e2e-fixture&quot;
+
+[keyspaces.&quot;codingAgent&quot;]
+owner = &quot;coding-agent-e2e-fixture&quot;
+
+[release_profiles.e2e]
+required_locales = [&quot;ja-JP&quot;]
+</code></pre>
+  <p>
+    初期fixtureは固定本文だけとし、variable profileを追加しない。本文の可変値はtool
+    argumentsの既存placeholderで扱う。
+  </p>
+  <p>
+    変数が必要になった場合だけ、用途、型、trust、placement、encodingを明示したprofileを追加する。未trusted入力をraw
+    inlineへ配置しない。
+  </p>
+  <h3 id="section-62-fixture-key">6.2 fixture key</h3>
+  <p>keyはpath由来のcanonical dot keyを使用する。</p>
+  <p>例:</p>
+  <pre><code class="language-text">missionPilot.questionnaire.read-current
+missionPilot.questionnaire.save-draft
+missionPilot.questionnaire.confirmed
+missionPilot.autopilot.read-task
+missionPilot.autopilot.start-run
+missionPilot.autopilot.wait-run
+missionPilot.autopilot.read-outcome
+missionPilot.autopilot.complete
+missionPilot.autopilot.complete-retry
+missionPilot.repair.start-first-run
+missionPilot.repair.start-first-repair
+missionPilot.repair.start-second-repair
+missionPilot.restart.restore-context
+missionPilot.userInterruption.wait-user
+codingAgent.directRun.create-todo
+codingAgent.directRun.inspect-repository
+codingAgent.directRun.verify
+codingAgent.directRun.complete
+</code></pre>
+  <p>
+    同じ本文であっても意味の異なるturnを無理に共有しない。fixture
+    keyはテストの意図を表し、文章の偶然の一致による共用を避ける。
+  </p>
+  <h3 id="section-63-toml本文">6.3 TOML本文</h3>
+  <p>通常本文:</p>
+  <pre><code class="language-toml">text = &#39;&#39;&#39;Task Goalと現在のFactを確認します。&#39;&#39;&#39;
+</code></pre>
+  <p>schema-first JSON本文:</p>
+  <pre><code class="language-toml">text = &#39;&#39;&#39;
+{
+  &quot;jobType&quot;: &quot;implementation&quot;,
+  &quot;goal&quot;: &quot;指定された変更を実装する&quot;
+}
+&#39;&#39;&#39;
+</code></pre>
+  <p>
+    不正JSON、Markdown
+    fence付きJSON、schema不適合JSONも、その失敗を検証するfixtureであることがkeyから明確な場合に限り格納できる。
+  </p>
+  <h3 id="section-64-trailing-newline">6.4 trailing newline</h3>
+  <p>
+    S11tnext runtimeのdefault terminal newlineによって既存fixture本文が変化しないよう、test catalog
+    bindingは<code>trailingNewline: false</code>を固定する。
+  </p>
+  <p>既存inline literalとrender後本文のUTF-8 byte列が一致することをmigration testで確認する。</p>
+  <h3 id="section-65-locale">6.5 locale</h3>
+  <p>E2E fixture catalogは<code>ja-JP</code>を明示し、<code>fallbackLocales = []</code>とする。</p>
+  <ul>
+    <li>General Settingsのlanguageへ連動しない。</li>
+    <li>requestごとにlocaleを切り替えない。</li>
+    <li>未定義localeへ暗黙fallbackしない。</li>
+    <li>
+      英語fixtureが必要になった場合は別localeを明示追加し、coverage requirementを同時更新する。
+    </li>
+  </ul>
+  <h2 id="section-7-runtime-binding-contract">7. Runtime Binding Contract</h2>
+  <p><code>api/e2eFixtures/llmCatalog/catalog.ts</code>は次だけを所有する。</p>
+  <pre><code class="language-ts">type LlmFixtureText = ReturnType&lt;typeof fixtureCatalog.bindText&gt;;
+
+export type LlmFixtureKey = PromptKey;
+
+export function renderLlmFixtureText&lt;K extends PromptKey&gt;(
+  key: K,
+  values: PromptValueMap[K],
+): string;
+</code></pre>
+  <p>実装規則:</p>
+  <ol>
+    <li>artifact JSONはstatic importする。</li>
+    <li>runtime境界ではartifactを<code>unknown</code>としてgenerated factoryへ渡す。</li>
+    <li><code>expectedCatalogDigest</code>検証を迂回しない。</li>
+    <li>generated TypeScriptを手編集しない。</li>
+    <li><code>bindText()</code>を一度だけ作成し、固定bindingを再利用する。</li>
+    <li><code>createTextRenderer()</code>を使用しない。</li>
+    <li>production SystemContextの<code>p()</code>、locale scope、auditへ接続しない。</li>
+    <li>fixture key不明、digest不一致、不正artifactはfail-closeする。</li>
+  </ol>
+  <h2 id="section-8-fixture-provider-contract">8. Fixture Provider Contract</h2>
+  <h3 id="section-81-tool-turns">8.1 tool turns</h3>
+  <p><code>FixtureTurn</code>の外部contractは維持する。</p>
+  <pre><code class="language-ts">type FixtureTurn = {
+  content: string;
+  toolCalls: ProviderToolCall[];
+  condition?: &quot;previous_tool_failed&quot;;
+};
+</code></pre>
+  <p>
+    role-owned scenario builderは、inline本文の代わりにfixture
+    keyを受け取り、登録前に本文へrenderする。
+  </p>
+  <pre><code class="language-ts">function turn(
+  id: string,
+  contentKey: LlmFixtureKey,
+  toolCalls: ProviderToolCall[],
+  condition?: &quot;previous_tool_failed&quot;,
+): FixtureTurn;
+</code></pre>
+  <p>
+    providerはS11tnext keyを知らない。providerへ渡る時点では従来どおり<code>content: string</code
+    >である。
+  </p>
+  <h3 id="section-82-structured-text-outputs">8.2 structured text outputs</h3>
+  <p>
+    E2Eでschema-first artifact生成やreview本文を複数turn供給できるよう、Task単位のtext
+    queueを追加する。
+  </p>
+  <p>目標contract:</p>
+  <pre><code class="language-ts">registerFixtureProviderTextOutputs(taskId: string, outputs: string[]): void;
+hasFixtureProviderTextOutputs(taskId: string): boolean;
+takeFixtureProviderTextOutput(taskId: string): string;
+clearFixtureProviderTask(taskId: string): void;
+</code></pre>
+  <p>規則:</p>
+  <ul>
+    <li><code>NODE_ENV=production</code>では登録・消費不可。</li>
+    <li><code>NIGHTWORKERS_E2E_ISOLATED !== &quot;1&quot;</code>では登録・消費不可。</li>
+    <li>queueはTask IDで分離する。</li>
+    <li>出力が尽きた場合は固定の成功本文へfallbackせず、明示errorにする。</li>
+    <li>環境変数fixtureはunit test互換経路として残す。</li>
+    <li>providerへ渡す本文はcatalogでrender済みのstringとする。</li>
+    <li>raw request、prompt、tool resultを保存しない。</li>
+  </ul>
+  <h3 id="section-83-cleanup">8.3 cleanup</h3>
+  <p>Fixture routeで同じTaskへscenarioを再登録するときは、既存queueをreplaceする。</p>
+  <p>
+    Task削除またはE2E teardown時に<code>clearFixtureProviderTask(taskId)</code>を呼び、tool
+    turnとstructured text queueの両方を解放する。
+  </p>
+  <p>cleanup failureはTask本体の削除を妨げないが、test failure diagnosticへ残す。</p>
+  <h2 id="section-9-scenario-ownership">9. Scenario Ownership</h2>
+  <h3 id="section-91-mission-pilot">9.1 Mission Pilot</h3>
+  <p>Mission Pilot moduleは次を維持する。</p>
+  <ul>
+    <li>Questionnaire fixtureのtool call。</li>
+    <li>agent scenario enum。</li>
+    <li>
+      <code>autopilot</code
+      >、<code>repair</code>、<code>restart</code>、<code>user-interruption</code>のturn順序。
+    </li>
+    <li><code>read_task_workspace</code>等のtool選択。</li>
+    <li><code>run_implementation_start</code>のrepair request。</li>
+    <li>wait event type。</li>
+    <li>Task complete action。</li>
+  </ul>
+  <p>変更するのは各<code>FixtureTurn.content</code>のsourceだけである。</p>
+  <h3 id="section-92-coding-agent">9.2 Coding Agent</h3>
+  <p>
+    Coding Agent E2Eは<code>native-api-runner</code>
+    laneを使用し、同じ<code>callProviderToolTurn</code>境界へfixture turnを登録する。
+  </p>
+  <p>最初のCoding Agent fixture scenarioは次に限定する。</p>
+  <ol>
+    <li>Todo plan作成。</li>
+    <li>current Todo開始。</li>
+    <li>repository調査。</li>
+    <li>小さなfile変更。</li>
+    <li>commandによる検証。</li>
+    <li>Todo完了。</li>
+    <li>final report。</li>
+  </ol>
+  <p>
+    Taskの意味や次actionをhost
+    keywordで決めるfixtureは作らない。scenarioはテストが明示登録するturn列であり、production Coding
+    Agentへ固定workflowを追加するものではない。
+  </p>
+  <p>Codex SDK laneはこのcatalogでmockしない。</p>
+  <h3 id="section-93-agentsshare">9.3 agentsShare</h3>
+  <p>fixture catalogやrole固有scenarioを<code>agentsShare</code>へ置かない。</p>
+  <p>
+    両roleで同じ意味を持つfixture登録contractが必要になった場合だけ、role非依存の型またはportを<code>agentsShare</code>へ置ける。route、scenario、fixture本文、role判定は置かない。
+  </p>
+  <h2 id="section-10-implementation-phases">10. Implementation Phases</h2>
+  <h3 id="phase-0-baseline固定">Phase 0: Baseline固定</h3>
+  <p>変更:</p>
+  <ol>
+    <li><code>git status --short</code>を保存し、既存変更へ触れない。</li>
+    <li>
+      <code>package.json</code>と<code>bun.lock</code>から<code>s11tnext</code> /
+      <code>s11tnext-cli</code>の一致を確認する。
+    </li>
+    <li>現在のMission Pilot fixture turn列をscenario別にsnapshot化する。</li>
+    <li>
+      各turnについて次をbaselineとして記録する。
+      <ul>
+        <li>turn ID。</li>
+        <li>assistant本文。</li>
+        <li>tool call ID。</li>
+        <li>tool名。</li>
+        <li>arguments。</li>
+        <li>condition。</li>
+      </ul>
+    </li>
+    <li>現在のfocused unit / E2Eを実行する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>移行前のturn列を機械比較できる。</li>
+    <li>baseline failureがあれば本計画の変更前に記録されている。</li>
+    <li>認証削除等の並行変更とfixture変更の所有範囲が分離されている。</li>
+  </ul>
+  <h3 id="phase-1-test専用s11tnext-catalog-scaffold">Phase 1: test専用S11tnext catalog scaffold</h3>
+  <p>追加:</p>
+  <ul>
+    <li><code>api/e2eFixtures/llmCatalog/s11tnext.config.toml</code></li>
+    <li>最小のfixture TOML。</li>
+    <li>catalog JSON。</li>
+    <li>generated TypeScript。</li>
+    <li><code>catalog.ts</code> binding。</li>
+    <li>fixture catalog focused test。</li>
+    <li><code>package.json</code>のfixture専用lint / build / check script。</li>
+  </ul>
+  <p>script名:</p>
+  <pre><code class="language-text">s11tnext:fixtures:lint
+s11tnext:fixtures:build
+s11tnext:fixtures:check
+</code></pre>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>lint、build、stale checkが成功する。</li>
+    <li>generated key / valuesが型検査される。</li>
+    <li>catalog digest不一致がfail-closeする。</li>
+    <li><code>ja-JP</code>、no fallback、no trailing newlineが固定される。</li>
+    <li>production SystemContext catalogと生成物に差分がない。</li>
+    <li>新規dependencyがない。</li>
+  </ul>
+  <h3 id="phase-2-mission-pilot-tool-turn本文移行">Phase 2: Mission Pilot tool-turn本文移行</h3>
+  <p>対象:</p>
+  <ul>
+    <li>Questionnaire fixture。</li>
+    <li><code>autopilot</code>。</li>
+    <li><code>repair</code>。</li>
+    <li><code>restart</code>。</li>
+    <li><code>user-interruption</code>。</li>
+    <li>completion / retry assistant本文。</li>
+  </ul>
+  <p>手順:</p>
+  <ol>
+    <li>各assistant本文を意味単位のTOMLへ移す。</li>
+    <li><code>buildAgentScenarioTurns()</code>とhelperの本文引数をfixture keyへ置き換える。</li>
+    <li>tool call、arguments、condition、順序を変更しない。</li>
+    <li>rendered本文とbaseline本文のbyte equalityを検証する。</li>
+    <li>
+      target routeに<code>FixtureTurn.content</code>用の日本語inline
+      literalが残っていないことを静的検査する。
+    </li>
+  </ol>
+  <p>次は本文移行対象外としてTypeScriptへ残す。</p>
+  <ul>
+    <li><code>task_message_send.content</code>。</li>
+    <li><code>run_implementation_start.request</code>。</li>
+    <li><code>repairRequest</code>。</li>
+    <li>Questionnaire answers / evidence。</li>
+    <li>wait reason。</li>
+    <li>fixture diagnostic。</li>
+  </ul>
+  <p>
+    これらはtool argumentsまたはhost
+    diagnosticであり、assistant本文catalogへの移動を理由に構造を崩さない。
+  </p>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>全既存Mission Pilot agent scenarioのturn構造がbaselineと一致する。</li>
+    <li>assistant本文だけがTOML sourceへ移っている。</li>
+    <li>E2E routeのrequest / response contractに変更がない。</li>
+  </ul>
+  <h3 id="phase-3-task-scoped-structured-text-fixture">
+    Phase 3: Task-scoped structured text fixture
+  </h3>
+  <p>追加:</p>
+  <ul>
+    <li>Task単位のstructured text queue。</li>
+    <li>登録、消費、exhaustion、clearのfocused test。</li>
+    <li><code>callFixtureProvider()</code>からTask-scoped queueを優先する接続。</li>
+    <li>unit test用環境変数fallbackの互換test。</li>
+  </ul>
+  <p>最初にTOML化するstructured fixture:</p>
+  <ul>
+    <li>正常なschema-first JSON。</li>
+    <li>plain text parse failure。</li>
+    <li>malformed JSON。</li>
+    <li>schema-invalid JSON。</li>
+    <li>repair可能なtruncated JSON。</li>
+  </ul>
+  <p>
+    ただし、既存unit
+    testが一回限りの任意入力を検証するために持つinline文字列まで機械的にTOMLへ移さない。catalog化するのは複数E2Eで再利用する応答だけとする。
+  </p>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>同時に存在する複数Taskのqueueが混線しない。</li>
+    <li>queue exhaustionが明示errorになる。</li>
+    <li>unit test環境変数fixtureが従来どおり動く。</li>
+    <li>productionではfixture登録・消費できない。</li>
+  </ul>
+  <h3 id="phase-4-coding-agent-nativeapi-e2e-fixture">
+    Phase 4: Coding Agent native/API E2E fixture
+  </h3>
+  <p>手順:</p>
+  <ol>
+    <li>E2E runtime laneを<code>native-api-runner</code>へ明示固定する。</li>
+    <li>Task / Runの構造的IDに対してfixture turnsを登録する。</li>
+    <li>
+      Todo、repository read、file edit、command、verification、completionの最小scenarioを作る。
+    </li>
+    <li>assistant本文をCoding Agent keyspaceのTOMLへ置く。</li>
+    <li>tool callとargumentsはCoding Agent moduleが所有するE2E builderへ置く。</li>
+    <li>実LLM provider keyを設定しなくても完走することを確認する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>Coding Agent direct Runがfixture providerだけで完了する。</li>
+    <li>Mission Pilot未起動でもCoding Agent単体E2Eが成立する。</li>
+    <li>Codex SDK、OpenAI、Azure、Bedrockへ通信しない。</li>
+    <li>
+      Todoの更新はLLM fixtureが明示したtool callだけで行われ、hostが観測結果から暗黙更新しない。
+    </li>
+  </ul>
+  <h3 id="phase-5-mission-pilot--coding-agent統合e2e">
+    Phase 5: Mission Pilot → Coding Agent統合E2E
+  </h3>
+  <p>最小scenario:</p>
+  <ol>
+    <li>Mission PilotがTaskを読む。</li>
+    <li>Mission PilotがCoding Agent Runを開始する。</li>
+    <li>Coding Agentがnative/API fixtureでrepository作業と検証を行う。</li>
+    <li>Mission Pilotがterminal outcomeを読む。</li>
+    <li>Mission PilotがTask completeを実行する。</li>
+  </ol>
+  <p>追加scenario:</p>
+  <ul>
+    <li>Coding Agent failure後のMission Pilot repair。</li>
+    <li>user interruption / resume。</li>
+    <li>runtime restart。</li>
+    <li>structured artifact生成を含むPlan経路。</li>
+  </ul>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>両roleがそれぞれのfixture turn列を消費する。</li>
+    <li>一方のrole moduleが他方のfixture builderをimportしない。</li>
+    <li>連携は既存application command、port、event、正本schemaを通る。</li>
+    <li>Task completeはassistant本文ではなくapplication action成立でのみ確定する。</li>
+  </ul>
+  <h3 id="phase-6-gate統合と旧inline本文整理">Phase 6: Gate統合と旧inline本文整理</h3>
+  <p>変更:</p>
+  <ol>
+    <li>fixture catalog stale checkをE2E verificationへ追加する。</li>
+    <li>architecture testでfixture catalogのimport範囲を制限する。</li>
+    <li>target fixture routeにassistant本文inline literalが再導入されないよう検査する。</li>
+    <li>TOML source、catalog JSON、generated TypeScriptを同じ変更単位で管理する。</li>
+    <li>obsoleteなE2E用環境変数fixtureがあれば、利用箇所ゼロを確認してから削除する。</li>
+    <li>unit test用環境変数fixtureは維持する。</li>
+  </ol>
+  <p>Exit criteria:</p>
+  <ul>
+    <li>fixture TOML変更時にgenerated artifactのstaleがCIで検出される。</li>
+    <li>production SystemContext catalogとの混在が静的に検出される。</li>
+    <li>E2E mock追加手順がREADMEまたはtest support文書へ記載される。</li>
+  </ul>
+  <h2 id="section-11-verification-matrix">11. Verification Matrix</h2>
+  <h3 id="section-111-s11tnext-authoring--artifact">11.1 S11tnext authoring / artifact</h3>
+  <table>
+    <caption>
+      11.1 S11tnext authoring / artifact
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Case</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>正常TOML</td>
+        <td>lint / build成功</td>
+      </tr>
+      <tr>
+        <td>generated artifact未更新</td>
+        <td><code>build --check</code>失敗</td>
+      </tr>
+      <tr>
+        <td>catalog digest不一致</td>
+        <td>runtime load失敗</td>
+      </tr>
+      <tr>
+        <td>未定義key</td>
+        <td>TypeScript compile失敗</td>
+      </tr>
+      <tr>
+        <td>未宣言variable</td>
+        <td>lintまたはtypecheck失敗</td>
+      </tr>
+      <tr>
+        <td><code>ja-JP</code> key</td>
+        <td>fallbackなしでrender成功</td>
+      </tr>
+      <tr>
+        <td>未定義locale</td>
+        <td>fail-close</td>
+      </tr>
+      <tr>
+        <td>terminal newline</td>
+        <td>既存inline本文とbyte一致</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-112-fixture-runtime">11.2 fixture runtime</h3>
+  <table>
+    <caption>
+      11.2 fixture runtime
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Case</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Task A / Bへ別turn登録</td>
+        <td>相互に混線しない</td>
+      </tr>
+      <tr>
+        <td>同じTaskへ再登録</td>
+        <td>新scenarioでreplace</td>
+      </tr>
+      <tr>
+        <td>tool turn消費</td>
+        <td>既存順序どおり</td>
+      </tr>
+      <tr>
+        <td><code>previous_tool_failed</code> false</td>
+        <td>条件turnをskip</td>
+      </tr>
+      <tr>
+        <td><code>previous_tool_failed</code> true</td>
+        <td>条件turnを返す</td>
+      </tr>
+      <tr>
+        <td><code>taskRevision</code></td>
+        <td>最新tool resultから解決</td>
+      </tr>
+      <tr>
+        <td><code>latestRunId</code></td>
+        <td>最新tool resultから解決</td>
+      </tr>
+      <tr>
+        <td>structured queue消費</td>
+        <td>登録順どおり</td>
+      </tr>
+      <tr>
+        <td>queue exhaustion</td>
+        <td>明示error</td>
+      </tr>
+      <tr>
+        <td>cleanup</td>
+        <td>Task state消去</td>
+      </tr>
+      <tr>
+        <td>production登録</td>
+        <td>拒否</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-113-provider-result">11.3 provider result</h3>
+  <table>
+    <caption>
+      11.3 provider result
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Case</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>正常JSON</td>
+        <td>schema validation成功</td>
+      </tr>
+      <tr>
+        <td>plain text</td>
+        <td>raw本文を保持したparse failure</td>
+      </tr>
+      <tr>
+        <td>malformed JSON</td>
+        <td>raw本文を保持し、許可済みrepairだけ実行</td>
+      </tr>
+      <tr>
+        <td>schema-invalid JSON</td>
+        <td>schema issueとraw本文を保持</td>
+      </tr>
+      <tr>
+        <td>tool call</td>
+        <td>既存typed tool callへ変換</td>
+      </tr>
+      <tr>
+        <td>tool failure</td>
+        <td>model-visibleなtool resultとして次turnへ渡る</td>
+      </tr>
+      <tr>
+        <td>usage</td>
+        <td>従来どおりestimateされる</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-114-e2e">11.4 E2E</h3>
+  <table>
+    <caption>
+      11.4 E2E
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Scenario</th>
+        <th scope="col">Primary assertion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Mission Pilot Questionnaire</td>
+        <td>回答案保存と確定</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot autopilot</td>
+        <td>Coding Agent handoffからTask complete</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot repair</td>
+        <td>失敗outcome読取後のrepair</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot restart</td>
+        <td>conversation / Task Fact再取得</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot user interruption</td>
+        <td>wait後の追加指示反映</td>
+      </tr>
+      <tr>
+        <td>Coding Agent direct Run</td>
+        <td>Mission PilotなしでTodoから完了</td>
+      </tr>
+      <tr>
+        <td>Integrated handoff</td>
+        <td>role境界を越えずにend-to-end完了</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-12-verification-commands">12. Verification Commands</h2>
+  <p>実装中のfocused verification:</p>
+  <pre><code class="language-bash">bun run s11tnext:fixtures:lint
+bun run s11tnext:fixtures:check
+bun run test -- tests/llm-fixture-catalog.test.ts
+bun run test -- tests/fixture-text-provider.test.ts
+bun run test -- tests/mission-pilot-agent-fixture-catalog.test.ts
+bun run typecheck
+</code></pre>
+  <p>Mission Pilot E2E:</p>
+  <pre><code class="language-bash">node scripts/run-playwright.mjs test tests/e2e/mission-pilot-agent-questionnaire.spec.ts
+node scripts/run-playwright.mjs test tests/e2e/mission-pilot-agent-autopilot.spec.ts
+node scripts/run-playwright.mjs test tests/e2e/mission-pilot-agent-repair.spec.ts
+node scripts/run-playwright.mjs test tests/e2e/mission-pilot-agent-restart.spec.ts
+node scripts/run-playwright.mjs test tests/e2e/mission-pilot-agent-user-interruption.spec.ts
+</code></pre>
+  <p>統合gate:</p>
+  <pre><code class="language-bash">bun install --frozen-lockfile --ignore-scripts
+bun run s11tnext:lint
+bun run s11tnext:check
+bun run s11tnext:fixtures:lint
+bun run s11tnext:fixtures:check
+bun run check:architecture
+bun run check:docs
+bun run typecheck
+bun run build:backend
+bun run verify:e2e
+</code></pre>
+  <p>
+    既存のdirty
+    worktreeに起因する失敗と本計画の変更に起因する失敗を区別し、未確認の失敗を成功扱いしない。
+  </p>
+  <h2 id="section-13-rollout-policy">13. Rollout Policy</h2>
+  <h3 id="section-131-scenario単位のatomic移行">13.1 scenario単位のatomic移行</h3>
+  <p>
+    一つのscenarioについて、TOML追加、artifact生成、generated
+    TypeScript更新、builder参照変更、focused testを同じCheckpointで行う。
+  </p>
+  <p>
+    同じassistant本文についてinline literalとTOMLを長期併存させない。feature
+    flagや二重readを追加せず、scenario単位でsource of truthを切り替える。
+  </p>
+  <h3 id="section-132-移行順">13.2 移行順</h3>
+  <ol>
+    <li>Questionnaire。</li>
+    <li><code>autopilot</code>。</li>
+    <li><code>repair</code>。</li>
+    <li><code>restart</code>。</li>
+    <li><code>user-interruption</code>。</li>
+    <li>structured text fixture。</li>
+    <li>Coding Agent direct Run。</li>
+    <li>Mission Pilot → Coding Agent統合scenario。</li>
+  </ol>
+  <p>正常系を先に移し、catalog / provider接続を安定させてからfailure / restart系へ進む。</p>
+  <h3 id="section-133-rollback">13.3 rollback</h3>
+  <p>Rollbackはscenario単位で行う。</p>
+  <ul>
+    <li>TOML、generated artifact、builder変更を同時に戻す。</li>
+    <li>provider contractやDB migrationを伴わないため、data rollbackは不要。</li>
+    <li>unit test用環境変数fixtureは残るため、structured providerのfocused testは継続できる。</li>
+  </ul>
+  <h2 id="section-14-risks-and-mitigations">14. Risks and Mitigations</h2>
+  <h3 id="risk-1-s11tnextのterminal-newlineで本文が変わる">
+    Risk 1: S11tnextのterminal newlineで本文が変わる
+  </h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li><code>trailingNewline: false</code>をbindingで固定する。</li>
+    <li>migration前後のUTF-8 byte equality testを持つ。</li>
+  </ul>
+  <h3 id="risk-2-test-fixtureがproduction-systemcontextへ混入する">
+    Risk 2: test fixtureがproduction SystemContextへ混入する
+  </h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>別config、別source directory、別generated artifactを使用する。</li>
+    <li><code>api/systemContexts</code>からfixture catalogをimportしない。</li>
+    <li>architecture testで相互importを禁止する。</li>
+  </ul>
+  <h3 id="risk-3-generated-artifactがstaleになる">Risk 3: generated artifactがstaleになる</h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>TOML、catalog JSON、generated TypeScriptを同一変更単位にする。</li>
+    <li><code>s11tnext:fixtures:check</code>をCI gateへ追加する。</li>
+    <li>generated TypeScriptを手編集しない。</li>
+  </ul>
+  <h3 id="risk-4-tool-call構造までtoml化して型安全性を失う">
+    Risk 4: tool call構造までTOML化して型安全性を失う
+  </h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>TOMLは本文だけを所有する。</li>
+    <li>tool call、arguments、conditionは既存TypeScript型へ残す。</li>
+    <li>汎用JSON scenario interpreterを追加しない。</li>
+  </ul>
+  <h3 id="risk-5-global-fixture-stateがtask間で混線する">
+    Risk 5: global fixture stateがTask間で混線する
+  </h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>Task IDをkeyにしたMapを維持する。</li>
+    <li>structured textもTask-scoped queueとする。</li>
+    <li>teardownで明示cleanupする。</li>
+    <li>複数Taskの分離testを追加する。</li>
+  </ul>
+  <h3 id="risk-6-e2eがprovider-transport品質まで保証したと誤解される">
+    Risk 6: E2Eがprovider transport品質まで保証したと誤解される
+  </h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>fixture E2Eの対象をagent / application control planeと明記する。</li>
+    <li>
+      OpenAI / Azure / Bedrock / Codex transportは既存contract testと任意live canaryで検証する。
+    </li>
+    <li>fixture E2E成功をprovider互換性の証拠として扱わない。</li>
+  </ul>
+  <h3 id="risk-7-test-artifactがbackend-bundleを増やす">
+    Risk 7: test artifactがbackend bundleを増やす
+  </h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>fixture本文は合成test dataだけに限定する。</li>
+    <li><code>build:backend</code>を必須検証にする。</li>
+    <li>
+      初期実装では既存E2E fixture routeと同じstatic bundle方針を維持し、専用lazy
+      loading基盤は追加しない。
+    </li>
+    <li>bundle増加が実測上問題になった場合だけ、別計画でtest resource解決を検討する。</li>
+  </ul>
+  <h3 id="risk-8-並行中の認証削除と変更が衝突する">Risk 8: 並行中の認証削除と変更が衝突する</h3>
+  <p>Mitigation:</p>
+  <ul>
+    <li>認証、listen security、runtime paths、E2E environmentの既存差分を上書きしない。</li>
+    <li>fixture catalog追加と既存fixture routeの局所変更を中心にする。</li>
+    <li>E2E environment変更が必要な場合は現行差分を読んで最小patchにする。</li>
+  </ul>
+  <h2 id="section-15-definition-of-done">15. Definition of Done</h2>
+  <p>次をすべて満たしたときだけ本計画を完了とする。</p>
+  <ol>
+    <li>新規Simulator project、HTTP server、npm package、SQLite、認証機構が追加されていない。</li>
+    <li>test専用S11tnext config、TOML、catalog JSON、generated TypeScript、bindingが存在する。</li>
+    <li>production SystemContext catalogがfixture dataを含まない。</li>
+    <li>Mission Pilot E2Eのassistant本文がTOMLをsource of truthとしている。</li>
+    <li>Coding Agent native/API E2Eのassistant本文がTOMLをsource of truthとしている。</li>
+    <li>tool call、arguments、condition、turn順序がrole-owned TypeScriptに残っている。</li>
+    <li>既存Mission Pilot fixture turn構造が移行前baselineと一致する。</li>
+    <li>structured text fixtureがTask単位で分離され、unit test環境変数互換が維持される。</li>
+    <li>fixture stateがSQLite、file、Keychainへ保存されない。</li>
+    <li>fixture選択にprompt keyword、正規表現、error message分類を使用していない。</li>
+    <li>Mission Pilot / Coding Agentのmodule境界を迂回するimportがない。</li>
+    <li>S11tnext fixture lint / stale checkが成功する。</li>
+    <li>focused unit test、typecheck、architecture check、backend buildが成功する。</li>
+    <li>Mission Pilot主要E2EとCoding Agent direct Run E2Eが実LLMなしで成功する。</li>
+    <li>provider transport品質をfixture E2Eだけで保証した扱いにしていない。</li>
+    <li>既存のユーザー所有変更を削除、上書き、巻き戻ししていない。</li>
+  </ol>
+  <h2 id="section-16-implementation-handoff-checklist">16. Implementation Handoff Checklist</h2>
+  <p>実装担当は開始前に次を確認する。</p>
+  <ul>
+    <li><input disabled="" type="checkbox" /> <code>AGENTS.md</code>を読んだ。</li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>spec/s11t-coding-agent-guide.md</code>を読んだ。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>git status --short</code>で既存差分を記録した。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> 現行<code>s11tnext</code> /
+      <code>s11tnext-cli</code> versionとlock integrityを確認した。
+    </li>
+    <li><input disabled="" type="checkbox" /> Mission Pilot fixture turn baselineを取得した。</li>
+    <li>
+      <input disabled="" type="checkbox" /> test専用catalogをproduction SystemContext
+      catalogから分離した。
+    </li>
+    <li><input disabled="" type="checkbox" /> <code>trailingNewline: false</code>を固定した。</li>
+    <li><input disabled="" type="checkbox" /> TOMLと生成物を同時更新した。</li>
+    <li><input disabled="" type="checkbox" /> generated TypeScriptを手編集していない。</li>
+    <li><input disabled="" type="checkbox" /> tool call構造をTOMLへ移していない。</li>
+    <li><input disabled="" type="checkbox" /> scenario選択にprompt keywordを追加していない。</li>
+    <li><input disabled="" type="checkbox" /> unit test環境変数fixtureを壊していない。</li>
+    <li><input disabled="" type="checkbox" /> Task-scoped fixture cleanupを確認した。</li>
+    <li><input disabled="" type="checkbox" /> focused testとE2Eを実行した。</li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>build:backend</code>でartifact
+      packagingを確認した。
+    </li>
+    <li><input disabled="" type="checkbox" /> 失敗を未確認のまま完了扱いしていない。</li>
+  </ul>
+</article>

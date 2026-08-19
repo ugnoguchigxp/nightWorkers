@@ -658,7 +658,7 @@ runtime truth and update the document.
 - Estimated cost is incomplete when pricing, usage, or FX data is unavailable.
 - A successful final report, successful model response, or existing Queue row
   alone does not prove completion.
-- Documentation plans in `spec/.archived/` are historical evidence, not current
+- Documentation plans in `spec/docs/.archived/` are historical evidence, not current
   user contracts. The hidden directory is excluded from ordinary LLM file
   discovery and is read only for an explicitly requested historical review.
 
@@ -677,10 +677,11 @@ runtime truth and update the document.
 - [Security Policy](./SECURITY.md)
 - [Contributing](./CONTRIBUTING.md)
 
-Active specifications live under `spec/docs/` or directly under `spec/` when
-they are still being worked. Completed implementation plans move to
-`spec/.archived/`. Neither location automatically makes a document a current
-product guarantee.
+Active design specifications live as HTML fragments under `spec/docs/`; durable
+product references may remain as Markdown directly under `spec/`. Completed
+implementation plans move to `spec/docs/.archived/`. Use `bun run docs` to view
+both collections and `bun run docs:check` to validate them. Neither location
+automatically makes a document a current product guarantee.
 
 ## Source-of-Truth Map
 

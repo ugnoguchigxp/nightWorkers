@@ -1,0 +1,536 @@
+<article lang="ja">
+  <h1 id="execution-intelligence-concept">Execution Intelligence Concept</h1>
+  <h2 id="status">Status</h2>
+  <p>Discussion draft. Future feature concept only.</p>
+  <p>
+    この文書は実装計画ではない。NightWorkers
+    に実行履歴が十分に蓄積された将来、統計・機械学習を使って新しい価値を作るためのコンセプト、現在の合意、未決事項を残し、次回以降の議論の起点にする。
+  </p>
+  <p>
+    現時点では、database、API、UI、学習 pipeline、ContextStill 連携、model training
+    の実装を開始しない。
+  </p>
+  <h2 id="目的">目的</h2>
+  <p>
+    NightWorkers が持つ Questionnaire、Role Routing、LLM usage、Task / Run、Mission
+    Pilot、Test、Review、correction、closeout
+    の履歴を、単なるログではなく、将来の実行をより予測可能で効率的にする
+    <code>Execution Intelligence</code> の材料として扱う。
+  </p>
+  <p>中心とする価値は次の2点である。</p>
+  <ol>
+    <li>Questionnaire の選択肢に応じて、想定される token、時間、費用、手戻りを動的に見積もる。</li>
+    <li>
+      タスクの複雑さと最終結果から、プロジェクトごとに品質と効率のバランスが良い Role Routing
+      を提案する。
+    </li>
+  </ol>
+  <p>
+    この2点を最初の具体的な入口とするが、同じ実行結果の蓄積から派生し得る追加候補も、この文書に将来論点として残す。
+  </p>
+  <h2 id="背景">背景</h2>
+  <p>NightWorkers には、予測の入力と結果を結び付けられる既存の構造がある。</p>
+  <ul>
+    <li>
+      Questionnaire
+      <ul>
+        <li>質問、選択肢、tradeoff、回答、session を持つ。</li>
+        <li>
+          主な契約は <code>shared/schemas/design-questionnaire.schema.ts</code> と
+          <code>api/db/design-questionnaire-schema.ts</code> にある。
+        </li>
+      </ul>
+    </li>
+    <li>
+      Role Routing
+      <ul>
+        <li>
+          canonical role、primary、fallback、provider endpoint、model、thinking depth を持つ。
+        </li>
+        <li>
+          主な契約は <code>shared/llm-role.ts</code> と
+          <code>api/services/structured-llm/role-routing.ts</code> にある。
+        </li>
+      </ul>
+    </li>
+    <li>
+      LLM usage
+      <ul>
+        <li>task / run、provider、model、role、route source、token、duration を保存する。</li>
+        <li>
+          主な契約は <code>api/db/schema-llm-usage.ts</code> と
+          <code>api/services/llm-usage/</code> にある。
+        </li>
+      </ul>
+    </li>
+    <li>
+      実行結果
+      <ul>
+        <li>
+          Task / Run status、Verification、Review finding / decision、Mission Pilot correction
+          cycle、closeout を持つ。
+        </li>
+        <li>最終レポート本文だけではなく、永続化された実行事実から結果を評価できる。</li>
+      </ul>
+    </li>
+  </ul>
+  <p>
+    一方、現在はこれらを「選択時点の状態・選択可能だった候補・実際の選択・最終結果」という学習単位へ固定する契約はない。また、学習に十分な量・多様性・品質のデータが蓄積したことも確認できていない。
+  </p>
+  <h2 id="中核コンセプト">中核コンセプト</h2>
+  <p>Execution Intelligence は、過去の事例を検索して提示する機能ではない。</p>
+  <pre><code class="language-text">Current state
+  + Candidate choices or routes
+  + Historical outcomes
+  -&gt; Expected cost / quality / risk for each candidate
+</code></pre>
+  <p>
+    NightWorkers
+    がすでに持つ実行事実から、まだ実行していない選択肢の結果を範囲と信頼度付きで予測し、ユーザーまたは
+    Supervisor の判断材料として提示する。
+  </p>
+  <p>
+    初期段階では推薦に留める。予測がユーザーの明示設定、one-shot
+    override、既存の必須品質ゲートを黙って上書きしてはならない。
+  </p>
+  <h2 id="現時点の境界判断">現時点の境界判断</h2>
+  <h3 id="最初は-nightworkers-内で完結する">最初は NightWorkers 内で完結する</h3>
+  <p>最初の学習、集計、評価、推論、UI は NightWorkers 内で完結させる方向を現在の作業仮説とする。</p>
+  <p>理由:</p>
+  <ul>
+    <li>Questionnaire と Role Routing は NightWorkers 固有のプロダクト機能である。</li>
+    <li>
+      token 合算だけでなく、Plan、Implementation、Test、Review、correction、closeout
+      をどこまで結果に含めるかは NightWorkers の lifecycle semantics である。
+    </li>
+    <li>入力、正解ラベル、推論結果の利用者が、現時点ではすべて NightWorkers 内にある。</li>
+    <li>
+      ContextStill を必須にすると、独立アプリ間の同期、schema 互換、privacy、障害時 fallback
+      が先に必要になる。
+    </li>
+    <li>実際に予測を回す前に外部 export 契約を固定すると、必要項目を推測で決めることになる。</li>
+  </ul>
+  <p>
+    したがって、現時点では ContextStill 連携用 JSONL、共有 directory、同期 cursor、外部 training
+    pipeline を作らない。
+  </p>
+  <h3 id="contextstill-の既存責務とは分ける">ContextStill の既存責務とは分ける</h3>
+  <p>
+    次は ContextStill が現在扱う知識・context 領域として考え、このコンセプトの新規機能には数えない。
+  </p>
+  <ul>
+    <li>類似タスク、過去事例、Episode の検索。</li>
+    <li>rule、procedure、failure pattern、negative knowledge の取得。</li>
+    <li>context 候補の検索、選択、圧縮、評価。</li>
+    <li>decision feedback、compile evaluation、knowledge quality 改善。</li>
+  </ul>
+  <p>
+    Execution Intelligence
+    は、検索結果を返すのではなく、候補ごとの将来結果を予測する点を境界とする。
+  </p>
+  <h2 id="feature-1-questionnaire-dynamic-cost-forecast">
+    Feature 1: Questionnaire Dynamic Cost Forecast
+  </h2>
+  <h3 id="価値">価値</h3>
+  <p>
+    Questionnaire
+    の選択肢を変えたとき、その選択が実装範囲と後続工程へ与える影響を、その場で確認できるようにする。
+  </p>
+  <p>表示候補:</p>
+  <ul>
+    <li>推定 total token の範囲。</li>
+    <li>現在の回答セットからの増減範囲。</li>
+    <li>推定実行時間、利用料金。</li>
+    <li>Test / Review まで含む想定工程。</li>
+    <li>correction cycle または手戻り risk。</li>
+    <li>予測 confidence と、confidence が低い理由。</li>
+    <li>主な cost driver。</li>
+  </ul>
+  <p>例:</p>
+  <pre><code class="language-text">メール・パスワード認証
+  現在の回答セットから +18k〜31k tokens
+  推定総量 66k〜91k tokens
+  主な増加要因: DB、session、認可テスト
+  confidence: medium
+</code></pre>
+  <h3 id="動的であること">動的であること</h3>
+  <p>選択肢ごとの固定 cost table にはしない。</p>
+  <ul>
+    <li>複数の選択肢が同じ実装基盤を共有する場合、単純加算は過大評価になる。</li>
+    <li>
+      2つの選択が組み合わさることで、権限、migration、外部 service、E2E
+      が増える場合、単純加算は過小評価になる。
+    </li>
+    <li>
+      project scale、stack、既存 capability、quality requirement、他の Questionnaire
+      回答によって結果が変わる。
+    </li>
+  </ul>
+  <p>UI では、各選択肢の現在状態に対する限界増分と、回答セット全体の総見積もりを分けて扱う。</p>
+  <h3 id="学習時に必要になり得る入力">学習時に必要になり得る入力</h3>
+  <ul>
+    <li>project の規模、stack、既存 capability。</li>
+    <li>Questionnaire session と decision snapshot。</li>
+    <li>提示された選択肢と選択された回答。</li>
+    <li>blocking decision、依存関係、対象となる artifact / layer。</li>
+    <li>選択時点で利用可能だった情報。</li>
+    <li>後続で利用された role、model、thinking depth。</li>
+  </ul>
+  <h3 id="結果候補">結果候補</h3>
+  <ul>
+    <li>Role別・全体の input / output / total token。</li>
+    <li>duration、推定費用。</li>
+    <li>Verification の required / failed / unknown。</li>
+    <li>Review の blocking / warning。</li>
+    <li>correction cycle。</li>
+    <li>terminal status と closeout。</li>
+  </ul>
+  <p>
+    Questionnaire cost の正解を単なる LLM token 合計にするか、Test / Review / correction を含む
+    end-to-end cost にするかは未決事項とする。
+  </p>
+  <h3 id="ux原則">UX原則</h3>
+  <ul>
+    <li>一点の数字ではなく予測区間を表示する。</li>
+    <li>実績が少ない場合は false precision を避ける。</li>
+    <li>低 confidence を隠さない。</li>
+    <li>
+      cost が低い選択肢を自動的な推奨にしない。product value と必要要件は cost より上位にある。
+    </li>
+    <li>推定値のために Questionnaire の純粋な仕様選択体験を壊さない。</li>
+  </ul>
+  <h2 id="feature-2-project-aware-role-routing-intelligence">
+    Feature 2: Project-aware Role Routing Intelligence
+  </h2>
+  <h3 id="価値-1">価値</h3>
+  <p>
+    タスクの複雑さ、project 特性、過去の token / duration、Test / Review、correction 結果から、Role
+    ごとの provider、model、thinking depth の候補を比較し、品質条件を満たす中で効率の良い Routing
+    を提案する。
+  </p>
+  <p>対象 role は canonical role を基準にする。</p>
+  <pre><code class="language-text">plan
+evaluation
+implementation
+test
+review
+mission_pilot
+mission_task_generation
+</code></pre>
+  <h3 id="最適化目標">最適化目標</h3>
+  <p>「最も token が少ない route」を選ぶ機能にはしない。</p>
+  <p>概念上の目的は次である。</p>
+  <pre><code class="language-text">Minimize expected token / cost / duration
+subject to required quality and reliability constraints.
+</code></pre>
+  <p>比較候補として、少なくとも次のような複数案を提示できる形を検討する。</p>
+  <ul>
+    <li>節約。</li>
+    <li>バランス。</li>
+    <li>品質優先。</li>
+  </ul>
+  <p>
+    各案には、token / duration / cost だけでなく、Test 一発通過、blocking finding、correction
+    cycle、予測 confidence を併記する。
+  </p>
+  <h3 id="プロジェクト別設定">プロジェクト別設定</h3>
+  <p>
+    Role Routing は project ごとに最適解が異なる可能性が高いため、グローバル既定値と project
+    別設定の階層を将来候補とする。
+  </p>
+  <p>作業仮説:</p>
+  <pre><code class="language-text">Global provider endpoints and default Role Routing
+  -&gt; Project role policy
+     - inherit
+     - fixed override
+     - optimize
+  -&gt; One-shot explicit override
+</code></pre>
+  <p>
+    provider endpoint、credential、利用可能 model の登録はグローバルに残す。project
+    側はグローバルに登録された endpoint / model を参照し、Role 単位の方針だけを持つ。
+  </p>
+  <p>優先順位の作業仮説:</p>
+  <ol>
+    <li>ユーザーが送信時に明示した one-shot override。</li>
+    <li>project の固定 override。</li>
+    <li>project で明示的に有効化した optimization recommendation。</li>
+    <li>グローバル Role Routing。</li>
+    <li>解決された route 内の fallback。</li>
+  </ol>
+  <p>ML recommendation は、明示的な固定 override を黙って上書きしない。</p>
+  <h3 id="project-detail-ui">Project Detail UI</h3>
+  <p>
+    Project Detail に将来 <code>実行設定</code> のような設定面を設け、次を確認・変更できる案を残す。
+  </p>
+  <ul>
+    <li>Role ごとの現在の effective route。</li>
+    <li>適用元が global / project / recommendation / one-shot / fallback のどれか。</li>
+    <li>global を継承するか、project 固定にするか、最適化を使うか。</li>
+    <li>現在設定と推薦案の token / quality / risk 比較。</li>
+    <li>推薦を採用または却下した履歴。</li>
+  </ul>
+  <p>
+    表示中の effective route と、実際に送信する override payload
+    は分離する。ユーザーが操作していない表示値を、そのまま強制 override として送らない。
+  </p>
+  <h3 id="学習時に必要になり得る入力-1">学習時に必要になり得る入力</h3>
+  <ul>
+    <li>task / project complexity snapshot。</li>
+    <li>project scale、stack、変更 layer、verification requirement。</li>
+    <li>Role ごとに利用可能だった route 候補。</li>
+    <li>選択 route、selection source、fallback attempt、manual override。</li>
+    <li>provider、model、thinking depth、call count。</li>
+    <li>選択時点の設定 revision と policy。</li>
+  </ul>
+  <h3 id="結果候補-1">結果候補</h3>
+  <ul>
+    <li>Role別・全体の token、duration、cost。</li>
+    <li>provider / transport failure。</li>
+    <li>Test pass / failure。</li>
+    <li>Review finding。</li>
+    <li>correction cycle。</li>
+    <li>closeout / archive と、将来扱う場合の reopen / revert。</li>
+  </ul>
+  <p>
+    選択された route だけを保存すると、他候補との比較や selection bias
+    の補正が困難になる。将来学習を始める場合、選択時点で利用可能だった候補を残す必要がある。
+  </p>
+  <h2 id="共通の-learning-boundary">共通の Learning Boundary</h2>
+  <h3 id="学習sampleは最終レポートではない">学習sampleは最終レポートではない</h3>
+  <p>学習の正解は final report の自己申告から作らない。</p>
+  <p>優先する実行事実:</p>
+  <ul>
+    <li>persisted Task / Run status。</li>
+    <li>LLM usage record。</li>
+    <li>Verification document / evidence / completion result。</li>
+    <li>Review session / finding / decision。</li>
+    <li>Mission Pilot phase、test snapshot、correction、closeout。</li>
+    <li>commit / archive。</li>
+  </ul>
+  <h3 id="判断時点と結果時点を分ける">判断時点と結果時点を分ける</h3>
+  <p>
+    予測入力には、Questionnaire または Routing
+    を選択した時点で利用可能だった情報だけを使う。後から確定した Test / Review
+    結果が入力へ混入すると、実運用では再現できない予測になる。
+  </p>
+  <p>概念上、次を分離する。</p>
+  <pre><code class="language-text">Decision-time snapshot
+  state + candidates + selected action + policy version
+
+Outcome snapshot
+  usage + verification + review + correction + closeout
+</code></pre>
+  <h3 id="成功ラベルは単純な-completed-ではない">成功ラベルは単純な completed ではない</h3>
+  <p>
+    <code>completed</code> だけで品質を判断しない。予測用途ごとに、次を組み合わせた outcome
+    definition を将来決める。
+  </p>
+  <ul>
+    <li>required verification。</li>
+    <li>blocking finding。</li>
+    <li>correction cycle。</li>
+    <li>closeout。</li>
+    <li>必要なら一定期間後の reopen / revert。</li>
+  </ul>
+  <p>
+    label definition は model と同様に version
+    管理できる必要があるが、具体的なschemaはこのConceptでは固定しない。
+  </p>
+  <h2 id="導入成熟度の考え方">導入成熟度の考え方</h2>
+  <p>
+    具体的な実装phaseや件数thresholdは、このConceptでは確定しない。将来実装を検討する場合は、少なくとも次の成熟順を守る。
+  </p>
+  <h3 id="observation">Observation</h3>
+  <ul>
+    <li>必要な入力と結果がNightWorkers内で結合可能か確認する。</li>
+    <li>欠損、偏り、route選択の偏りを測る。</li>
+    <li>現行の単純な集計・heuristicをbaselineにする。</li>
+  </ul>
+  <h3 id="offline-evaluation">Offline Evaluation</h3>
+  <ul>
+    <li>過去データで予測精度とcalibrationを評価する。</li>
+    <li>時系列またはproject単位のholdoutを使い、同じTaskの情報漏洩を避ける。</li>
+    <li>modelがheuristic baselineを上回るか確認する。</li>
+  </ul>
+  <h3 id="shadow-mode">Shadow Mode</h3>
+  <ul>
+    <li>UIやRoutingを変えず、予測だけを保存する。</li>
+    <li>予測区間、confidence、実績との差を確認する。</li>
+    <li>現行routeと推薦routeの比較を蓄積する。</li>
+  </ul>
+  <h3 id="recommendation">Recommendation</h3>
+  <ul>
+    <li>予測が一定の品質を満たした後、ユーザーへ比較候補として提示する。</li>
+    <li>採用・却下・manual overrideを記録する。</li>
+    <li>必須gateや固定設定は維持する。</li>
+  </ul>
+  <h3 id="controlled-optimization">Controlled Optimization</h3>
+  <ul>
+    <li>project が明示的に有効化した場合だけ、制約内で推薦routeを選択可能にする。</li>
+    <li>低confidence、model unavailable、設定不整合ではglobal / fixed routeへ戻る。</li>
+    <li>自動化の採否は将来の別判断とする。</li>
+  </ul>
+  <h2 id="追加の将来候補">追加の将来候補</h2>
+  <p>
+    次は、このConceptの中心2機能と同じ実行結果を利用できる将来候補である。採用や優先順位は未決定とし、中心2機能の価値実証を先行させる。
+  </p>
+  <h3 id="adaptive-verification--review">Adaptive Verification / Review</h3>
+  <p>
+    変更内容と過去の失敗から、必要なunit、E2E、migration、security、Review深度を提案する。既存の必須gateを黙って省略する用途には使わない。
+  </p>
+  <h3 id="mission-pilot-risk-forecast">Mission Pilot Risk Forecast</h3>
+  <p>
+    Plan Review revise、required Test failure、blocking finding、複数correction
+    cycle、closeout未達のriskをphase開始前に予測する。
+  </p>
+  <h3 id="queue-duration-and-resource-forecast">Queue Duration And Resource Forecast</h3>
+  <p>
+    Task完了時刻、processor slot占有時間、repository
+    lock待ち、timeout、同時実行競合を予測し、Queue表示や将来の配分判断を補助する。
+  </p>
+  <h3 id="runtime-anomaly-and-recovery-recommendation">
+    Runtime Anomaly And Recovery Recommendation
+  </h3>
+  <p>
+    イベント列と状態遷移から、進捗のないtoken消費、同一処理の反復、heartbeatだけ進むstall、provider劣化、通常と異なるphase遷移を検出し、停止、再試行、別route、人間確認を提案する。
+  </p>
+  <h3 id="defect-hotspot-forecast">Defect Hotspot Forecast</h3>
+  <p>
+    module、変更境界、過去のTest failure、Review
+    finding、correction、reopenから、まだ問題が起きていない変更のriskを予測する。
+  </p>
+  <h3 id="cost--time-budget-forecast">Cost / Time Budget Forecast</h3>
+  <p>
+    Queue投入前やMission開始前に、Role別・phase別のtoken、時間、費用の範囲を示し、予算超過riskを警告する。
+  </p>
+  <h3 id="improvement-candidate-ranking">Improvement Candidate Ranking</h3>
+  <p>
+    Project
+    EvaluationやReviewから生まれた改善候補について、実装後の品質向上、費用、手戻りの実績から優先順位を提案する。
+  </p>
+  <h2 id="contextstillとの将来連携">ContextStillとの将来連携</h2>
+  <h3 id="現在の判断">現在の判断</h3>
+  <p>
+    今すぐContextStillへ学習データを送らない。NightWorkersとContextStillは独立した製品であり、お互いのSQLiteへ直接queryしない。ContextStillを中心とした学習基盤も、現時点では作らない。
+  </p>
+  <h3 id="再検討する条件">再検討する条件</h3>
+  <p>少なくとも次が成立した後に、連携案を考案し直す。</p>
+  <ul>
+    <li>NightWorkers内で予測が実際に回っている。</li>
+    <li>heuristicまたはmodelの価値がoffline / shadow evaluationで確認されている。</li>
+    <li>学習に本当に必要な中間処理データが実績から判明している。</li>
+    <li>内部learning sampleの意味とlabel definitionが安定している。</li>
+    <li>ContextStillで長期保持・横断分析する明確なsecondary useがある。</li>
+    <li>
+      NightWorkers以外のproducerまたはconsumerが現れる、あるいは共通Outcome
+      Modelの具体的価値がある。
+    </li>
+    <li>privacy、retention、削除、project間利用の方針が決まっている。</li>
+  </ul>
+  <h3 id="連携する場合の方向性">連携する場合の方向性</h3>
+  <p>
+    連携を再検討する場合、学習済みnetworkだけを渡す案に限定しない。ContextStillで再学習・別目的への再加工が必要なら、NightWorkersで価値が確認された中間処理データ、dataset
+    snapshot、provenanceを候補にする。
+  </p>
+  <p>
+    ただし、具体的なファイル名、directory、JSONL schema、pull頻度、cursor、model
+    artifact形式は、現在は固定しない。実績がない段階で外部契約を先に作らない。
+  </p>
+  <p>連携時にも次の境界を維持する。</p>
+  <ul>
+    <li>NightWorkersは実行事実とproduct semanticsのsource of truth。</li>
+    <li>ContextStillはNightWorkersの内部SQLiteを直接読まない。</li>
+    <li>独立製品間の連携は明示的なread-only exportを候補にする。</li>
+    <li>NightWorkersがContextStillの利用を必須としない。</li>
+    <li>ContextStill停止時もNightWorkersの通常実行と既存設定は継続する。</li>
+  </ul>
+  <h2 id="model候補について">Model候補について</h2>
+  <p>このConceptはneural networkの採用を前提にしない。</p>
+  <p>データ量と問題に応じて、次を比較する可能性がある。</p>
+  <ul>
+    <li>集計とheuristic。</li>
+    <li>線形・一般化線形model。</li>
+    <li>Gradient Boosted Trees。</li>
+    <li>ranking / learning-to-rank。</li>
+    <li>calibration model。</li>
+    <li>anomaly detection / survival analysis。</li>
+    <li>十分な比較データがある場合のcontextual bandit / offline policy evaluation。</li>
+  </ul>
+  <p>最も複雑なmodelではなく、baselineを安定して上回り、説明とrollbackが可能な最小の方法を選ぶ。</p>
+  <h2 id="評価指標候補">評価指標候補</h2>
+  <h3 id="questionnaire-forecast">Questionnaire Forecast</h3>
+  <ul>
+    <li>token / duration / cost のprediction error。</li>
+    <li>prediction interval coverage。</li>
+    <li>confidence別のcalibration。</li>
+    <li>選択変更時の増減予測と実績の差。</li>
+    <li>見積もり表示が仕様選択を不必要に歪めていないか。</li>
+  </ul>
+  <h3 id="role-routing">Role Routing</h3>
+  <ul>
+    <li>同等以上のqualityにおけるtoken / duration / cost削減。</li>
+    <li>required Test一発通過率。</li>
+    <li>blocking finding率。</li>
+    <li>correction cycle。</li>
+    <li>fallback / provider failure率。</li>
+    <li>推薦採用率、却下率、manual override率。</li>
+    <li>project別・stack別のcalibration。</li>
+  </ul>
+  <p>
+    modelのaccuracyだけで採否を決めない。NightWorkersの実行品質、ユーザーの判断可能性、運用負荷、予測不能時のfallbackを含めて評価する。
+  </p>
+  <h2 id="非目標">非目標</h2>
+  <ul>
+    <li>今すぐML実装を開始すること。</li>
+    <li>現時点でdatabase schemaやJSONL契約を固定すること。</li>
+    <li>ContextStillをNightWorkersの必須依存にすること。</li>
+    <li>ContextStillまたはNightWorkersのSQLiteを相互参照すること。</li>
+    <li>生chat、prompt、diff、stdout、source codeを学習目的で無条件に長期保存すること。</li>
+    <li>ユーザー文言のregex / keyword分類で複雑度やRoutingを決めること。</li>
+    <li>llm-providerへ用途別の実行判断を分散すること。</li>
+    <li>cost最小だけを成功とすること。</li>
+    <li>推薦が明示設定やone-shot overrideを黙って上書きすること。</li>
+    <li>低confidenceの予測を確定値として表示すること。</li>
+  </ul>
+  <h2 id="将来の議論で決めること">将来の議論で決めること</h2>
+  <ol>
+    <li>
+      Questionnaire costは、どの終端までを含むか。
+      <ul>
+        <li>Planのみ。</li>
+        <li>Implementationまで。</li>
+        <li>Test / Review / correction / closeoutを含むend-to-end。</li>
+      </ul>
+    </li>
+    <li>同じTaskで複数cycleがある場合、選択肢とcostをどう帰属させるか。</li>
+    <li>Role Routingのquality constraintを何で定義するか。</li>
+    <li>project別modelにするか、共通modelとproject calibrationにするか。</li>
+    <li>projectごとの<code>inherit / fixed / optimize</code>をどの粒度で持つか。</li>
+    <li>route候補のselection biasをどう評価するか。</li>
+    <li>遅れて判明するreopen / revertをlabelに含めるか。</li>
+    <li>学習readyを件数ではなく、どのcoverage / diversity / calibration条件で判定するか。</li>
+    <li>prediction unavailable時のUIとfallbackをどうするか。</li>
+    <li>ContextStill連携を再検討する具体的なsecondary useは何か。</li>
+    <li>中間処理データのprivacy、retention、削除、project間利用をどう制御するか。</li>
+    <li>このConceptから最初のimplementation planへ進むためのGO条件は何か。</li>
+  </ol>
+  <h2 id="現在のdecision-log">現在のDecision Log</h2>
+  <h3 id="section-2026-07-13">2026-07-13</h3>
+  <ul>
+    <li>
+      最初の中心featureは、Questionnaire Dynamic Cost ForecastとProject-aware Role Routing
+      Intelligenceの2点とする。
+    </li>
+    <li>初期はNightWorkers内で集計、学習、推論、UIを完結させる方向で再議論する。</li>
+    <li>今すぐ実装しない。</li>
+    <li>今すぐContextStill連携、JSONL export、共有directory、同期pipelineを作らない。</li>
+    <li>
+      NightWorkers内で予測が回り、価値と必要データが確認された後、中間処理データをContextStillへ連携する案を考案し直す。
+    </li>
+    <li>
+      Adaptive Verification、Mission Pilot risk、Queue予測、Runtime anomaly、Defect hotspot、Cost /
+      Time budget、Improvement rankingは将来候補として残す。
+    </li>
+  </ul>
+</article>

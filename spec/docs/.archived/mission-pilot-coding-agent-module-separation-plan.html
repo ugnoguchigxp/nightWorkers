@@ -1,0 +1,2231 @@
+<article lang="ja">
+  <h1 id="mission-pilot--coding-agent-complete-module-separation-implementation-plan">
+    Mission Pilot / Coding Agent Complete Module Separation Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Concept status: <code>superseded in part by standalone Coding Agent prerequisite</code></li>
+    <li>
+      Plan status:
+      <code>implementation-ready; document review passed; Luna slow implementation handoff</code>
+    </li>
+    <li>Implementation status: <code>implemented; verification complete</code></li>
+    <li>
+      Document review status:
+      <code>reviewed against current code, scripts, tests, and dirty working tree</code>
+    </li>
+    <li>Last updated: 2026-07-16</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>
+      Target branch at plan creation: <code>codex/mission-pilot-persistent-agent-refactor</code>
+    </li>
+    <li>Target HEAD at plan creation: <code>95dfa8dc</code></li>
+    <li>
+      Working tree policy: preserve every pre-existing tracked and untracked change visible when
+      implementation starts
+    </li>
+    <li>
+      Priority over older plans: module boundary rules remain authoritative; the absolute assumption
+      that every Coding Agent run requires a Mission Pilot handoff is superseded by the correction
+      below
+    </li>
+  </ul>
+  <p>
+    この文書は、Mission PilotとCoding
+    Agentの責務が繰り返し混在した問題を、ファイル配置、依存方向、route、service、repository、SystemContext、tool、event、保存状態のすべてで解消するための実装正本である。
+  </p>
+  <p>本計画の完成条件は次の一文に集約する。</p>
+  <blockquote>
+    <p>
+      Agent固有のproduction codeをMission Pilot、Coding Agent、agentsShareの3
+      moduleへ集約し、Mission PilotがTask解釈・Questionnaire・Plan
+      routing・Artifact・進行判断を所有し、Coding
+      Agentが確定済みTaskと設計に基づくrepository作業だけを所有する状態を、静的検査と回帰テストで破れないようにする。
+    </p>
+  </blockquote>
+  <p>
+    このリファクタリングは、単なるファイル移動ではない。Mission Pilot起動中のQuestionnaire、Plan
+    routing、Dedicated Artifactに関する意味判断をMission
+    Pilotへ戻し、共有moduleやproviderへrole固有処理を隠す迂回も禁止する。Mission
+    Pilot停止中のユーザー直結Plan Modeは、これらのArtifact操作を行わず、Coding AgentがImplementation
+    Planを作成する独立経路とする。
+  </p>
+  <h2 id="section-2026-07-17-standalone-coding-agent-correction">
+    2026-07-17 Standalone Coding Agent Correction
+  </h2>
+  <p>
+    Mission Pilotは任意の自動操縦roleであり、Coding Agentの必須bootstrapではない。Mission
+    Pilotが停止中または未起動でも、ユーザー操作からCoding
+    Agentを直接開始し、Todoによる計画、repository調査、実装、検証、完了報告まで完結できなければならない。
+  </p>
+  <ul>
+    <li>
+      ユーザー直結Runは<code>invocationSource=user</code>を正本とし、Mission
+      Pilotの起動やhandoffを待たない。
+    </li>
+    <li>
+      Mission Pilot handoff
+      Runは<code>invocationSource=mission_pilot</code>を正本とし、確定済みTaskと設計を変更せずに実装する。
+    </li>
+    <li>
+      Plan Mode要求は単一Coding Agent
+      runtimeの<code>planModeRequested</code>として保持し、通常の実装開始へ暗黙に潰さない。
+    </li>
+    <li>
+      ユーザー直結Plan Mode Runはrepositoryを変更せず、Implementation
+      Planを保存して終了する。実装は後続のユーザー操作で開始する通常のCoding Agent Runが担う。
+    </li>
+    <li>
+      ユーザー直結intakeのPlan Mode gateはCoding Agent
+      moduleが所有し、<code>plan_mode</code>または<code>coding_agent</code>だけを返す。これはMission
+      PilotのQuestionnaire / Artifact routingとは別契約である。
+    </li>
+    <li>
+      gateは初期ユーザーPrompt、Task履歴、直近Runの構造的provenanceをLLMへ渡し、実装前に確定すべき責務境界、互換性、移行、データ、権限、受け入れ条件、検証方針が残るかを判断させる。作業種別keyword、規模表現、ファイル数の固定閾値で分岐しない。
+    </li>
+    <li>
+      両経路はユーザー文言やerror
+      keywordでは分岐せず、Runに保存された構造的provenanceでSystemContextを構成する。
+    </li>
+    <li>
+      Questionnaire、Plan routing、Dedicated Artifact mutationのMission Pilot ownershipと、role
+      module境界は維持する。Coding Agent単体のPlan Mode結果はImplementation Planとして保存できる。
+    </li>
+  </ul>
+  <p>
+    以降の「Coding
+    Agentは確定済み設計だけを受け取る」という記述は、<code>invocationSource=mission_pilot</code>のRunに限定して読む。ユーザー直結Runへは適用しない。
+  </p>
+  <h2 id="section-0-implementation-start-gate">0. Implementation Start Gate</h2>
+  <p>Lunaは、次をすべて確認するまでproduction codeの移動を開始しない。</p>
+  <ol>
+    <li>この文書を最後まで読む。</li>
+    <li><code>AGENTS.md</code>のrole分離規則を読む。</li>
+    <li>working treeのtracked / untracked差分を記録する。</li>
+    <li>Phase 0のchange ledgerを作る。</li>
+    <li>現在のtargeted baseline testを実行する。</li>
+    <li>C1のboundary testが成功することを確認する。</li>
+    <li>Plan ownershipの切替をC8の一つのCheckpointで行うことを確認する。</li>
+  </ol>
+  <p>Mission PilotとCoding AgentのPlan ownershipを段階的に切り替えてはならない。</p>
+  <ul>
+    <li>
+      Coding Agent Plan mutationを先に削除すると、Mission Pilot復元までPlan所有者が不在になる。
+    </li>
+    <li>
+      Mission Pilot Plan actionを先にproduction activationすると、Coding Agentと二重所有になる。
+    </li>
+  </ul>
+  <p>
+    C5〜C7では新しいMission Pilot経路をdirect testできる状態まで準備するが、production
+    listener、tool availability、continuation
+    ownershipは切り替えない。C8で次を同一Checkpointとして適用する。
+  </p>
+  <ol>
+    <li>Mission PilotのQuestionnaire、routing、Artifact actionを有効化する。</li>
+    <li>Mission PilotのQuestionnaire / Run event subscriberを正本にする。</li>
+    <li>Coding AgentのPlan mutation toolを削除する。</li>
+    <li>Coding Agent Plan intake / continuation listenerを削除する。</li>
+    <li><code>api/app.ts</code>の初期化登録を切り替える。</li>
+    <li>逆契約testを同時に切り替える。</li>
+  </ol>
+  <p>この切替にfeature flag、二重write、二重listener、role別modeを導入しない。</p>
+  <h2 id="section-1-non-negotiable-ownership-contract">1. Non-Negotiable Ownership Contract</h2>
+  <h3 id="section-11-mission-pilotの所有権">1.1 Mission Pilotの所有権</h3>
+  <p>Mission Pilotは次を所有する。</p>
+  <ul>
+    <li>Task Goal、完了条件、ユーザー指示、現在のFactの解釈。</li>
+    <li>次に読む情報と次actionの判断。</li>
+    <li>Questionnaireの作成要否判断。</li>
+    <li>Questionnaireの質問、回答案、根拠、follow-up、review、確定までの進行。</li>
+    <li>ユーザー介入時間とユーザー操作の尊重。</li>
+    <li>Plan routingのinclude / omit判断。</li>
+    <li>Feature Plan、Blueprint、Data Model、Dedicated Viewの生成と再生成。</li>
+    <li>Artifact source selection、revision、idempotency、採用判断。</li>
+    <li>Coding Agentへ渡す依頼本文と確定済み設計context。</li>
+    <li>Implementation、Test、Review、追加調査、修正依頼の要否判断。</li>
+    <li>Run outcome、verification、blockerの評価。</li>
+    <li>Task complete、archive、wait、finishの判断。</li>
+    <li>
+      Mission Pilot route、service、repository、SystemContext、tool contract、provider
+      adapter、event subscriber。
+    </li>
+  </ul>
+  <p>
+    Mission
+    Pilotはrepositoryを直接編集しない。repositoryの調査・編集・command・検証が必要な場合は、共有application
+    commandを通じてCoding Agentへ依頼する。
+  </p>
+  <h3 id="section-12-coding-agentの所有権">1.2 Coding Agentの所有権</h3>
+  <p>Coding Agentは次を所有する。</p>
+  <ul>
+    <li>
+      渡されたTask、確定済みQuestionnaire Decisions、確定済みArtifact、repository contextの読解。
+    </li>
+    <li>登録済みProject repo rootでのファイル調査。</li>
+    <li>repository内の作成、編集、削除。</li>
+    <li>command実行。</li>
+    <li>build、typecheck、lint、unit、integration、E2E等の検証。</li>
+    <li>Todoの明示的な作成・更新。</li>
+    <li>作業結果、変更summary、verification、blocker、final reportの返却。</li>
+    <li>
+      Coding Agent route、service、repository、SystemContext、tool contract、runtime adapter、event
+      publisher。
+    </li>
+  </ul>
+  <p>Coding Agentは次を所有しない。</p>
+  <ul>
+    <li>Questionnaire作成。</li>
+    <li>Questionnaire回答案作成。</li>
+    <li>Questionnaire review採用。</li>
+    <li>Plan routing更新。</li>
+    <li>Artifactのinclude / omit判断。</li>
+    <li>Artifact生成・再生成。</li>
+    <li>Mission Pilot sessionの進行。</li>
+    <li>Taskの最終完了判断。</li>
+    <li>Mission Pilotの代替としてのユーザー対応。</li>
+  </ul>
+  <p>
+    Coding
+    Agentは単一runtimeを維持する。設計専用mode、repair専用mode、意味別runtime、固定workflow、Task文言やerror
+    keywordによるhost側の分岐を追加しない。
+  </p>
+  <h3 id="section-13-agentsshareの所有権">1.3 agentsShareの所有権</h3>
+  <p>
+    <code>agentsShare</code>は、Mission PilotとCoding
+    Agentの双方で完全に同じ意味を持つ中立要素だけを所有する。
+  </p>
+  <p>配置してよいもの:</p>
+  <ul>
+    <li>role非依存のcommand input / output contract。</li>
+    <li>role非依存のquery contract。</li>
+    <li>role非依存のevent envelope。</li>
+    <li>Task、Run、Artifact、Questionnaire等の正本参照型。</li>
+    <li>provider tool call / resultの中立型。</li>
+    <li>digest、paging、cursor、bounded text等の純粋utility。</li>
+    <li>application commandを呼ぶためのport interface。</li>
+    <li>application eventをpublish / subscribeするためのport interface。</li>
+    <li>roleを知らないtest fixture helper。</li>
+  </ul>
+  <p>配置してはいけないもの:</p>
+  <ul>
+    <li>route。</li>
+    <li>repository。</li>
+    <li>DB tableへの直接アクセス。</li>
+    <li>SystemContext。</li>
+    <li>prompt。</li>
+    <li>Mission Pilot tool。</li>
+    <li>Coding Agent tool。</li>
+    <li><code>role === &quot;mission_pilot&quot;</code>等のrole判定。</li>
+    <li>QuestionnaireやArtifactの所有判断。</li>
+    <li>continuation。</li>
+    <li>lifecycle coordinator。</li>
+    <li>role固有service。</li>
+    <li>role固有authorization policy。</li>
+    <li>role固有のUI表示判断。</li>
+  </ul>
+  <p><code>agentsShare</code>はMission PilotまたはCoding Agentをimportしてはならない。</p>
+  <h2 id="section-2-allowed-production-code-locations">2. Allowed Production Code Locations</h2>
+  <h3 id="section-21-backend">2.1 Backend</h3>
+  <pre><code class="language-text">api/modules/
+  missionPilot/
+    routes/                  # 実在するrouteがある場合だけ
+    services/
+    repositories/
+    prompts/
+    tools/
+    planning/
+    questionnaire/
+    artifacts/
+    events/
+    adapters/
+    index.ts
+
+  codingAgent/
+    routes/                  # 独立した公開routeが必要な場合だけ
+    services/
+    repositories/
+    context/
+    runtime/
+    tools/
+    events/
+    adapters/
+    index.ts
+
+  agentsShare/
+    contracts/
+    ports/
+    events/
+    utils/
+    index.ts
+</code></pre>
+  <h3 id="section-22-frontend">2.2 Frontend</h3>
+  <pre><code class="language-text">src/modules/
+  missionPilot/
+    components/
+    hooks/
+    services/
+    state/
+    types/
+    index.ts
+
+  codingAgent/
+    components/
+    hooks/
+    services/
+    state/
+    types/
+    index.ts
+
+  agentsShare/
+    contracts/
+    presentation/
+    utils/
+    index.ts
+</code></pre>
+  <h3 id="section-23-frontend--backend共通contract">2.3 Frontend / Backend共通contract</h3>
+  <p>FrontendとBackendの双方が参照するrole固有schemaが必要な場合は、次へ集約する。</p>
+  <pre><code class="language-text">shared/modules/
+  missionPilot/
+  codingAgent/
+  agentsShare/
+</code></pre>
+  <p>
+    既存の<code>shared/schemas/mission-pilot*.ts</code>等を恒久的な例外として残さない。移行期間中だけcompatibility
+    re-exportを許し、最終Phaseで削除する。
+  </p>
+  <p>
+    Module構造を対称に見せる目的だけで空のroute、service、repository、schemaを作らない。Role固有の永続状態が存在しない場合、role
+    repositoryは作らず中立application query / command portを使う。
+  </p>
+  <h3 id="section-24-3-module外に残してよいもの">2.4 3 module外に残してよいもの</h3>
+  <p>次はAgent固有の意味を一切持たない場合だけ、既存の共通領域へ残してよい。</p>
+  <ul>
+    <li>DB client。</li>
+    <li>logger。</li>
+    <li>crypto。</li>
+    <li>JSON parser。</li>
+    <li>HTTP framework adapter。</li>
+    <li>汎用LLM provider transport。</li>
+    <li>汎用schema validation。</li>
+    <li>汎用command runner。</li>
+    <li>汎用filesystem primitive。</li>
+    <li>Agent非依存のtool implementation library。</li>
+    <li>Agent非依存のruntime session storeとprovider request transport。</li>
+    <li>Agent以外も使用するTask、Run、Review、Git等のapplication command。</li>
+    <li>Agent以外も使用するdomain modelとrepository。</li>
+    <li>historical DB migration。</li>
+  </ul>
+  <p>共通領域に次が一つでも含まれる場合はrole moduleへ移す。</p>
+  <ul>
+    <li>Mission PilotまたはCoding Agentを名指しするprompt。</li>
+    <li>role固有の状態名。</li>
+    <li>role固有tool名。</li>
+    <li>role固有event listener。</li>
+    <li>role固有のDB query。</li>
+    <li>role固有のcontinuation。</li>
+    <li>roleによって処理を変える分岐。</li>
+  </ul>
+  <p>
+    <code>agent-runtime</code
+    >や<code>worker-tools</code>という現在のdirectory名だけを根拠に、directory全体をCoding
+    Agentへ移してはならない。各fileのconsumerと意味を調べ、Coding Agent固有、agentsShare
+    contract、Agent非依存libraryのいずれかへ分類する。
+  </p>
+  <h2 id="section-3-dependency-rules">3. Dependency Rules</h2>
+  <h3 id="section-31-許可する依存">3.1 許可する依存</h3>
+  <pre><code class="language-text">missionPilot -&gt; agentsShare
+codingAgent  -&gt; agentsShare
+
+missionPilot -&gt; Agent非依存application command / query
+codingAgent  -&gt; Agent非依存application command / query
+
+api/app.ts -&gt; missionPilot public index
+api/app.ts -&gt; codingAgent public index
+</code></pre>
+  <h3 id="section-32-禁止する依存">3.2 禁止する依存</h3>
+  <pre><code class="language-text">missionPilot -X-&gt; codingAgent
+codingAgent  -X-&gt; missionPilot
+agentsShare  -X-&gt; missionPilot
+agentsShare  -X-&gt; codingAgent
+
+missionPilot route -X-&gt; codingAgent service/repository
+codingAgent route  -X-&gt; missionPilot service/repository
+
+missionPilot service -X-&gt; codingAgent repository
+codingAgent service  -X-&gt; missionPilot repository
+
+shared provider -X-&gt; role-specific prompt/tool/branch
+shared domain   -X-&gt; role-specific repository/table
+</code></pre>
+  <p>
+    Mission PilotがCoding Agentを開始する場合も、Coding Agent
+    serviceを直接importしない。Agent非依存の<code>TaskRunCommandPort</code>等を<code>agentsShare</code>から受け取り、共有application
+    commandへ委譲する。
+  </p>
+  <p>
+    共有Task Run coordinatorもCoding Agent
+    runtime内部を直接importしない。<code>agentsShare</code>の中立なexecution
+    portだけを参照し、composition rootがCoding Agent
+    moduleのadapterをそのportへ接続する。これにより、Task Runという共有application
+    lifecycleと、repository実装を行うCoding Agent runtimeの所有権を分離する。
+  </p>
+  <h3 id="section-33-route規則">3.3 Route規則</h3>
+  <ul>
+    <li>Mission Pilot routeはMission Pilot serviceだけを呼ぶ。</li>
+    <li>Coding Agent routeはCoding Agent serviceだけを呼ぶ。</li>
+    <li>共有Task routeはAgent固有serviceを直接呼ばない。</li>
+    <li>composition root以外で両roleのpublic indexを同時にimportしない。</li>
+    <li>fixture routeも対応するrole moduleへ置く。</li>
+    <li>route fileからrepositoryを直接呼ばない。</li>
+  </ul>
+  <h3 id="section-34-service規則">3.4 Service規則</h3>
+  <ul>
+    <li>Serviceは同じroleのrepositoryと、<code>agentsShare</code>のportだけを直接参照する。</li>
+    <li>他roleのserviceを直接呼ばない。</li>
+    <li>shared domain serviceへrole引数を渡して分岐させない。</li>
+    <li>role固有のworkflowをshared serviceへ移さない。</li>
+    <li>semantic decisionをhostの固定条件へ置き換えない。</li>
+  </ul>
+  <h3 id="section-35-repository規則">3.5 Repository規則</h3>
+  <ul>
+    <li>Mission Pilot repositoryはMission Pilot tableだけを扱う。</li>
+    <li>Coding Agent repositoryはCoding Agent固有tableだけを扱う。</li>
+    <li>Task / Run等の共有tableはAgent非依存repositoryが扱う。</li>
+    <li>Role serviceは共有repositoryを直接importせず、共有query / command portを使う。</li>
+    <li><code>nightworkers.repository</code>のnamespace importをrole moduleから禁止する。</li>
+    <li>Repositoryがevent listener、prompt、tool definitionを持たない。</li>
+  </ul>
+  <h2 id="section-4-current-boundary-violations">4. Current Boundary Violations</h2>
+  <h3 id="section-41-coding-agentへ移されたplan-mode-ownership">
+    4.1 Coding Agentへ移されたPlan Mode ownership
+  </h3>
+  <p>現在、次のコードがCoding AgentへMission Pilotの責務を移している。</p>
+  <ul>
+    <li>
+      <code>api/services/coding-agent-context/system-context.ts</code>
+      <ul>
+        <li>Coding AgentへArtifact提案・選択・生成を指示している。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/services/worker-tools/plan-mode.ts</code>
+      <ul>
+        <li>Coding AgentからQuestionnaire、routing、Artifactを変更できる。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-tool.ts</code>
+      <ul>
+        <li>Coding Agent runtimeへPlan mutation toolを公開している。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/modules/planMode/plan-mode-coding-agent-continuation.service.ts</code>
+      <ul>
+        <li>Questionnaire後にCoding Agentを再開する。</li>
+      </ul>
+    </li>
+    <li>
+      <code
+        >api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code
+      >
+      <ul>
+        <li>Coding Agent起点でQuestionnaireを開始する。</li>
+      </ul>
+    </li>
+    <li>
+      <code
+        >api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code
+      >
+      <ul>
+        <li>Coding AgentがQuestionnaireを作るまでworkspace mutationを止める。</li>
+      </ul>
+    </li>
+    <li>
+      <code>codingAgentPlanMode</code>、<code>codingAgentPlanModeGate</code>
+      <ul>
+        <li>誤った所有権を保存状態へ固定している。</li>
+      </ul>
+    </li>
+  </ul>
+  <p>これらは移動対象ではなく、原則として削除またはMission Pilot所有の処理へ書き直す。</p>
+  <h3 id="section-42-mission-pilotから失われたplan-ownership">
+    4.2 Mission Pilotから失われたPlan ownership
+  </h3>
+  <ul>
+    <li>
+      <code>api/services/structured-generation/prompts/mission-pilot-system-context.ts</code>
+      <ul>
+        <li>Mission PilotへArtifactを生成しないよう指示している。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/modules/missionPilot/agent/mission-pilot-task-action-unavailable.ts</code>
+      <ul>
+        <li>Questionnaire、routing、Artifact actionを無効化している。</li>
+      </ul>
+    </li>
+  </ul>
+  <p>
+    Mission Pilot action registryとcommand executorには、Questionnaire、routing、型別Artifact
+    actionの実装が残っている。この既存application command pathを正本として復元する。
+  </p>
+  <h3 id="section-43-shared-moduleへ流出したrole固有コード">
+    4.3 Shared moduleへ流出したrole固有コード
+  </h3>
+  <ul>
+    <li>
+      <code>api/modules/codingAgent/runtime</code>
+      <ul>
+        <li>実態の多くはCoding Agent runtimeである。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/services/worker-tools</code>
+      <ul>
+        <li>実態の多くはCoding Agent worker toolsである。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/services/coding-agent-context</code>
+      <ul>
+        <li>Coding Agent固有である。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/services/structured-generation/prompts/mission-pilot-*</code>
+      <ul>
+        <li>Mission Pilot固有である。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/modules/nightworkers/run-orchestration</code>
+      <ul>
+        <li>Mission PilotとCoding Agentのrole固有連携が混在している。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/modules/planMode</code>
+      <ul>
+        <li>Coding Agent continuationとMission Pilot DB依存が混在している。</li>
+      </ul>
+    </li>
+    <li>
+      <code>api/modules/nightworkers/routes/mission-pilot-*</code>
+      <ul>
+        <li>Mission Pilot fixture routeがNightWorkers moduleにある。</li>
+      </ul>
+    </li>
+    <li>
+      <code>src/modules/nightworkers</code>
+      <ul>
+        <li>Agent固有の表示判断が混在している。</li>
+      </ul>
+    </li>
+  </ul>
+  <h3 id="section-44-shared-provider内のrole分岐">4.4 Shared provider内のrole分岐</h3>
+  <p>
+    <code>api/services/structured-llm/codex-provider.ts</code>にはMission Pilot tool
+    turn、隔離HOME、memory、MCP、developer instruction等のrole固有判断がある。
+  </p>
+  <p>
+    最終状態では、provider transportはroleを知らず、Mission Pilot provider adapterが中立provider
+    optionを組み立てる。
+  </p>
+  <h3 id="section-45-initial-file-disposition-matrix">4.5 Initial File Disposition Matrix</h3>
+  <p>
+    Phase
+    0では必ずconsumerを再確認するが、現時点の既定分類を次とする。Lunaは理由なく別ownerへ変更しない。
+  </p>
+  <table>
+    <caption>
+      4.5 Initial File Disposition Matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current path / family</th>
+        <th scope="col">Classification</th>
+        <th scope="col">Target / action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/modules/missionPilot/**</code></td>
+        <td><code>missionPilot</code></td>
+        <td>Mission Pilot内でroute / service / repository / prompt / tool / eventへ再配置</td>
+      </tr>
+      <tr>
+        <td><code>api/services/structured-generation/prompts/mission-pilot-*</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>api/modules/missionPilot/prompts</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/planMode/plan-mode-routing.service.ts</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>missionPilot/planning</code>と<code>missionPilot/repositories</code>へ分割</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/planMode/plan-mode-routing-lock.ts</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>missionPilot/planning</code></td>
+      </tr>
+      <tr>
+        <td><code>api/db/mission-pilot-schema.ts</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>missionPilot/repositories/schema.ts</code>からexport。table名は変更しない</td>
+      </tr>
+      <tr>
+        <td><code>api/db/mission-pilot-agent-schema.ts</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>missionPilot/repositories/schema.ts</code>からexport。table名は変更しない</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/nightworkers/routes/mission-pilot-*-routes.ts</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>missionPilot/routes</code>。公開pathは維持</td>
+      </tr>
+      <tr>
+        <td><code>src/modules/missionPilot/**</code></td>
+        <td><code>missionPilot</code></td>
+        <td>既存ownerを維持し、NightWorkers内のMission Pilot表示判断を回収</td>
+      </tr>
+      <tr>
+        <td><code>api/services/coding-agent-context/**</code></td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/context</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code></td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/runtime/codex-sdk</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/NativeAgentRuntime.ts</code></td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/runtime/native-api</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/native-api-runner/**</code></td>
+        <td>mixed</td>
+        <td>Coding Agent runtime、agentsShare contract、generic library、C8削除へfile単位分類</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/codex-sdk/**</code></td>
+        <td>mixed</td>
+        <td>Coding Agent adapterとgeneric Codex transportへfile単位分類</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/runtime-session-state.ts</code></td>
+        <td><code>generic-library</code>候補</td>
+        <td>structured provider consumerを確認し、role非依存なら共通transport側へ維持</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/model-visible-payload.ts</code></td>
+        <td><code>generic-library</code>候補</td>
+        <td>consumerを確認し、role非依存なら共通utility</td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/codingAgent/runtime/types.ts</code>、<code>shared/contracts.ts</code>
+        </td>
+        <td>mixed</td>
+        <td>
+          Coding Agent内部型と共有Run outcome contractを分割。Review /
+          NightWorkersは中立contractだけを参照
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <code>api/modules/codingAgent/runtime/registry.ts</code
+          >、<code>runtime-lane.ts</code>、<code>agent-mode-session.ts</code>
+        </td>
+        <td>mixed</td>
+        <td>
+          Coding Agent runtime selectionは<code>codingAgent</code>、共有Task Run session identity /
+          stateは中立domainへ分割
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/services/runner/NativeLocalRunner.ts</code>、<code>types.ts</code></td>
+        <td>mixed</td>
+        <td>
+          Coding Agent起動adapterか汎用command runnerかをconsumer単位で判定。NightWorkersからCoding
+          Agent内部への迂回importにしない
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/review/**</code>からruntime resultへの参照</td>
+        <td><code>replace</code></td>
+        <td>
+          <code>agentsShare</code>の中立Run outcome contractへ変更し、Coding Agent
+          runtime内部型をimportしない
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/review/**</code>からgit / tool implementationへの参照</td>
+        <td><code>generic-library</code></td>
+        <td>
+          共通tool libraryまたはReview application serviceを使い、Coding Agent registryは参照しない
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/dispatcher.ts</code></td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/tools</code></td>
+      </tr>
+      <tr>
+        <td>Coding Agent tool manifest / schema / descriptions</td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/tools</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/todo-list.ts</code></td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/tools/todo</code></td>
+      </tr>
+      <tr>
+        <td>filesystem / command / git / import tool implementation</td>
+        <td><code>generic-library</code>候補</td>
+        <td>
+          Review、GitWorktree等のconsumerがあるため共通tool library。Coding Agent registryがwrap
+        </td>
+      </tr>
+      <tr>
+        <td>worker tool result / port contract</td>
+        <td><code>agentsShare</code>候補</td>
+        <td>両roleまたは一般applicationで同一意味の場合だけ</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/questionnaire/**</code></td>
+        <td>mixed</td>
+        <td>
+          ユーザーも操作するQuestionnaire正本domain / repositoryは中立moduleを維持し、Mission
+          Pilot固有autonomy / prompt / continuationだけ<code>missionPilot/questionnaire</code>へ移動
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/specification/**</code></td>
+        <td>mixed</td>
+        <td>
+          ユーザー可視Artifact正本command / queryは中立moduleを維持し、Mission
+          Pilot固有の選択・生成判断だけ<code>missionPilot/artifacts</code>へ移動
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/nightworkers/run-orchestration/*</code>のCoding Agent固有処理</td>
+        <td><code>codingAgent</code></td>
+        <td><code>codingAgent/services</code>またはC8削除</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/nightworkers/run-orchestration/*</code>のMission Pilot直接連携</td>
+        <td><code>replace</code></td>
+        <td>agentsShare event / portへ置換</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/planMode/plan-mode-coding-agent-continuation.service.ts</code></td>
+        <td><code>delete-after-migration</code></td>
+        <td>C8で削除</td>
+      </tr>
+      <tr>
+        <td>
+          <code
+            >api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code
+          >
+        </td>
+        <td><code>delete-after-migration</code></td>
+        <td>C8で削除</td>
+      </tr>
+      <tr>
+        <td>
+          <code
+            >api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code
+          >
+        </td>
+        <td><code>delete-after-migration</code></td>
+        <td>C8で削除</td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/plan-mode.ts</code></td>
+        <td><code>delete-after-migration</code></td>
+        <td>C8で削除。必要なread queryだけCoding Agentへ再設計</td>
+      </tr>
+      <tr>
+        <td><code>shared/schemas/mission-pilot*.ts</code></td>
+        <td><code>missionPilot</code></td>
+        <td><code>shared/modules/missionPilot</code></td>
+      </tr>
+      <tr>
+        <td>Coding Agent固有contract</td>
+        <td><code>codingAgent</code></td>
+        <td><code>shared/modules/codingAgent</code></td>
+      </tr>
+      <tr>
+        <td>両role共通ref / event / port schema</td>
+        <td><code>agentsShare</code></td>
+        <td><code>shared/modules/agentsShare</code></td>
+      </tr>
+      <tr>
+        <td>Task / Run / Review / Gitのrole非依存domain</td>
+        <td><code>generic-library</code></td>
+        <td>現在のdomain moduleを維持</td>
+      </tr>
+      <tr>
+        <td>usage UI、一般trace UI等の本計画外差分</td>
+        <td><code>unrelated-preserve</code></td>
+        <td>所有権混在がない限り触らない</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    DB schema fileの移動はTypeScript import ownershipの変更であり、既存table名やmigration
+    historyを変更しない。新しいtableが必要になった場合は、role固有状態であることを説明してから別migrationとして追加する。
+  </p>
+  <h2 id="section-5-working-tree-preservation-contract">5. Working Tree Preservation Contract</h2>
+  <p>
+    実装開始時のworking treeには、多数のtracked /
+    untracked変更が存在する可能性が高い。Lunaは次を守る。
+  </p>
+  <p>禁止:</p>
+  <ul>
+    <li><code>git reset --hard</code></li>
+    <li><code>git checkout -- &lt;path&gt;</code></li>
+    <li><code>git restore &lt;path&gt;</code></li>
+    <li>working tree全体のstash</li>
+    <li>HEADへ戻す目的の一括上書き</li>
+    <li>未追跡ファイルの削除</li>
+    <li>既存変更を「古い実装」と決めつけて破棄すること</li>
+  </ul>
+  <p>開始時に記録するもの:</p>
+  <pre><code class="language-bash">git status --short
+git diff --stat
+git diff --name-only
+git ls-files --others --exclude-standard
+</code></pre>
+  <p>各変更ファイルを次へ分類する。</p>
+  <table>
+    <caption>
+      5. Working Tree Preservation Contract
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Classification</th>
+        <th scope="col">意味</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>missionPilot</code></td>
+        <td>Mission Pilotへ保持・移動する</td>
+      </tr>
+      <tr>
+        <td><code>codingAgent</code></td>
+        <td>Coding Agentへ保持・移動する</td>
+      </tr>
+      <tr>
+        <td><code>agentsShare</code></td>
+        <td>両roleで意味が同じ中立contractへ書き直す</td>
+      </tr>
+      <tr>
+        <td><code>generic-library</code></td>
+        <td>Agent非依存libraryとして残す</td>
+      </tr>
+      <tr>
+        <td><code>replace</code></td>
+        <td>誤った所有権を実装しており書き直す</td>
+      </tr>
+      <tr>
+        <td><code>delete-after-migration</code></td>
+        <td>新経路切替後に削除する</td>
+      </tr>
+      <tr>
+        <td><code>unrelated-preserve</code></td>
+        <td>本計画と無関係なので触らない</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>分類結果を実装中の作業メモまたは本計画のCheckpoint Ledgerへ追記する。</p>
+  <h2 id="section-6-target-module-layout">6. Target Module Layout</h2>
+  <h3 id="section-61-mission-pilot-backend">6.1 Mission Pilot backend</h3>
+  <pre><code class="language-text">api/modules/missionPilot/
+  routes/
+    mission-pilot.routes.ts
+    mission-pilot-fixture.routes.ts
+
+  services/
+    mission-pilot.service.ts
+    mission-pilot-play.service.ts
+    mission-pilot-stop.service.ts
+    mission-pilot-wake.service.ts
+    mission-pilot-completion.service.ts
+
+  repositories/
+    mission-pilot-session.repository.ts
+    mission-pilot-conversation.repository.ts
+    mission-pilot-action.repository.ts
+    mission-pilot-event.repository.ts
+    mission-pilot-plan-routing.repository.ts
+    mission-pilot-questionnaire-draft.repository.ts
+    schema.ts
+
+  planning/
+    mission-pilot-plan.service.ts
+    mission-pilot-plan-routing.service.ts
+    mission-pilot-plan-review.service.ts
+    mission-pilot-plan-source-resolver.ts
+
+  questionnaire/
+    mission-pilot-questionnaire.service.ts
+    mission-pilot-questionnaire-draft.ts
+    mission-pilot-questionnaire.events.ts
+
+  artifacts/
+    mission-pilot-artifact.service.ts
+    mission-pilot-artifact-regeneration.service.ts
+    mission-pilot-artifact.actions.ts
+
+  tools/
+    mission-pilot-tool.registry.ts
+    mission-pilot-tool.executor.ts
+    mission-pilot-read.tools.ts
+    mission-pilot-action.tools.ts
+
+  prompts/
+    mission-pilot-system-context.ts
+    mission-pilot-plan-review.ts
+
+  events/
+    mission-pilot-event-subscriber.ts
+    mission-pilot-run-event-handler.ts
+    mission-pilot-questionnaire-event-handler.ts
+
+  adapters/
+    mission-pilot-provider.adapter.ts
+    mission-pilot-task-run.adapter.ts
+    mission-pilot-task-read.adapter.ts
+
+  index.ts
+</code></pre>
+  <p>
+    既存の<code>agent/</code>
+    subdirectoryは一度に全廃しなくてよいが、最終的に上記責務へ再配置する。巨大な一括renameではなく、service単位でpublic
+    APIを切り替える。
+  </p>
+  <p>
+    <code>mission-pilot-questionnaire-draft.repository.ts</code>が扱うのはMission
+    Pilot固有の回答案、evidence、deadline、採用状態だけである。ユーザーも操作する<code>design_questionnaire_sessions</code>等のQuestionnaire正本を複製またはMission
+    Pilot専用tableへ移さず、中立Questionnaire application command /
+    queryを介して操作する。同様に、ユーザー可視Artifactの正本repositoryをMission
+    Pilot内へ複製せず、Mission Pilotは生成・再生成・routingの意味判断とcommand発行を所有する。
+  </p>
+  <h3 id="section-62-coding-agent-backend">6.2 Coding Agent backend</h3>
+  <pre><code class="language-text">api/modules/codingAgent/
+  routes/
+    coding-agent.routes.ts       # 独立公開routeが必要な場合だけ
+
+  services/
+    coding-agent-run.service.ts
+    coding-agent-resume.service.ts
+    coding-agent-stop.service.ts
+    coding-agent-finalize.service.ts
+
+  repositories/
+    coding-agent-session.repository.ts  # role固有永続状態が実在する場合だけ
+    coding-agent-context.repository.ts  # role固有永続状態が実在する場合だけ
+    schema.ts                            # role固有tableが実在する場合だけ
+
+  context/
+    coding-agent-system-context.ts
+    coding-agent-context-packet.ts
+    coding-agent-design-context.ts
+
+  runtime/
+    coding-agent-runtime.ts
+    native-api/
+    codex-sdk/
+    context-compaction/
+
+  tools/
+    coding-agent-tool.registry.ts
+    coding-agent-tool-dispatcher.ts
+    filesystem/                    # Coding Agent向けwrapper / registrationだけ
+    command/                       # Coding Agent向けwrapper / registrationだけ
+    todo/
+    git/                           # Coding Agent向けwrapper / registrationだけ
+
+  events/
+    coding-agent-event-publisher.ts
+    coding-agent-runtime-events.ts
+
+  adapters/
+    coding-agent-task-run.adapter.ts
+    coding-agent-provider.adapter.ts
+
+  index.ts
+</code></pre>
+  <p>
+    Coding AgentへPlan mutation toolを置かない。確定済みArtifactがcontext
+    budget上入りきらない場合は、read-only
+    queryを<code>coding-agent-design-context.ts</code>経由で提供する。Questionnaire、routing、generation
+    mutationは提供しない。
+  </p>
+  <p>
+    現在の<code>task_runs</code>、Task、Review、Git workspace等の中立tableをCoding Agent
+    repositoryへ移さない。Coding Agent serviceは中立application query / command portを使用する。
+  </p>
+  <h3 id="section-63-agentsshare-backend">6.3 agentsShare backend</h3>
+  <pre><code class="language-text">api/modules/agentsShare/
+  contracts/
+    agent-task-ref.ts
+    agent-run-ref.ts
+    agent-artifact-ref.ts
+    agent-questionnaire-ref.ts
+    agent-tool-result.ts
+
+  ports/
+    task-command.port.ts
+    task-query.port.ts
+    task-run-command.port.ts
+    task-run-query.port.ts
+    task-run-execution.port.ts
+    artifact-command.port.ts
+    artifact-query.port.ts
+    questionnaire-command.port.ts
+    questionnaire-query.port.ts
+    event-bus.port.ts
+
+  events/
+    task-run.events.ts
+    questionnaire.events.ts
+    artifact.events.ts
+
+  utils/
+    digest.ts
+    bounded-text.ts
+    paging.ts
+
+  index.ts
+</code></pre>
+  <p>
+    <code>agentsShare</code
+    >内のすべての名前はrole非依存にする。<code>missionPilot</code>または<code>codingAgent</code>を名前に含める型は置かない。
+  </p>
+  <h2 id="section-7-implementation-phases">7. Implementation Phases</h2>
+  <h3 id="phase-0-baseline-audit-and-change-ledger">Phase 0: Baseline Audit and Change Ledger</h3>
+  <p>目的: 既存差分を失わず、誤った所有権を新moduleへ機械的に移さない。</p>
+  <p>作業:</p>
+  <ol>
+    <li>working treeを記録する。</li>
+    <li>Agent関連ファイルを列挙する。</li>
+    <li>各ファイルをSection 5のclassificationへ割り当てる。</li>
+    <li>
+      既存testを次へ分類する。
+      <ul>
+        <li>正しい境界を証明するtest。</li>
+        <li>誤ったCoding Agent Plan ownershipを固定しているtest。</li>
+        <li>role非依存のdomain test。</li>
+        <li>unrelated test。</li>
+      </ul>
+    </li>
+    <li>baseline testを実行する。</li>
+  </ol>
+  <p>
+    Change ledgerには最低限、<code>current path</code>、<code>current consumers</code
+    >、<code>classification</code>、<code>target public API</code>、<code>target path</code
+    >、<code>checkpoint</code>、<code>pre-existing dirty change</code>、<code>replacement test</code
+    >を記録する。consumer未確認のfileを<code>codingAgent</code>または<code>missionPilot</code>へ確定しない。
+  </p>
+  <p>最低限のbaseline:</p>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run \
+  tests/mission-pilot-agent-runtime.test.ts \
+  tests/mission-pilot-agent-hardening-contract.test.ts \
+  tests/mission-pilot-questionnaire-state-event.test.ts \
+  tests/coding-agent-plan-mode-contract.test.ts \
+  tests/coding-agent-initial-plan-mode-gate.test.ts \
+  tests/coding-agent-plan-mode-intake-start.test.ts \
+  tests/plan-mode-coding-agent-continuation.test.ts \
+  tests/role-module-boundary.test.ts
+
+node scripts/check-module-boundaries.mjs
+</code></pre>
+  <p>完了条件:</p>
+  <ul>
+    <li>すべての既存差分にclassificationがある。</li>
+    <li>baseline結果を記録している。</li>
+    <li>unrelated changeを変更していない。</li>
+    <li>どのファイルもまだ大規模移動していない。</li>
+  </ul>
+  <p>停止条件:</p>
+  <ul>
+    <li>既存差分の意図を判断できず、移動で上書きする可能性がある。</li>
+    <li>baseline DBまたはfixtureが壊れており、現在挙動を採取できない。</li>
+    <li>unrelated changeと同一行で競合し、安全に分離できない。</li>
+  </ul>
+  <h3 id="phase-1-boundary-guardrails">Phase 1: Boundary Guardrails</h3>
+  <p>目的: 移動中に新しい混在を追加できないようにする。</p>
+  <p>作業:</p>
+  <ol>
+    <li>
+      <code>.agent-ontology/boundary-policy.json</code>へ次を登録する。
+      <ul>
+        <li>Backend role roots。</li>
+        <li>Frontend role roots。</li>
+        <li>Backend / frontend agentsShare roots。</li>
+        <li><code>shared/modules</code>のrole rootsとagentsShare root。</li>
+      </ul>
+    </li>
+    <li>
+      <code>check-module-boundaries.mjs</code>で次を検査する。
+      <ul>
+        <li>role間の直接import禁止。</li>
+        <li>agentsShareからroleへの逆import禁止。</li>
+        <li>他moduleからrole内部へのdeep import禁止。</li>
+        <li><code>api</code>、<code>src</code>、<code>shared</code>の3 treeすべてを走査する。</li>
+      </ul>
+    </li>
+    <li>Agent固有コード配置検査を追加する。</li>
+    <li>移行中の既知違反は期限付きbaseline manifestへ明示する。</li>
+    <li>新規違反はbaselineへ追加できないようにする。</li>
+  </ol>
+  <p>配置検査対象marker:</p>
+  <ul>
+    <li>
+      file pathまたはexport名に<code>mission-pilot</code> / <code>missionPilot</code> /
+      <code>MissionPilot</code>を含む。
+    </li>
+    <li>
+      file pathまたはexport名に<code>coding-agent</code> / <code>codingAgent</code> /
+      <code>CodingAgent</code>を含む。
+    </li>
+    <li>role固有SystemContext constant。</li>
+    <li>role固有tool name。</li>
+    <li>role固有continuation。</li>
+  </ul>
+  <p>許可例外:</p>
+  <ul>
+    <li><code>api/app.ts</code>等のcomposition rootからpublic indexをimportする行。</li>
+    <li>historical migration。</li>
+    <li>test file。</li>
+    <li>移行期間中baseline manifestに記録された既存違反。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>role cross-import testがある。</li>
+    <li>agentsShare reverse dependency testがある。</li>
+    <li>public API deep import testがある。</li>
+    <li>新規Agent固有ファイルを3 module外へ追加するとarchitecture checkが失敗する。</li>
+  </ul>
+  <h3 id="phase-2-create-module-skeletons-and-public-apis">
+    Phase 2: Create Module Skeletons and Public APIs
+  </h3>
+  <p>目的: 移動先を先に作り、旧pathから新pathへの一方向移行を可能にする。</p>
+  <p>作業:</p>
+  <ol>
+    <li><code>api/modules/codingAgent</code>を作成する。</li>
+    <li><code>api/modules/agentsShare</code>を作成する。</li>
+    <li><code>src/modules/codingAgent</code>、<code>src/modules/agentsShare</code>を作成する。</li>
+    <li>必要なら<code>shared/modules</code>の3 rootを作成する。</li>
+    <li>各rootに<code>index.ts</code>を作る。</li>
+    <li>Public exportを最小にする。</li>
+    <li>旧pathから新pathへのdeep importを作らない。</li>
+  </ol>
+  <p>完了条件:</p>
+  <ul>
+    <li>3 module rootがbackend / frontendで存在する。</li>
+    <li>public index以外を外部からimportできない。</li>
+    <li>module skeletonだけで既存挙動が変わらない。</li>
+  </ul>
+  <h3 id="phase-3-move-coding-agent-context-and-runtime">
+    Phase 3: Move Coding Agent Context and Runtime
+  </h3>
+  <p>目的: Coding Agent固有コードを<code>services</code>から除去する。</p>
+  <p>
+    最初に<code>api/modules/codingAgent/runtime</code>の全fileを次へ分類する。directory単位の一括移動は禁止する。
+  </p>
+  <table>
+    <caption>
+      Phase 3: Move Coding Agent Context and Runtime
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Classification</th>
+        <th scope="col">移動先</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Coding AgentのSystemContext、runtime loop、tool dispatch、closeout、evidence</td>
+        <td><code>api/modules/codingAgent/runtime</code></td>
+      </tr>
+      <tr>
+        <td>両roleで同じ意味を持つruntime contract / event envelope / port</td>
+        <td><code>api/modules/agentsShare</code></td>
+      </tr>
+      <tr>
+        <td>provider transport、汎用session store、role非依存payload helper</td>
+        <td>Agent非依存library</td>
+      </tr>
+      <tr>
+        <td>Plan ownershipをCoding Agentへ与えるfile</td>
+        <td>C8で削除</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>既知の移動候補:</p>
+  <table>
+    <caption>
+      Phase 3: Move Coding Agent Context and Runtime（2）
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current path</th>
+        <th scope="col">Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/services/coding-agent-context/*</code></td>
+        <td><code>api/modules/codingAgent/context/*</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code></td>
+        <td><code>api/modules/codingAgent/runtime/codex-sdk/*</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/NativeAgentRuntime.ts</code></td>
+        <td><code>api/modules/codingAgent/runtime/native-api/*</code></td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/native-api-runner/*</code></td>
+        <td>
+          file分類後に<code>codingAgent/runtime/native-api</code>、<code>agentsShare</code>、generic
+          library、C8削除へ分割
+        </td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/codex-sdk/*</code></td>
+        <td>
+          file分類後に<code>codingAgent/runtime/codex-sdk</code>またはgeneric Codex transportへ分割
+        </td>
+      </tr>
+      <tr>
+        <td>Coding Agent固有runtime support</td>
+        <td><code>api/modules/codingAgent/runtime/*</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    上表はfileごとの意味確認前に確定した一括move指示ではない。たとえば<code>runtime-session-state.ts</code>が共通structured
+    providerから利用される場合、Coding Agentへ移さずAgent非依存libraryへ置く。
+  </p>
+  <p>
+    汎用provider
+    transportは<code>api/services/structured-llm</code>へ残せるが、role分岐を持たせない。
+  </p>
+  <p>既存consumerの切替規則:</p>
+  <ul>
+    <li>
+      <code>api/modules/nightworkers/run-orchestration</code>はCoding Agent runtime
+      class、registry、lane内部型を直接importせず、中立<code>TaskRunExecutionPort</code>と中立Run
+      outcome contractを使う。
+    </li>
+    <li>
+      <code>api/modules/review</code>は<code>AgentRuntimeResult</code>のCoding
+      Agent内部定義を参照せず、中立Run outcome contractを使う。
+    </li>
+    <li>
+      <code>changedFilesFromDiff</code>等の純粋helperはCoding Agent
+      runtimeへ移さず、GitまたはReviewの中立utilityへ置く。
+    </li>
+    <li>
+      <code>runtime-session-state.ts</code>がstructured provider resumeでも使われる場合はgeneric
+      session storeとし、Coding Agent moduleの所有物にしない。
+    </li>
+    <li>
+      <code>NativeLocalRunner</code>がCoding Agent起動だけを行う場合はCoding Agent
+      adapterへ移す。一般process runnerならgeneric libraryに残し、role固有判断を除去する。
+    </li>
+  </ul>
+  <p>手順:</p>
+  <ol>
+    <li>新module内にpublic runtime portを作る。</li>
+    <li>旧runtime entrypointを新moduleへ移す。</li>
+    <li>呼び出し側をpublic indexへ切り替える。</li>
+    <li>必要なconsumerだけを新public APIへ切り替える。</li>
+    <li>移行中に必要な場合だけ、logicを持たないcompatibility re-exportを追加する。</li>
+    <li>targeted testsを通す。</li>
+    <li>
+      全consumer移行後、同Checkpointまたは直後のCheckpointでcompatibility re-exportを削除する。
+    </li>
+  </ol>
+  <p>Coding Agent SystemContextから削除する指示:</p>
+  <ul>
+    <li>Artifactを提案・選択する。</li>
+    <li>Questionnaireを作成する。</li>
+    <li>routingを更新する。</li>
+    <li>Artifactを生成する。</li>
+    <li>Mission Pilotへ意味判断を委ねない。</li>
+    <li>Plan Mode開始時にQuestionnaireを必須作成する。</li>
+  </ul>
+  <p>追加する指示:</p>
+  <ul>
+    <li>Mission Pilotが渡した確定済みTaskと設計を正本として読む。</li>
+    <li>
+      repositoryのFactと確定済み設計が衝突した場合は、勝手にArtifactを変更せずblockerとして返す。
+    </li>
+    <li>追加ユーザー判断が必要な場合はfinal report / blockerでMission Pilotへ返す。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li><code>api/services/coding-agent-context</code>が存在しない。</li>
+    <li>
+      Coding Agent runtime固有ファイルが<code>api/modules/codingAgent/runtime</code>に残っていない。
+    </li>
+    <li>Coding Agent SystemContextにPlan ownershipがない。</li>
+    <li>Coding Agent runtimeは単一runtimeのまま。</li>
+  </ul>
+  <h3 id="phase-4-move-coding-agent-tools">Phase 4: Move Coding Agent Tools</h3>
+  <p>
+    目的: <code>worker-tools</code>をfile単位で分類し、Coding Agent向けcatalog /
+    dispatcherだけをCoding Agent所有へ移す。Plan mutationのproduction削除はC8で行う。
+  </p>
+  <p>
+    <code>api/services/worker-tools</code>もdirectory単位で移動しない。現在、Review、Git
+    worktree、background process等のAgent非依存moduleが一部tool
+    implementationを利用しているためである。
+  </p>
+  <table>
+    <caption>
+      Phase 4: Move Coding Agent Tools
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">File kind</th>
+        <th scope="col">Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Coding Agent tool manifest / dispatcher / model-facing descriptions</td>
+        <td><code>api/modules/codingAgent/tools</code></td>
+      </tr>
+      <tr>
+        <td>Coding Agent Todo tool</td>
+        <td><code>api/modules/codingAgent/tools/todo</code></td>
+      </tr>
+      <tr>
+        <td>Coding Agent専用tool wrapper</td>
+        <td><code>api/modules/codingAgent/tools</code></td>
+      </tr>
+      <tr>
+        <td>Role非依存のfilesystem / command / git / import implementation</td>
+        <td>Agent非依存tool library</td>
+      </tr>
+      <tr>
+        <td>両roleで同じ意味を持つtool result contract / port</td>
+        <td><code>api/modules/agentsShare</code></td>
+      </tr>
+      <tr>
+        <td>Coding Agent Plan Mode tool</td>
+        <td>C8で削除</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Agent非依存tool implementation libraryは、Mission Pilot tool catalogへ直接公開しない。Coding
+    Agent registryまたは一般application serviceが明示的にwrapする。
+  </p>
+  <p>C8で削除する対象:</p>
+  <ul>
+    <li>Coding Agent用<code>plan_mode</code> mutation tool。</li>
+    <li><code>request_input</code>。</li>
+    <li><code>update_routing</code>。</li>
+    <li><code>generate_artifact</code>。</li>
+    <li>Coding Agent Plan intake guard。</li>
+    <li>Plan Mode Questionnaire必須化。</li>
+  </ul>
+  <p>Artifactのread-only参照が必要な場合:</p>
+  <ul>
+    <li><code>agentsShare</code>の<code>ArtifactQueryPort</code>を使用する。</li>
+    <li>Coding Agent module内にread-only adapterを置く。</li>
+    <li>mutation commandを同じtoolへ混ぜない。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>
+      C4終了時点では、C8 cutover前のPlan toolをcompatibility pathとして残せる。ただし新しいPlan
+      mutationを追加しない。
+    </li>
+    <li>C8終了時点でCoding Agent tool registryのPlan mutationが0件。</li>
+    <li>
+      最終Phaseで<code>api/services/worker-tools</code>にCoding
+      Agent固有description、manifest、dispatcherが残っていない。
+    </li>
+    <li>filesystem、command、Todo、検証toolは従来通り使用できる。</li>
+    <li>Tool実行は登録済みrepo rootを使用する。</li>
+  </ul>
+  <h3 id="phase-5-prepare-mission-pilot-questionnaire-and-artifact-ownership">
+    Phase 5: Prepare Mission Pilot Questionnaire and Artifact Ownership
+  </h3>
+  <p>
+    目的: 誤ってCoding Agentへ移された設計責務をMission Pilotへ戻すためのservice、repository、tool
+    contract、testを準備する。C8まではproduction ownershipを切り替えない。
+  </p>
+  <p>作業:</p>
+  <ol>
+    <li>
+      Mission Pilot SystemContextのArtifact禁止指示を置き換える新promptを準備し、direct
+      testする。C8まではproduction promptへ切り替えない。
+    </li>
+    <li>
+      Mission Pilot tool catalogで次を有効化できるcontractを整備する。
+      <ul>
+        <li><code>questionnaire.create</code></li>
+        <li><code>questionnaire.draft.update</code></li>
+        <li><code>questionnaire.draft.save</code></li>
+        <li><code>questionnaire.follow_up.generate</code></li>
+        <li><code>questionnaire.additional.generate</code></li>
+        <li><code>questionnaire.review.generate</code></li>
+        <li><code>questionnaire.review.accept</code></li>
+        <li><code>questionnaire.review.leave_unadopted</code></li>
+        <li><code>plan.routing.update</code></li>
+        <li><code>plan.artifact.feature_plan.generate</code></li>
+        <li><code>plan.artifact.blueprint.generate</code></li>
+        <li><code>plan.artifact.data_model.generate</code></li>
+        <li><code>plan.artifact.view.generate</code></li>
+        <li><code>plan.artifact.regenerate</code></li>
+      </ul>
+    </li>
+    <li><code>questionnaire.submit</code>は既存のユーザー介入契約を迂回しない形にする。</li>
+    <li>
+      generic
+      <code>plan.artifact.generate</code>と型別actionが重複する場合は型別actionを正本にする。
+    </li>
+    <li>Action executorは既存application commandを使い続ける。</li>
+    <li>Side effectはauthorization、revision、idempotencyをserver側で検証する。</li>
+    <li>Direct unit / integration testから新しいMission Pilot経路を検証する。</li>
+    <li>C8まではCoding Agent continuationと同時にproduction listenerへ登録しない。</li>
+  </ol>
+  <p>Mission Pilot SystemContextへ明記する内容:</p>
+  <ul>
+    <li>Mission PilotがQuestionnaireとArtifactを所有する。</li>
+    <li>Coding Agentは確定済み設計を消費する。</li>
+    <li>repository編集はCoding Agentへ依頼する。</li>
+    <li>Plan判断をCoding Agentへ移譲しない。</li>
+    <li>Artifact生成可否をhostの固定workflowで決めない。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>新しいMission Pilot tool catalog候補に型別Artifact actionが存在する。</li>
+    <li>Direct testでMission PilotがQuestionnaire answering時に回答案を作成できる。</li>
+    <li>Direct testでMission PilotがroutingとArtifactを更新できる。</li>
+    <li>Coding Agentを開始する前に確定済み設計refsを組み立てられる。</li>
+    <li>Production ownershipはまだ一つだけで、二重listenerがない。</li>
+  </ul>
+  <h3 id="phase-6-move-mission-pilot-planning-questionnaire-and-repositories">
+    Phase 6: Move Mission Pilot Planning, Questionnaire, and Repositories
+  </h3>
+  <p>
+    目的: Mission
+    Pilot固有コードを<code>planMode</code>、<code>questionnaire</code>、<code>services</code>等から回収する。
+  </p>
+  <p>主な移動:</p>
+  <table>
+    <caption>
+      Phase 6: Move Mission Pilot Planning, Questionnaire, and Repositories
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current</th>
+        <th scope="col">Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Mission Pilot plan coordinator / review / support</td>
+        <td><code>missionPilot/planning</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot Questionnaire autonomy</td>
+        <td><code>missionPilot/questionnaire</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot Artifact correction</td>
+        <td><code>missionPilot/artifacts</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot prompts</td>
+        <td><code>missionPilot/prompts</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot provider port / usage</td>
+        <td><code>missionPilot/adapters</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot DB schema</td>
+        <td><code>missionPilot/repositories/schema.ts</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <code>api/modules/planMode/plan-mode-routing.service.ts</code>は、Mission Pilot
+    tableを直接扱っているため中立moduleとして残せない。
+  </p>
+  <p>選択:</p>
+  <ul>
+    <li>RoutingがMission Pilot workflowの状態ならMission Pilot planning repositoryへ移す。</li>
+    <li>
+      Product全体の中立Plan routingなら、中立table / repositoryへ移行し、Mission Pilot
+      table依存を除去する。
+    </li>
+  </ul>
+  <p>本計画では、現在のtable名とsession関連からMission Pilot所有として移すことを既定とする。</p>
+  <p>
+    <code>api/modules/questionnaire</code
+    >と<code>api/modules/specification</code>はdirectory単位でMission
+    Pilotへ移さない。ユーザー操作、一般route、正本repository、正本application command /
+    queryはrole非依存domainとして残す。Mission Pilot固有のautonomy、prompt、action selection、draft
+    projection、event subscriberだけをMission Pilot moduleへ移す。
+  </p>
+  <p>完了条件:</p>
+  <ul>
+    <li><code>api/modules/planMode</code>がMission Pilot DB schemaをimportしない。</li>
+    <li>Mission Pilot repositoryが他role tableを扱わない。</li>
+    <li>Mission Pilot promptsが<code>api/services</code>に残っていない。</li>
+  </ul>
+  <h3 id="phase-7-replace-direct-role-coupling-with-agentsshare-ports-and-events">
+    Phase 7: Replace Direct Role Coupling with agentsShare Ports and Events
+  </h3>
+  <p>
+    目的: NightWorkers、Run orchestration、Questionnaire eventからrole
+    serviceへの直接importを除去し、C8で切替可能な中立event pathを準備する。
+  </p>
+  <p>導入する中立event例:</p>
+  <pre><code class="language-ts">type TaskRunTerminalEvent = {
+  eventId: string;
+  taskId: string;
+  runId: string;
+  status: string;
+  sourceRef: { kind: string; id: string } | null;
+  occurredAt: string;
+};
+
+type QuestionnaireStateChangedEvent = {
+  eventId: string;
+  taskId: string;
+  questionnaireSessionId: string;
+  status: string;
+  revision: number;
+  occurredAt: string;
+};
+</code></pre>
+  <p>Flow:</p>
+  <pre><code class="language-text">TaskRun shared application service
+  -&gt; publish neutral event
+  -&gt; Mission Pilot subscriber wakes owned session
+
+Questionnaire shared application service
+  -&gt; publish neutral event
+  -&gt; Mission Pilot subscriber evaluates next action after C8 activation
+</code></pre>
+  <p>削除:</p>
+  <ul>
+    <li>Shared Run serviceからMission Pilot coordinatorへの直接呼び出し。</li>
+    <li>Questionnaire moduleからCoding Agent continuationへの直接呼び出し。</li>
+    <li>NightWorkers queue serviceからMission Pilot repositoryへの直接import。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>中立eventがroleを知らずpublishされる。</li>
+    <li>Mission Pilot subscriberをdirect testできる。</li>
+    <li>C8までは既存production listenerとの二重処理が発生しない。</li>
+    <li>Shared publisherはroleを知らない。</li>
+    <li>Mission Pilot subscriberはMission Pilot module内にある。</li>
+  </ul>
+  <h3 id="phase-8-atomic-plan-ownership-cutover">Phase 8: Atomic Plan Ownership Cutover</h3>
+  <p>
+    目的: Plan ownershipをCoding AgentからMission Pilotへ、一時的な不在や二重所有なしに切り替える。
+  </p>
+  <p>同一Checkpointで実行すること:</p>
+  <ol>
+    <li>
+      Mission Pilot Questionnaire / routing / Artifact actionをproduction tool catalogへ公開する。
+    </li>
+    <li>Mission Pilot Questionnaire / Run event subscriberをproduction登録する。</li>
+    <li>Mission Pilot SystemContextを新しい所有権へ切り替える。</li>
+    <li>Coding Agent SystemContextからPlan ownershipを削除する。</li>
+    <li>
+      Coding Agent <code>plan_mode</code> mutation toolをmanifest / dispatcher / MCPから削除する。
+    </li>
+    <li>Coding Agent Plan intake guardを削除する。</li>
+    <li>Coding Agent Plan continuation listenerを<code>api/app.ts</code>から削除する。</li>
+    <li>Coding Agent Plan intake serviceをRun startから削除する。</li>
+    <li>旧positive testをMission Pilot ownershipとCoding Agent negative contractへ置換する。</li>
+    <li>Targeted integrationを実行する。</li>
+  </ol>
+  <p>Test置換表:</p>
+  <table>
+    <caption>
+      Phase 8: Atomic Plan Ownership Cutover
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Current test</th>
+        <th scope="col">C8 action</th>
+        <th scope="col">Replacement</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>tests/coding-agent-plan-mode-contract.test.ts</code></td>
+        <td>Coding AgentへPlan toolを要求するassertionを削除</td>
+        <td><code>tests/coding-agent-plan-ownership-negative.test.ts</code></td>
+      </tr>
+      <tr>
+        <td><code>tests/coding-agent-initial-plan-mode-gate.test.ts</code></td>
+        <td>Coding Agent Questionnaire gateを削除</td>
+        <td><code>tests/coding-agent-plan-ownership-negative.test.ts</code></td>
+      </tr>
+      <tr>
+        <td><code>tests/coding-agent-plan-mode-intake-start.test.ts</code></td>
+        <td>Coding Agent intake開始契約を削除</td>
+        <td><code>tests/mission-pilot-plan-event-cutover.test.ts</code></td>
+      </tr>
+      <tr>
+        <td><code>tests/plan-mode-coding-agent-continuation.test.ts</code></td>
+        <td>Coding Agent resume契約を削除</td>
+        <td><code>tests/mission-pilot-plan-event-cutover.test.ts</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot既存action contract tests</td>
+        <td>Questionnaire / routing / Artifact positive contractを追加</td>
+        <td><code>tests/mission-pilot-plan-ownership.test.ts</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    置換は単なるrenameではない。旧ownershipを要求するassertionを残さず、Mission Pilot positive
+    contract、Coding Agent negative contract、event cutover contractの3方向で証明する。
+  </p>
+  <p>
+    C8は一つのcommit候補として編集するが、targeted
+    integrationが成功するまでcommitしない。失敗した場合は、Phase 0
+    ledgerとC8の変更ファイル一覧を使ってC8で加えた差分だけを<code>apply_patch</code>相当の明示編集で戻す。<code
+      >git restore</code
+    >、<code>git checkout</code>、working
+    tree全体のstashで戻してはならない。C5〜C7のdirect-test可能な準備状態と、実装開始前から存在した差分を保持する。
+  </p>
+  <p>削除候補:</p>
+  <ul>
+    <li><code>api/modules/planMode/plan-mode-coding-agent-continuation.service.ts</code></li>
+    <li>
+      <code
+        >api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code
+      >
+    </li>
+    <li>
+      <code
+        >api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code
+      >
+    </li>
+    <li>Coding Agent <code>plan_mode</code> worker tool。</li>
+    <li>Coding Agent Plan Mode tool schema / manifest registration。</li>
+    <li><code>codingAgentPlanMode</code></li>
+    <li><code>codingAgentPlanModeGate</code></li>
+    <li><code>coding_agent_plan_mode_questionnaire_wait</code></li>
+    <li>Coding Agent Plan continuation trace。</li>
+    <li>Coding Agent Plan questionnaire completion precondition。</li>
+  </ul>
+  <p>既存保存データ:</p>
+  <ul>
+    <li>JSON snapshotの旧fieldはversioned migrationで削除またはMission Pilot正本refへ変換する。</li>
+    <li>恒久的なdual readを残さない。</li>
+    <li>
+      active Runが旧stateを持つ場合は、明示的にMission Pilot再開または安全なneeds_reviewへ移す。
+    </li>
+    <li>migration本文でTaskの意味を推測しない。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>production codeで<code>codingAgentPlanMode</code>検索結果が0件。</li>
+    <li>production codeで<code>resumeCodingAgentRunAfterQuestionnaire</code>検索結果が0件。</li>
+    <li>Coding Agent Plan mutation testを削除または逆契約testへ置換している。</li>
+    <li>Mission PilotとCoding AgentのPlan listenerが同時に有効な時点がない。</li>
+    <li>Mission PilotがQuestionnaire、routing、Artifactを操作できる。</li>
+    <li>Coding Agentが確定済み設計だけをread-onlyで消費する。</li>
+  </ul>
+  <h3 id="phase-9-separate-provider-adapters">Phase 9: Separate Provider Adapters</h3>
+  <p>目的: 共通providerからrole固有判断を除去する。</p>
+  <p>Current problem:</p>
+  <ul>
+    <li>Codex providerがMission Pilot roleを判定する。</li>
+    <li>Mission Pilot tool turn developer instructionを持つ。</li>
+    <li>Mission Pilotだけisolated CODEX_HOMEを作る。</li>
+    <li>Mission PilotだけMCP / memory設定を変える。</li>
+  </ul>
+  <p>Target:</p>
+  <pre><code class="language-text">missionPilot/adapters/mission-pilot-provider.adapter.ts
+  -&gt; builds generic provider request/options
+  -&gt; owns isolated execution policy
+  -&gt; owns Mission Pilot tool-turn envelope
+
+codingAgent/adapters/coding-agent-provider.adapter.ts
+  -&gt; builds Coding Agent provider/runtime request
+
+services/structured-llm
+  -&gt; provider transport only
+</code></pre>
+  <p>共通providerへ渡すoptionはrole名ではなく構造的capabilityにする。</p>
+  <p>例:</p>
+  <pre><code class="language-ts">type StructuredProviderExecutionPolicy = {
+  isolatedHome: boolean;
+  enableMcp: boolean;
+  enableMemory: boolean;
+  allowProviderTools: boolean;
+  developerInstructions?: string;
+};
+</code></pre>
+  <p>Providerはpolicyの意味を解釈せず適用する。</p>
+  <p>完了条件:</p>
+  <ul>
+    <li>共通providerにMission Pilot専用constantがない。</li>
+    <li>共通providerに<code>role === &quot;mission_pilot&quot;</code>分岐がない。</li>
+    <li>Mission Pilot provider adapter testがある。</li>
+    <li>Coding Agent provider adapter testがある。</li>
+  </ul>
+  <h3 id="phase-10-frontend-module-separation">Phase 10: Frontend Module Separation</h3>
+  <p>目的: UIでもrole固有表示をNightWorkers moduleへ混ぜない。</p>
+  <p>移動対象:</p>
+  <ul>
+    <li>Mission Pilot component、state、presentation helper。</li>
+    <li>Coding Agent transcript、run status、usage表示。</li>
+    <li>Agent共通のbadge、reference renderer等。</li>
+  </ul>
+  <p>NightWorkers Task UIは各roleのpublic componentをcompositionするだけにする。</p>
+  <p>禁止:</p>
+  <ul>
+    <li>
+      <code>src/modules/nightworkers</code>でMission PilotとCoding
+      Agentの状態を同じselectorで意味判断する。
+    </li>
+    <li>NightWorkers componentにrole固有trace intent一覧を置く。</li>
+    <li>Agent UI stateを共有Task typeへ無制限に追加する。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>Mission Pilot presentation logicは<code>src/modules/missionPilot</code>にある。</li>
+    <li>Coding Agent presentation logicは<code>src/modules/codingAgent</code>にある。</li>
+    <li>agentsShare presentationはrole非依存。</li>
+    <li>NightWorkers UIはpublic indexだけをimportする。</li>
+  </ul>
+  <h3 id="phase-11-remove-compatibility-paths-and-enforce-zero-residue">
+    Phase 11: Remove Compatibility Paths and Enforce Zero Residue
+  </h3>
+  <p>目的: 移行用re-exportとbaseline違反を削除し、3 module外の残存を0にする。</p>
+  <p>作業:</p>
+  <ol>
+    <li>Compatibility re-exportを削除する。</li>
+    <li>Old path importを削除する。</li>
+    <li>Agent code placement baselineを空にする。</li>
+    <li>Role固有schemaを<code>shared/modules</code>へ移す。</li>
+    <li>Fixture routeをrole moduleへ移す。</li>
+    <li>Shared moduleのrole branchを削除する。</li>
+    <li><code>rg</code>とarchitecture checkerで残存を確認する。</li>
+  </ol>
+  <p>残存監査:</p>
+  <pre><code class="language-bash">rg -n &quot;MissionPilot|missionPilot|mission-pilot&quot; api src shared \
+  -g &#39;!api/modules/missionPilot/**&#39; \
+  -g &#39;!src/modules/missionPilot/**&#39; \
+  -g &#39;!shared/modules/missionPilot/**&#39; \
+  -g &#39;!api/modules/agentsShare/**&#39; \
+  -g &#39;!src/modules/agentsShare/**&#39; \
+  -g &#39;!shared/modules/agentsShare/**&#39;
+
+rg -n &quot;CodingAgent|codingAgent|coding-agent&quot; api src shared \
+  -g &#39;!api/modules/codingAgent/**&#39; \
+  -g &#39;!src/modules/codingAgent/**&#39; \
+  -g &#39;!shared/modules/codingAgent/**&#39; \
+  -g &#39;!api/modules/agentsShare/**&#39; \
+  -g &#39;!src/modules/agentsShare/**&#39; \
+  -g &#39;!shared/modules/agentsShare/**&#39;
+</code></pre>
+  <p>composition root、historical migration、role非依存public label以外の結果を0にする。</p>
+  <p>完了条件:</p>
+  <ul>
+    <li>Agent固有production codeが3 module外にない。</li>
+    <li>Boundary baselineが空。</li>
+    <li>Deep importがない。</li>
+    <li>Shared moduleにrole判断がない。</li>
+  </ul>
+  <h3 id="phase-12-full-verification-and-release-gate">
+    Phase 12: Full Verification and Release Gate
+  </h3>
+  <p>Targeted tests:</p>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run \
+  tests/role-module-boundary.test.ts \
+  tests/mission-pilot-agent-runtime.test.ts \
+  tests/mission-pilot-agent-hardening-contract.test.ts \
+  tests/mission-pilot-questionnaire-state-event.test.ts \
+  tests/mission-pilot-agent-action-idempotency.test.ts \
+  tests/structured-llm/codex-tool-turn.test.ts \
+  tests/mission-pilot-plan-ownership.test.ts \
+  tests/mission-pilot-plan-event-cutover.test.ts \
+  tests/coding-agent-plan-ownership-negative.test.ts
+</code></pre>
+  <p>上記の最終テストは、C8で旧Coding Agent Plan testsから置換した次の契約を検証する。</p>
+  <ul>
+    <li>Coding AgentにPlan mutation toolが存在しない。</li>
+    <li>Coding Agentが確定済みArtifactをread-onlyで消費する。</li>
+    <li>Questionnaire eventがCoding Agentを直接resumeしない。</li>
+    <li>Mission PilotがQuestionnaireとArtifact actionを持つ。</li>
+  </ul>
+  <p>Architecture:</p>
+  <pre><code class="language-bash">node scripts/check-module-boundaries.mjs
+node scripts/check-coding-agent-semantic-control.mjs
+bun run check:architecture
+</code></pre>
+  <p>Quality:</p>
+  <pre><code class="language-bash">bun run typecheck
+bun run lint
+bun run test
+bun run verify:base
+</code></pre>
+  <p>E2E:</p>
+  <ul>
+    <li>Mission PilotがQuestionnaireを作成する。</li>
+    <li>Mission Pilotが回答案を保存する。</li>
+    <li>ユーザー介入時間が維持される。</li>
+    <li>Mission Pilotがroutingを更新する。</li>
+    <li>Mission Pilotが型別Artifactを生成する。</li>
+    <li>Mission PilotがCoding Agentを開始する。</li>
+    <li>Coding Agentがrepositoryを変更する。</li>
+    <li>Coding AgentがArtifactを変更しない。</li>
+    <li>Run terminal eventでMission Pilotが再開する。</li>
+    <li>Mission PilotがTest / Review / repair / completeを判断する。</li>
+    <li>Stop / restart後も同じ所有権で再開する。</li>
+  </ul>
+  <p>Final:</p>
+  <pre><code class="language-bash">bun run verify
+</code></pre>
+  <p>環境が許す場合:</p>
+  <pre><code class="language-bash">bun run verify:e2e
+</code></pre>
+  <h2 id="section-8-test-contract-matrix">8. Test Contract Matrix</h2>
+  <table>
+    <caption>
+      8. Test Contract Matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Contract</th>
+        <th scope="col">Test</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Role間直接import禁止</td>
+        <td>module boundary unit</td>
+      </tr>
+      <tr>
+        <td>agentsShare逆依存禁止</td>
+        <td>module boundary unit</td>
+      </tr>
+      <tr>
+        <td>Agent固有コードの3 module外配置禁止</td>
+        <td>architecture placement test</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot routeがCoding Agent serviceを呼ばない</td>
+        <td>import architecture test</td>
+      </tr>
+      <tr>
+        <td>Coding Agent routeがMission Pilot serviceを呼ばない</td>
+        <td>import architecture test</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot repositoryがCoding Agent tableを読まない</td>
+        <td>repository boundary test</td>
+      </tr>
+      <tr>
+        <td>Coding Agent repositoryがMission Pilot tableを読まない</td>
+        <td>repository boundary test</td>
+      </tr>
+      <tr>
+        <td>Mission PilotにArtifact actionがある</td>
+        <td>tool registry contract test</td>
+      </tr>
+      <tr>
+        <td>Coding AgentにArtifact mutationがない</td>
+        <td>tool registry negative test</td>
+      </tr>
+      <tr>
+        <td>共有Questionnaire / Artifact正本をrole repositoryへ複製しない</td>
+        <td>repository/schema architecture test</td>
+      </tr>
+      <tr>
+        <td>Mission PilotがQuestionnaire eventでwakeする</td>
+        <td>event integration test</td>
+      </tr>
+      <tr>
+        <td>Coding AgentがQuestionnaire eventでresumeしない</td>
+        <td>negative integration test</td>
+      </tr>
+      <tr>
+        <td>Coding Agentは確定済み設計を読む</td>
+        <td>context packet test</td>
+      </tr>
+      <tr>
+        <td>Coding Agentはrepositoryを編集できる</td>
+        <td>runtime/tool regression</td>
+      </tr>
+      <tr>
+        <td>Mission Pilotはrepositoryを直接編集できない</td>
+        <td>tool registry negative test</td>
+      </tr>
+      <tr>
+        <td>Provider共通層にrole分岐がない</td>
+        <td>source architecture test</td>
+      </tr>
+      <tr>
+        <td>NightWorkers / ReviewがCoding Agent runtime内部型をimportしない</td>
+        <td>import architecture test</td>
+      </tr>
+      <tr>
+        <td>Stop / restartで所有者が変わらない</td>
+        <td>persistence integration test</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    既存assertionを新実装に合わせるためだけに弱めない。誤った境界を固定しているtestは、削除理由と置換先を明示してから逆契約testへ置換する。
+  </p>
+  <h2 id="section-9-commit-and-checkpoint-sequence">9. Commit and Checkpoint Sequence</h2>
+  <p>Lunaは一つの巨大commitにまとめない。次の順序を既定とする。</p>
+  <table>
+    <caption>
+      9. Commit and Checkpoint Sequence
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">内容</th>
+        <th scope="col">必須検証</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>C0</td>
+        <td>baseline / change ledger</td>
+        <td>targeted baseline</td>
+      </tr>
+      <tr>
+        <td>C1</td>
+        <td>boundary policy / placement guard</td>
+        <td>boundary tests</td>
+      </tr>
+      <tr>
+        <td>C2</td>
+        <td>module skeleton / public index</td>
+        <td>architecture</td>
+      </tr>
+      <tr>
+        <td>C3</td>
+        <td>Coding Agent context/runtime移動</td>
+        <td>Coding Agent targeted tests</td>
+      </tr>
+      <tr>
+        <td>C4</td>
+        <td>Coding Agent tools分類・移動</td>
+        <td>tool/runtime tests</td>
+      </tr>
+      <tr>
+        <td>C5</td>
+        <td>Mission Pilot Plan ownership準備</td>
+        <td>Mission Pilot questionnaire/artifact direct tests</td>
+      </tr>
+      <tr>
+        <td>C6</td>
+        <td>Mission Pilot planning/repository移動</td>
+        <td>planning/repository tests</td>
+      </tr>
+      <tr>
+        <td>C7</td>
+        <td>agentsShare ports/events準備</td>
+        <td>event direct tests</td>
+      </tr>
+      <tr>
+        <td>C8</td>
+        <td>Plan ownership原子的切替</td>
+        <td>Mission Pilot positive + Coding Agent negative integration</td>
+      </tr>
+      <tr>
+        <td>C9</td>
+        <td>provider adapter分離</td>
+        <td>provider tests</td>
+      </tr>
+      <tr>
+        <td>C10</td>
+        <td>frontend module分離</td>
+        <td>frontend tests</td>
+      </tr>
+      <tr>
+        <td>C11</td>
+        <td>compatibility削除 / residue zero</td>
+        <td>full architecture</td>
+      </tr>
+      <tr>
+        <td>C12</td>
+        <td>full verification</td>
+        <td>verify / E2E</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Checkpoint statusは次だけを使う。</p>
+  <ul>
+    <li><code>pending</code></li>
+    <li><code>in_progress</code></li>
+    <li><code>blocked</code></li>
+    <li><code>passed</code></li>
+  </ul>
+  <p>
+    test未実行、既知failure、compatibility path残存、boundary
+    baseline残存の状態を<code>passed</code>にしない。
+  </p>
+  <h2 id="section-10-luna-operating-instructions">10. Luna Operating Instructions</h2>
+  <p>Lunaは速度より境界の正確さを優先する。</p>
+  <ol>
+    <li>一度に一つのCheckpointだけを進める。</li>
+    <li>移動前にownerとpublic APIを決める。</li>
+    <li>移動後にconsumerを切り替え、testを実行してから旧pathを削除する。</li>
+    <li>
+      Mission PilotとCoding Agentを同じservice、repository、prompt、tool registryへ統合しない。
+    </li>
+    <li><code>agentsShare</code>を便利な退避場所にしない。</li>
+    <li>
+      <code>agentsShare</code>へrole固有処理が必要になった場合は、抽出を中止してowner側へ戻す。
+    </li>
+    <li>Coding AgentにPlan mutationを戻さない。</li>
+    <li>Mission PilotからArtifact actionを削らない。</li>
+    <li>Mission Pilotへfilesystem edit toolを追加しない。</li>
+    <li>Coding Agent runtimeへ意味別modeを追加しない。</li>
+    <li>Task文言、error message、assistant本文を正規表現やkeywordで分類しない。</li>
+    <li>
+      Hostはauthorization、schema、revision、idempotency、lease等の構造的不変条件だけを強制する。
+    </li>
+    <li>既存ユーザー差分をreset、restore、checkoutで破棄しない。</li>
+    <li>一時ディレクトリを実作業workspaceや完了証拠にしない。</li>
+    <li>日本語のSystemContextと運用規則を英語へ置き換えない。</li>
+    <li>Plan ownershipをMission PilotとCoding Agentの両方へ同時に公開しない。</li>
+    <li>Plan ownershipをどちらにも公開しない中間commitを作らない。</li>
+    <li>
+      Directory名だけで<code>agent-runtime</code>や<code>worker-tools</code>全体をCoding
+      Agentへ移さない。
+    </li>
+    <li>空のroute、repository、schemaを対称性のために作らない。</li>
+    <li>
+      ユーザーも操作するQuestionnaire / Artifact正本repositoryをMission
+      Pilot専用repositoryへ複製しない。
+    </li>
+    <li>
+      NightWorkers、Review、GitWorktreeからCoding Agent tool
+      registryまたはruntime内部へ直接importしない。
+    </li>
+  </ol>
+  <h2 id="section-11-stop-conditions">11. Stop Conditions</h2>
+  <p>次の場合は、そのCheckpointの追加変更を止めて状況を記録する。</p>
+  <ul>
+    <li>既存ユーザー差分と同じ行を安全に統合できない。</li>
+    <li>Public API変更が既存UI互換を破る。</li>
+    <li>DB migrationなしに保存済みsessionを安全に読めない。</li>
+    <li>Role所有権を決めずにshared moduleへ置く必要が生じた。</li>
+    <li><code>agentsShare</code>からrole moduleへの逆依存が必要になった。</li>
+    <li>Provider共通層にrole名分岐を残さないと実装できない。</li>
+    <li>Coding Agent Plan mutationを残さないとtestが通らない。</li>
+    <li>Mission Pilot Artifact actionを無効化しないとtestが通らない。</li>
+    <li>C8を分割しないと実装できず、Plan ownershipの不在または二重所有が発生する。</li>
+    <li>Working treeのunrelated変更を上書きする必要がある。</li>
+  </ul>
+  <p>
+    Stop conditionに達した場合、誤った境界で先へ進まず、該当file、import
+    chain、必要な判断、既存差分を明示する。
+  </p>
+  <h2 id="section-12-definition-of-done">12. Definition of Done</h2>
+  <p>本計画は次をすべて満たした場合だけ完了する。</p>
+  <h3 id="placement">Placement</h3>
+  <ul>
+    <li>
+      Backend
+      Agent固有コードが<code>missionPilot</code>、<code>codingAgent</code>、<code>agentsShare</code>以外にない。
+    </li>
+    <li>Frontend Agent固有コードが対応する3 module以外にない。</li>
+    <li>Role固有shared schemaが<code>shared/modules</code>の対応rootへ移動している。</li>
+    <li>Compatibility re-exportが残っていない。</li>
+  </ul>
+  <h3 id="dependency">Dependency</h3>
+  <ul>
+    <li>Mission PilotとCoding Agentの直接importが0件。</li>
+    <li>agentsShareからroleへのimportが0件。</li>
+    <li>他moduleからrole内部へのdeep importが0件。</li>
+    <li>Shared providerにrole分岐が0件。</li>
+    <li>Shared domain repositoryにrole table依存が0件。</li>
+  </ul>
+  <h3 id="ownership">Ownership</h3>
+  <ul>
+    <li>Mission PilotがQuestionnaireを所有する。</li>
+    <li>Mission PilotがPlan routingを所有する。</li>
+    <li>Mission PilotがArtifact操作を所有する。</li>
+    <li>Mission PilotがCoding Agentへの依頼と結果評価を所有する。</li>
+    <li>Coding Agentがrepository作業を所有する。</li>
+    <li>Coding Agentは確定済み設計をread-onlyで消費する。</li>
+    <li>Coding AgentにPlan mutationがない。</li>
+    <li>Questionnaire後の設計進行をMission Pilotが再開する。</li>
+  </ul>
+  <h3 id="runtime">Runtime</h3>
+  <ul>
+    <li>Mission Pilotはrepositoryを直接編集できない。</li>
+    <li>Coding Agentは単一runtimeで動作する。</li>
+    <li>Run terminal statusだけでTaskを暗黙完了しない。</li>
+    <li>Failure本文とLLM本文を固定文へ置き換えない。</li>
+    <li>Side effectはauthorization、revision、idempotencyを検証する。</li>
+  </ul>
+  <h3 id="evidence">Evidence</h3>
+  <ul>
+    <li>Boundary testsが成功。</li>
+    <li>Mission Pilot targeted testsが成功。</li>
+    <li>Coding Agent targeted testsが成功。</li>
+    <li>Questionnaire / Artifact / Run event integrationが成功。</li>
+    <li>Typecheck、lint、architecture、verifyが成功。</li>
+    <li>必要なE2Eが成功。</li>
+    <li>Working treeの既存差分を失っていない。</li>
+  </ul>
+  <h2 id="section-13-checkpoint-ledger">13. Checkpoint Ledger</h2>
+  <table>
+    <caption>
+      13. Checkpoint Ledger
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">Status</th>
+        <th scope="col">Commit</th>
+        <th scope="col">Tests</th>
+        <th scope="col">Evidence / Remaining Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>C0 Baseline / ledger</td>
+        <td>passed</td>
+        <td></td>
+        <td>8 files / 35 tests</td>
+        <td>
+          <code>spec/docs/mission-pilot-coding-agent-module-separation-change-ledger.html</code>
+          にbaselineと分類を記録。
+        </td>
+      </tr>
+      <tr>
+        <td>C1 Boundary policy</td>
+        <td>passed</td>
+        <td></td>
+        <td>boundary tests</td>
+        <td>API / frontend / shared roots、role間・agentsShare逆依存・deep import検査を追加。</td>
+      </tr>
+      <tr>
+        <td>C2 Module skeleton</td>
+        <td>passed</td>
+        <td></td>
+        <td>architecture</td>
+        <td>
+          <code>missionPilot</code> / <code>codingAgent</code> /
+          <code>agentsShare</code> のbackend/frontend/shared public indexを追加。
+        </td>
+      </tr>
+      <tr>
+        <td>C3 Coding Agent runtime</td>
+        <td>passed</td>
+        <td></td>
+        <td>context/runtime targeted tests</td>
+        <td>Coding Agent contextを移動し、Questionnaire・Artifact・routing mutation指示を除去。</td>
+      </tr>
+      <tr>
+        <td>C4 Coding Agent tools classification</td>
+        <td>passed</td>
+        <td></td>
+        <td>negative tool contract</td>
+        <td>TodoをCoding Agentへ移動し、Plan tool・intake guard・continuationを削除。</td>
+      </tr>
+      <tr>
+        <td>C5 Mission Pilot Plan ownership preparation</td>
+        <td>passed</td>
+        <td></td>
+        <td>Mission Pilot ownership tests</td>
+        <td>
+          Questionnaire draft/review/follow-up、typed Artifact、regenerate、routing actionをMission
+          Pilot registryへ集約。
+        </td>
+      </tr>
+      <tr>
+        <td>C6 Mission Pilot planning/repository</td>
+        <td>passed</td>
+        <td></td>
+        <td>planning / questionnaire tests</td>
+        <td>planning・Artifact correction・promptをMission Pilot public APIへ移動。</td>
+      </tr>
+      <tr>
+        <td>C7 agentsShare ports/events preparation</td>
+        <td>passed</td>
+        <td></td>
+        <td>event cutover tests</td>
+        <td>neutral terminal outcome port/eventを追加し、Mission Pilot subscriberを接続。</td>
+      </tr>
+      <tr>
+        <td>C8 Atomic Plan ownership cutover</td>
+        <td>passed</td>
+        <td></td>
+        <td>8 files / 26 tests</td>
+        <td>Coding Agent negative、Mission Pilot positive、Questionnaire event cutoverを検証。</td>
+      </tr>
+      <tr>
+        <td>C9 Provider adapters</td>
+        <td>passed</td>
+        <td></td>
+        <td>provider policy tests</td>
+        <td>provider共通層からrole分岐を除去し、capability policyを各adapterへ分離。</td>
+      </tr>
+      <tr>
+        <td>C10 Frontend separation</td>
+        <td>passed</td>
+        <td></td>
+        <td>frontend / workspace tests</td>
+        <td>
+          frontend role public rootsを追加し、Coding Agent questionnaire auto-open依存を除去。
+        </td>
+      </tr>
+      <tr>
+        <td>C11 Compatibility removal</td>
+        <td>passed</td>
+        <td></td>
+        <td>architecture</td>
+        <td>旧Coding Agent Plan lifecycle、tool、guard、continuation、resume pathの残存を除去。</td>
+      </tr>
+      <tr>
+        <td>C12 Full verification</td>
+        <td>passed</td>
+        <td></td>
+        <td>
+          326 files / 2013 tests; targeted regression; typecheck; lint; architecture; build;
+          verify:base
+        </td>
+        <td>
+          typecheck、lint、architecture、production build、全Vitest、tracked artifact、supervisor
+          regression、Mission Pilotのplan-scope E2Eを通過。全E2Eは31 passed / 5 failed / 1
+          skippedで、失敗は既存のTest/Review route 404、通常Coding Agent
+          fixtureのTodo欠落に限定され、分離対象のMission Pilot E2Eは通過。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Lunaは各Checkpoint完了時にStatus、commit、実行test、未解決riskを更新する。tokenや時間の都合だけで未完了Checkpointを<code>passed</code>にしない。
+  </p>
+</article>

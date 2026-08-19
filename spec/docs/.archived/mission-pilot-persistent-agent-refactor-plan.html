@@ -1,0 +1,2651 @@
+<article lang="ja">
+  <h1 id="mission-pilot-llm-autopilot-implementation-plan">
+    Mission Pilot LLM Autopilot Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Concept status: <code>locked</code></li>
+    <li>Plan status: <code>implementation-ready</code></li>
+    <li>Implementation status: <code>not started; Luna handoff ready</code></li>
+    <li>Last updated: 2026-07-16</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Target scope: Mission Pilot</li>
+    <li>
+      Role/module ownership override: Mission Pilot、Coding
+      Agent、agentsShareの配置、依存方向、Questionnaire・Plan
+      routing・Artifact所有権は<code>spec/docs/mission-pilot-coding-agent-module-separation-plan.html</code>を正本とする
+    </li>
+  </ul>
+  <p>
+    この文書を、Mission PilotをLLMの柔軟性を活かした永続オートパイロットへ移行するための正本とする。
+  </p>
+  <p>本計画の中心概念は次の一文に集約する。</p>
+  <blockquote>
+    <p>
+      Mission
+      Pilotは、Taskを完了するために必要な情報を自分で取得し、現在の状況から次の操作をLLMで判断し、失敗した場合はCoding
+      Agentへ具体的な修正依頼を送り、その結果を再評価しながら完了まで継続するユーザー代替エージェントである。
+    </p>
+  </blockquote>
+  <p>
+    現行UI、公開API、既存テスト、正常系の手続き型挙動は互換境界として維持する。ただし、それらをMission
+    Pilotの意味判断を固定するworkflowとしては使用しない。
+  </p>
+  <h2 id="section-1-product-concept">1. Product Concept</h2>
+  <h3 id="section-11-mission-pilotの役割">1.1 Mission Pilotの役割</h3>
+  <p>
+    Mission Pilotは固定手順を自動実行するworkflow
+    engineではない。Taskを再生したユーザーの代わりに、現在のTaskを観測し、考え、操作し、結果を確認するAI
+    agentである。
+  </p>
+  <p>Mission Pilotは次を一つの継続した仕事として扱う。</p>
+  <ol>
+    <li>TaskのGoal、完了条件、現在状態を読む。</li>
+    <li>
+      判断に必要なSpecification、Questionnaire、Artifact、Run outcome、repository情報を取得する。
+    </li>
+    <li>現在ユーザーが実行できる操作から次のactionを選ぶ。</li>
+    <li>Coding Agent、Test Agent、Review Agentへ必要な仕事を依頼する。</li>
+    <li>実行結果、失敗、blocker、検証結果を読む。</li>
+    <li>必要ならCoding Agentへ修正Promptを送り、結果を再評価する。</li>
+    <li>Taskの完了条件を満たすまで、同じ論理sessionで判断を継続する。</li>
+    <li>完了条件を満たしたと判断した場合だけ、Taskの完了またはarchive actionを実行する。</li>
+  </ol>
+  <h3 id="section-12-正常系の手続き型挙動">1.2 正常系の手続き型挙動</h3>
+  <p>現行の代表的な正常系は、新しいMission Pilotでも実行できなければならない。</p>
+  <pre><code class="language-text">Questionnaire
+  -&gt; Plan
+  -&gt; Implementation
+  -&gt; Test
+  -&gt; Review
+  -&gt; Commit
+  -&gt; Complete
+  -&gt; Archive
+</code></pre>
+  <p>
+    ただし、この順序をhostの固定transitionとして強制しない。この並びは、現在のTaskに適切であればLLMが選べる一つのaction
+    sequenceである。
+  </p>
+  <p>
+    Taskによっては、LLMが追加調査、Plan修正、Coding
+    Agent再実行、Test再実行、Review省略、Test省略、ユーザーへの質問などを選べる。正常系を再現できることと、すべてのTaskを正常系へ押し込むことを混同しない。
+  </p>
+  <h3 id="section-13-ユーザー代替の意味">1.3 ユーザー代替の意味</h3>
+  <p>Mission PilotはNightWorkers内部の特権Supervisorではない。</p>
+  <ul>
+    <li>現在ユーザーがTask上で見られる情報を上限として観測する。</li>
+    <li>現在ユーザーが実行できる操作を上限として行動する。</li>
+    <li>UIと同じapplication command、authorization、preconditionを使う。</li>
+    <li>Mission Pilot専用のDB直接更新、強制遷移、権限bypassを作らない。</li>
+    <li>filesystem、repository、Git、network、外部serviceの権限を拡張しない。</li>
+    <li>Playによって許可されていないpushを実行しない。</li>
+  </ul>
+  <h2 id="section-2-locked-compatibility-boundary">2. Locked Compatibility Boundary</h2>
+  <p>
+    このリファクタリングでは、内部の判断主体を置き換える。既存UIを新runtimeに合わせて作り替えない。
+  </p>
+  <h3 id="section-21-ui互換">2.1 UI互換</h3>
+  <p>次を変更しない。</p>
+  <ul>
+    <li><code>MissionPilotControlPanel</code>の配置、表示、文言、Play/Stop操作。</li>
+    <li>Playボタンをruntime status textへ置き換える挙動。</li>
+    <li>Mission Pilot専用のconfirmation panelや確認ボタン。</li>
+    <li>Questionnaireの既存UIと介入時間。</li>
+    <li>Pilot ThoughtとCoding Agent chatの表示分離。</li>
+    <li>現在のTask画面、Plan Mode、証跡チェック、Review Modeの操作面。</li>
+  </ul>
+  <p>
+    内部runtimeが<code>running</code>、<code>waiting</code>、<code>attention</code>等の状態を持っても、既存UIへ新しい状態名として公開しない。
+  </p>
+  <p>
+    Mission Pilotがユーザー入力を必要とする場合は、既存Task
+    messageと既存の待機・停止表現を使う。新しい確認UIを追加しない。
+  </p>
+  <h3 id="section-22-api互換">2.2 API互換</h3>
+  <p>次を変更しない。</p>
+  <ul>
+    <li>Mission Pilotの既存route path。</li>
+    <li>Play/Stop requestとresponseの公開shape。</li>
+    <li><code>missionPilotControlSummarySchema</code>の既存fieldと意味。</li>
+    <li>Questionnaire draft API。</li>
+    <li>Plan progress API。</li>
+    <li>execution trace APIの既存consumer contract。</li>
+  </ul>
+  <p>
+    内部用のconversation、tool call、event、runtime stateは公開Control
+    Summaryへ追加しない。内部情報を取得する必要がある場合も、既存UIに依存させない内部portまたは監査用queryとして分離する。
+  </p>
+  <h3 id="section-23-テスト互換">2.3 テスト互換</h3>
+  <p>現行Mission Pilotテストは変更前baselineとして維持する。</p>
+  <ul>
+    <li>現在成功しているMission Pilot unit test 21 files / 123 testsを継続して通す。</li>
+    <li>現行testのassertionを、新runtimeに合わせる目的で弱めない。</li>
+    <li>現行E2Eの正常系、pre-Queue handoff、archive、trace separationを維持する。</li>
+    <li>UIのDOM、表示文言、スクリーンショットに意図しない差分を出さない。</li>
+  </ul>
+  <p>
+    固定phase helperやlegacy
+    coordinatorを直接検証する既存testは、互換testとして当面残してよい。ただし、新agent
+    runtimeがそれらをsemantic decisionにimportしていないことをarchitecture testで保証する。
+  </p>
+  <h3 id="section-24-phaseの互換用途">2.4 Phaseの互換用途</h3>
+  <p>既存の<code>phase</code>は、UIと既存testへ現在の進行を示す互換projectionとして残す。</p>
+  <ul>
+    <li>action開始・完了・待機eventから既存phaseへ投影する。</li>
+    <li>正常系では現在と同じphase列を観測できるようにする。</li>
+    <li>phaseは次actionを決定する入力にしない。</li>
+    <li>phaseから自動的にTest、Review、closeoutを開始しない。</li>
+    <li>recovery時にphase名から次actionを推定しない。</li>
+  </ul>
+  <p>
+    互換projectionは表示と監査のためのread modelであり、Mission Pilot
+    conversationとLLM判断が進行の正本である。
+  </p>
+  <h2 id="section-3-decision-ownership">3. Decision Ownership</h2>
+  <h3 id="section-31-llmが決めること">3.1 LLMが決めること</h3>
+  <p>次はTaskの意味に関わるため、Mission PilotのLLMが決める。</p>
+  <ul>
+    <li>Taskを進めるために追加で読むべき情報。</li>
+    <li>Questionnaireへの回答と回答理由。</li>
+    <li>どのPlan Artifactを生成または修正するか。</li>
+    <li>現在のPlanでImplementationへ進めるか。</li>
+    <li>Coding Agentへ何を依頼するか。</li>
+    <li>Coding Agentの結果がTask Goalを満たしているか。</li>
+    <li>TestまたはReviewが必要か。</li>
+    <li>Test/Review失敗後に再実行、コード修正、Plan修正のどれを選ぶか。</li>
+    <li>blockerやerrorが自己回復可能か。</li>
+    <li>Coding Agentへ送る修正Promptの内容。</li>
+    <li>追加情報を取得するか、別actionを試すか、ユーザーへ質問するか。</li>
+    <li>Taskを完了、commit、archiveするか。</li>
+    <li>ユーザーへ報告する内容。</li>
+  </ul>
+  <h3 id="section-32-hostが決めてよいこと">3.2 Hostが決めてよいこと</h3>
+  <p>hostは構造的不変条件だけを強制する。</p>
+  <ul>
+    <li>tool inputのschema validation。</li>
+    <li>user、Task、Project、repositoryのauthorization。</li>
+    <li>revision、CAS、lease、idempotency、deduplication。</li>
+    <li>transactionとside effectの成立確認。</li>
+    <li>filesystem、Git、network、external actionのpermission。</li>
+    <li>provider transport、timeout、rate limit等のtyped failure化。</li>
+    <li>明示的にretryableな一時障害の回数制限付きretry。</li>
+    <li>token、tool call、elapsed time等のresource budget。</li>
+    <li>process restart後の未完了tool call reconciliation。</li>
+    <li>typed Task eventの永続化と重複排除。</li>
+    <li>ユーザーのStop、Task削除、権限失効の反映。</li>
+  </ul>
+  <p>
+    hostはprecondition違反やerrorをtyped tool
+    resultとしてLLMへ返す。host自身が別actionを選んだり、固定phaseへ遷移したりしない。
+  </p>
+  <h3 id="section-33-禁止する判断方法">3.3 禁止する判断方法</h3>
+  <ul>
+    <li>Task本文、ユーザー文言、LLM本文、error messageのkeyword分類。</li>
+    <li>正規表現によるTask種別、成功、失敗、next actionの分類。</li>
+    <li>Todo名、Artifact名、phase名からのnext action決定。</li>
+    <li>boolean質問へ常に<code>true</code>を返す等の固定Questionnaire回答。</li>
+    <li>推奨選択肢または先頭選択肢を常に採用する規則。</li>
+    <li>Implementation完了後のTest自動開始。</li>
+    <li>Test完了後のReview自動開始。</li>
+    <li>Review完了後のcloseout自動開始。</li>
+    <li>固定correction回数に基づくsemantic completion。</li>
+    <li>LLM本文をhostの固定診断文へ置き換える処理。</li>
+  </ul>
+  <h2 id="section-4-target-architecture">4. Target Architecture</h2>
+  <pre><code class="language-text">Existing UI / Existing API
+          |
+          v
+Mission Pilot Compatibility Facade
+  - existing Play / Stop contract
+  - existing Control Summary
+  - existing phase / activity projection
+          |
+          v
+Persistent Mission Pilot Runtime
+  - one logical session per Task
+  - Mission Pilot conversation
+  - LLM tool loop
+  - typed event inbox
+  - lease / cancellation / compaction
+       |                  |
+       v                  v
+Task Read Port       Task Action Registry
+       |                  |
+       |                  v
+       |          Shared Application Commands
+       |                  |
+       +---------&gt; Task / Workers / Repository
+                              |
+                              v
+                     Typed terminal outcomes
+                              |
+                              +----&gt; same Mission Pilot session
+</code></pre>
+  <p>
+    Compatibility Facadeは既存consumerを守る。Persistent
+    Runtimeは意味判断を担当する。この二つを同じstate machineにしない。
+  </p>
+  <h2 id="section-5-persistent-agent-runtime">5. Persistent Agent Runtime</h2>
+  <h3 id="section-51-session-invariant">5.1 Session invariant</h3>
+  <ul>
+    <li>一つのTaskに一つのMission Pilot logical sessionを持つ。</li>
+    <li>Play、Stop、resume、worker完了、再修正、context compactionでsession IDを作り直さない。</li>
+    <li>
+      provider conversationが失われても、NightWorkers上のconversationから同じlogical
+      sessionを再構成する。
+    </li>
+    <li>process restart後も同じconversation revisionから再開する。</li>
+    <li>ユーザーの追加messageを同じsessionの新しい入力として扱う。</li>
+  </ul>
+  <h3 id="section-52-internal-lifecycle">5.2 Internal lifecycle</h3>
+  <p>内部runtime stateはdomain phaseではなく、agentの実行状態だけを表す。</p>
+  <pre><code class="language-text">stopped
+running
+waiting
+attention
+completed
+</code></pre>
+  <ul>
+    <li><code>running</code>: LLM turnまたはtool callを実行している。</li>
+    <li><code>waiting</code>: worker、user、timer、typed eventを待っている。</li>
+    <li>
+      <code>attention</code>: 権限不足、ユーザーだけが決められる情報不足、resource budget到達等。
+    </li>
+    <li><code>stopped</code>: ユーザーが停止した。</li>
+    <li><code>completed</code>: Taskの完了actionが成立した。</li>
+  </ul>
+  <p>これらの状態名は既存UIへ追加表示しない。</p>
+  <h3 id="section-53-tool-loop">5.3 Tool loop</h3>
+  <ol>
+    <li>session leaseをclaimする。</li>
+    <li>未読typed eventと新しいユーザー入力をconversationへ追加する。</li>
+    <li>Mission Pilot LLMへSystem Context、conversation tail、利用可能toolを渡す。</li>
+    <li>LLMがread toolを呼んだ場合は、結果をconversationへ追加して判断を続ける。</li>
+    <li>LLMがaction toolを呼んだ場合は、共通application commandで実行する。</li>
+    <li>tool resultを本文を改変せずconversationへ追加する。</li>
+    <li>長時間Runを開始した場合は、pollingせずturnを終了して<code>waiting</code>へ移る。</li>
+    <li>terminal eventを受けたら、同じsessionをwakeする。</li>
+    <li>LLMがassistant messageだけを返した場合も正常なturn終了として扱う。</li>
+    <li>Task完了はassistant本文ではなく、Task complete/archive actionの成立で確定する。</li>
+  </ol>
+  <h3 id="section-54-resource-safety">5.4 Resource safety</h3>
+  <p>無限loop対策はsemantic correction回数ではなく、構造的budgetとして実装する。</p>
+  <ul>
+    <li>provider calls per wake。</li>
+    <li>tool calls per wake。</li>
+    <li>token budget。</li>
+    <li>elapsed time。</li>
+    <li>concurrent lease count。</li>
+    <li>provider retry count。</li>
+  </ul>
+  <p>
+    budget到達時は途中結果を保存し、固定の次工程へ進めない。再開、停止、ユーザーへの報告を可能にする。
+  </p>
+  <h2 id="section-6-information-acquisition">6. Information Acquisition</h2>
+  <p>
+    Mission
+    Pilotは必要な情報を自分で取得する。hostは最初から固定された巨大contextを組み立てず、正本への参照とread
+    toolを提供する。
+  </p>
+  <h3 id="section-61-required-read-capabilities">6.1 Required read capabilities</h3>
+  <p>最低限、次の情報を取得できるようにする。</p>
+  <ul>
+    <li>Task Goal、description、acceptance criteria、status、revision。</li>
+    <li>Project、repository、worktree、branchの状態。</li>
+    <li>現在のSpecificationとdigest。</li>
+    <li>Questionnaire session、質問、回答、採用済みDecision。</li>
+    <li>Plan Artifact一覧、種類、revision、source refs。</li>
+    <li>Queue entryとactive Run。</li>
+    <li>terminal Run一覧。</li>
+    <li>Coding/Test/Review Runのユーザー向け最終報告。</li>
+    <li>blocker、verification summary、Artifact refs。</li>
+    <li>commit、working tree、owned changed pathsのユーザー可視summary。</li>
+    <li>現在ユーザーが実行可能なTask action。</li>
+  </ul>
+  <h3 id="section-62-worker-boundary">6.2 Worker boundary</h3>
+  <p>Mission Pilotが読むworker情報は、ユーザーがTask上で確認できるpersisted outcomeに限定する。</p>
+  <p>含めるもの:</p>
+  <ul>
+    <li>terminal status。</li>
+    <li>final report。</li>
+    <li>blocker report。</li>
+    <li>verification summary。</li>
+    <li>structured findings。</li>
+    <li>diff/commit/Artifactへの参照。</li>
+  </ul>
+  <p>含めないもの:</p>
+  <ul>
+    <li>workerのreasoning。</li>
+    <li>workerの逐次assistant message。</li>
+    <li>workerのtool call履歴。</li>
+    <li>command stdout/stderr全文。</li>
+    <li>token stream。</li>
+    <li>Todoごとの実況。</li>
+  </ul>
+  <p>
+    Mission Pilotはworker streamをpollまたはsubscribeせず、typed terminal eventからpersisted
+    outcomeを読む。
+  </p>
+  <h3 id="section-63-context-compaction">6.3 Context compaction</h3>
+  <ul>
+    <li>compactionはtoken budgetだけを根拠に実行する。</li>
+    <li>ユーザーの依頼、採用済み判断、実行済みaction、未解決事項を保持する。</li>
+    <li>Specification、Artifact、Run outcomeは正本参照とdigestを保持する。</li>
+    <li>worker transcriptをsummary sourceへ入れない。</li>
+    <li>paging可能な情報はpaging cursorとdigestを残す。</li>
+    <li>compaction後も同じlogical sessionを継続する。</li>
+  </ul>
+  <h2 id="section-7-task-action-registry">7. Task Action Registry</h2>
+  <h3 id="section-71-single-source-of-truth">7.1 Single source of truth</h3>
+  <p>UIとMission Pilotは、同じapplication commandを使用する。</p>
+  <p>Task Action Registryは次を一箇所で定義する。</p>
+  <ul>
+    <li>action ID。</li>
+    <li>user-facing description。</li>
+    <li>input schema。</li>
+    <li>authorization。</li>
+    <li>precondition。</li>
+    <li>expected revision。</li>
+    <li>idempotency contract。</li>
+    <li>application command handler。</li>
+    <li>typed result/failure schema。</li>
+  </ul>
+  <p>Mission Pilot専用にUI操作を再実装しない。Mission Pilot action adapterがDBを直接更新しない。</p>
+  <h3 id="section-72-action-groups">7.2 Action groups</h3>
+  <p>最低限、次の操作を対象にする。</p>
+  <ul>
+    <li>Task情報更新とTask message送信。</li>
+    <li>Questionnaire作成、回答案保存、確定。</li>
+    <li>Plan routing、Artifact生成、Artifact再生成。</li>
+    <li>Queue投入、停止、再開。</li>
+    <li>repository準備またはimport。</li>
+    <li>Coding Agent開始、停止、再依頼。</li>
+    <li>Test開始、停止、再実行。</li>
+    <li>Review開始、停止、再実行。</li>
+    <li>commit。</li>
+    <li>Task complete。</li>
+    <li>archive。</li>
+    <li>現在許可されている場合だけpush。</li>
+  </ul>
+  <h3 id="section-73-availability">7.3 Availability</h3>
+  <ul>
+    <li>action catalogは現在ユーザーの権限とTask revisionから生成する。</li>
+    <li>phase、Todo名、Task本文のkeywordでtoolを隠さない。</li>
+    <li>実行不能なactionも必要に応じてavailabilityと理由を返す。</li>
+    <li>実行時にもauthorizationとpreconditionを再検証する。</li>
+    <li>stale revisionはtyped conflictとして返す。</li>
+    <li>tool error後の別actionはLLMが決める。</li>
+  </ul>
+  <h2 id="section-8-coding-agent-repair-loop">8. Coding Agent Repair Loop</h2>
+  <h3 id="section-81-goal">8.1 Goal</h3>
+  <p>
+    Mission
+    Pilotはerrorや未達成条件に遭遇したとき、それを単に<code>attention</code>へ変換して停止するのではなく、必要な情報を読み、修正可能な問題ならCoding
+    Agentへ具体的な修正依頼を送る。
+  </p>
+  <h3 id="section-82-repair-sequence">8.2 Repair sequence</h3>
+  <pre><code class="language-text">Failure or incomplete result
+        |
+        v
+Mission Pilot reads current Facts
+  - Task / Specification
+  - terminal Run outcome
+  - verification / findings
+  - current repository summary
+        |
+        v
+LLM decides the next action
+  - request Coding Agent repair
+  - retry a transient action
+  - run Test or Review
+  - gather more information
+  - ask the user
+  - stop
+        |
+        v
+Coding Agent repair Run
+        |
+        v
+typed terminal outcome
+        |
+        v
+Mission Pilot re-evaluates
+</code></pre>
+  <p>
+    この分岐をhostのerror code mapやkeyword ruleとして実装しない。LLMがtyped
+    failureと現在Factを読んで判断する。
+  </p>
+  <h3 id="section-83-repair-prompt-contract">8.3 Repair Prompt contract</h3>
+  <p>Coding Agentへ送るPromptはMission PilotのLLMが作成し、少なくとも次を含める。</p>
+  <pre><code class="language-ts">type MissionPilotRepairRequest = {
+  goal: string;
+  observedProblem: string;
+  failure: {
+    kind: string | null;
+    message: string;
+    sourceRunId: string | null;
+  };
+  canonicalRefs: Array&lt;{
+    kind: string;
+    id: string;
+    revision?: number;
+    digest?: string;
+  }&gt;;
+  requestedOutcome: string;
+  preserve: string[];
+  verification: string[];
+  priorAttemptRefs: string[];
+};
+</code></pre>
+  <ul>
+    <li>
+      <code>observedProblem</code>は実際のfinal report、blocker、verification、findingに基づく。
+    </li>
+    <li>正しい既存部分とユーザー変更を<code>preserve</code>で明示する。</li>
+    <li>Coding AgentへTask全体のやり直しを無条件に依頼しない。</li>
+    <li>同じPromptを結果確認なしに再送しない。</li>
+    <li>source revisionとdigestを保持し、古い仕様に対する修正を防ぐ。</li>
+    <li>worker本文が存在する場合は固定診断文へ差し替えない。</li>
+  </ul>
+  <h3 id="section-84-re-evaluation">8.4 Re-evaluation</h3>
+  <p>Coding Agent終了後、Mission Pilotは次を再取得する。</p>
+  <ul>
+    <li>terminal final reportとblocker。</li>
+    <li>changed paths、diff、commit summary。</li>
+    <li>verification結果。</li>
+    <li>current Task revision。</li>
+    <li>current Specification/Artifact revision。</li>
+    <li>未達成のacceptance criteria。</li>
+  </ul>
+  <p>
+    その結果から、追加修正、Test、Review、完了、ユーザー確認のいずれかをLLMが選ぶ。固定回数で成功扱いまたは失敗扱いにしない。
+  </p>
+  <h2 id="section-9-persistence-and-events">9. Persistence and Events</h2>
+  <h3 id="section-91-conversation-store">9.1 Conversation store</h3>
+  <p>Mission Pilot自身のconversationをworker messageから分離して保存する。</p>
+  <p>保存対象:</p>
+  <ul>
+    <li>versioned System Context。</li>
+    <li>初期Task依頼。</li>
+    <li>Mission Pilot宛ての追加ユーザーmessage。</li>
+    <li>assistant message。</li>
+    <li>tool callとtool result。</li>
+    <li>typed Task event。</li>
+    <li>terminal Run outcome projection。</li>
+    <li>compaction summaryとsource revision。</li>
+  </ul>
+  <p>tool callとresultはcall IDで対応させ、crash後に実行済みside effectを重複実行しない。</p>
+  <h3 id="section-92-wake-events">9.2 Wake events</h3>
+  <p>Mission Pilotをwakeするeventはtyped application eventとする。</p>
+  <ul>
+    <li><code>task.user_message_added</code></li>
+    <li><code>task.state_changed</code></li>
+    <li><code>questionnaire.ready</code></li>
+    <li><code>plan_artifact.ready</code></li>
+    <li><code>plan_artifact.failed</code></li>
+    <li><code>task_run.started</code></li>
+    <li><code>task_run.terminal</code></li>
+    <li><code>task_action.failed</code></li>
+    <li><code>permission.changed</code></li>
+    <li><code>mission_pilot.resume_requested</code></li>
+    <li><code>mission_pilot.retry_timer_elapsed</code></li>
+  </ul>
+  <p>
+    event IDとTask revisionで重複を排除する。event本文をkeyword分類してwake理由やnext
+    actionを変えない。
+  </p>
+  <h3 id="section-93-stop-and-restart">9.3 Stop and restart</h3>
+  <ul>
+    <li>Stopはactive LLM turnをcancelし、必要ならactive Runの停止を既存commandへ依頼する。</li>
+    <li>process restart時はleaseと未完了tool callをreconcileする。</li>
+    <li>action実行済みでresult保存前にcrashした場合はidempotency keyから結果を復元する。</li>
+    <li>
+      restart後に旧phaseから次actionを生成せず、current FactsとconversationからLLMを再開する。
+    </li>
+  </ul>
+  <h2 id="section-10-compatibility-implementation">10. Compatibility Implementation</h2>
+  <h3 id="section-101-existing-sessions">10.1 Existing sessions</h3>
+  <ul>
+    <li>既存sessionはTaskとsession IDを維持する。</li>
+    <li>rollout中は既存の実行中sessionを現行runtimeで完走させてよい。</li>
+    <li>新runtimeへの移行はactive side effectがない安全な境界で行う。</li>
+    <li>
+      migrationのために旧phaseをdiagnosticとして読むことは許可するが、System Contextの命令やnext
+      actionへ変換しない。
+    </li>
+    <li>rollbackしてもTask、Run、Artifact、commitを巻き戻さない。</li>
+  </ul>
+  <h3 id="section-102-new-sessions">10.2 New sessions</h3>
+  <p>
+    新runtimeを有効化した新規sessionでも、既存Control
+    SummaryとUIだけを返す。runtime種別を公開しない。
+  </p>
+  <p>
+    段階展開用の内部rollout flagは許可するが、ユーザー向けmodeとして表示しない。turn途中でruntime
+    ownershipを切り替えない。
+  </p>
+  <h3 id="section-103-questionnaire-compatibility">10.3 Questionnaire compatibility</h3>
+  <ul>
+    <li>既存Questionnaire draft table、API、UI、deadlineを維持する。</li>
+    <li>production agentではLLMが質問とTask contextを読んで回答案を作る。</li>
+    <li>LLMが作った回答案を既存draftとして保存し、ユーザーが同じUIで修正できるようにする。</li>
+    <li>deadline後は既存の提出commandを使用する。</li>
+    <li>providerに到達できない場合、固定回答を自動生成して提出しない。</li>
+    <li>
+      現行の固定回答helperは既存testまたは移行中のlegacy
+      session向けに残してよいが、新runtimeから使用しない。
+    </li>
+  </ul>
+  <h3 id="section-104-normal-path-projection">10.4 Normal-path projection</h3>
+  <p>
+    deterministic provider fixtureが正常系action
+    sequenceを返す場合、新runtimeは既存と同じ外部結果を生成する。
+  </p>
+  <ul>
+    <li>同じQuestionnaire/Plan Artifact正本。</li>
+    <li>同じQueue/Run application commands。</li>
+    <li>同じTest/Review成果物。</li>
+    <li>同じcommit ownership検証。</li>
+    <li>同じTask complete/archive結果。</li>
+    <li>同じ既存phase projection。</li>
+    <li>同じPilot Thoughtとchat分離。</li>
+  </ul>
+  <p>
+    これにより、現行手続き型挙動を維持しながら、productionではLLMがTaskに応じて別sequenceを選べる。
+  </p>
+  <h2 id="section-11-incremental-implementation-plan">11. Incremental Implementation Plan</h2>
+  <p>大規模な一括置換を禁止する。各段階を独立してmerge、検証、rollbackできる単位にする。</p>
+  <h3 id="stage-0-baseline-lock">Stage 0: Baseline lock</h3>
+  <p>目的:</p>
+  <ul>
+    <li>UI/API/testの互換境界をコードとtestで固定する。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>Mission Pilot unit test baselineを記録する。</li>
+    <li>既存E2E scenarioを整理する。</li>
+    <li>Control Summary contract testを追加する。</li>
+    <li>Mission Pilot Control PanelのDOM/表示contractを追加する。</li>
+    <li>現行正常系のaction/event trace fixtureを保存する。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>現行21 files / 123 testsが変更なしで成功する。</li>
+    <li>既存Mission Pilot E2Eが成功する。</li>
+    <li>UI/API互換の禁止変更がtestで検出できる。</li>
+  </ul>
+  <h3 id="stage-1-internal-persistence">Stage 1: Internal persistence</h3>
+  <p>目的:</p>
+  <ul>
+    <li>production挙動を変えず、永続conversationとevent inboxを追加する。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>Mission Pilot conversation table/repository。</li>
+    <li>tool call/result tableまたは同等の永続構造。</li>
+    <li>typed event inbox/checkpoint。</li>
+    <li>lease、idempotency、crash reconciliation。</li>
+    <li>compaction metadata。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>UI/API responseに差分がない。</li>
+    <li>現行runtimeのaction sequenceに差分がない。</li>
+    <li>restart後にconversationと未完了callを復元できる。</li>
+    <li>worker transcriptがconversationへ保存されない。</li>
+  </ul>
+  <h3 id="stage-2-shared-readaction-ports">Stage 2: Shared read/action ports</h3>
+  <p>目的:</p>
+  <ul>
+    <li>Mission Pilotがユーザー相当の情報と操作を使えるようにする。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>Task Read Port。</li>
+    <li>terminal Run Outcome Port。</li>
+    <li>Task Action Registry。</li>
+    <li>UI application commandへのadapter。</li>
+    <li>typed action result/failure。</li>
+    <li>authorization/revision/idempotency contract。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>Mission Pilot専用DB mutationがない。</li>
+    <li>UIとMission Pilotが同じcommand handlerを呼ぶ。</li>
+    <li>action availabilityがphase/keywordで制限されない。</li>
+    <li>current userより強い権限を取得しない。</li>
+  </ul>
+  <h3 id="stage-3-shadow-agent">Stage 3: Shadow agent</h3>
+  <p>目的:</p>
+  <ul>
+    <li>side effectを実行せず、LLMが必要情報を取得して次actionを選べることを確認する。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>System Context。</li>
+    <li>provider adapter。</li>
+    <li>read tool loop。</li>
+    <li>proposed action audit。</li>
+    <li>current Task eventからのwake。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>LLMが不足情報をread toolで取得する。</li>
+    <li>fixed phaseをpromptまたはruntime判断に使用しない。</li>
+    <li>worker transcriptを読まない。</li>
+    <li>現行正常系と同じaction sequenceを提案できる。</li>
+    <li>非定型scenarioで現行workflowと異なる妥当なactionを提案できる。</li>
+  </ul>
+  <h3 id="stage-4-agent-action-execution">Stage 4: Agent action execution</h3>
+  <p>目的:</p>
+  <ul>
+    <li>新規sessionでLLMを実際の次action決定者にする。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>action tool execution。</li>
+    <li>wait/wake loop。</li>
+    <li>existing phase projection。</li>
+    <li>Play/Stop compatibility facade。</li>
+    <li>active Run terminal event連携。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>既存UI/APIに差分がない。</li>
+    <li>deterministic providerで現行正常系E2Eを再現できる。</li>
+    <li>Test/Review不要Taskをhostが固定工程へ送らない。</li>
+    <li>assistant text-only turnをfailureにしない。</li>
+    <li>process restart後も同じsessionで継続する。</li>
+  </ul>
+  <h3 id="stage-5-coding-agent-repair-loop">Stage 5: Coding Agent repair loop</h3>
+  <p>目的:</p>
+  <ul>
+    <li>error、Test失敗、Review finding、未達成条件から自律的に修正を継続する。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>repair request schemaと永続化。</li>
+    <li>Coding Agent start actionへのPrompt連携。</li>
+    <li>terminal outcome再評価。</li>
+    <li>verification再取得。</li>
+    <li>user messageによる途中指示反映。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>Coding Agent失敗後にMission Pilotが新しい修正Promptを生成する。</li>
+    <li>修正Run完了後に結果を読んで再判断する。</li>
+    <li>同じPromptを無条件に再送しない。</li>
+    <li>成功確認前にTaskを完了しない。</li>
+    <li>permission/provider/revision errorをコード修正と決め打ちしない。</li>
+  </ul>
+  <h3 id="stage-6-cutover-and-simplification">Stage 6: Cutover and simplification</h3>
+  <p>目的:</p>
+  <ul>
+    <li>新runtimeを通常経路にし、固定workflowをsemantic controllerから外す。</li>
+  </ul>
+  <p>実装:</p>
+  <ul>
+    <li>新規sessionの段階的cutover。</li>
+    <li>既存sessionの安全な完走またはmigration。</li>
+    <li>fixed coordinatorのproduction参照除去。</li>
+    <li>unused legacy codeの参照調査。</li>
+    <li>rollback期間終了後の段階的cleanup。</li>
+  </ul>
+  <p>完了条件:</p>
+  <ul>
+    <li>production agent runtimeがfixed post-Queue transitionをimportしない。</li>
+    <li>Questionnaire固定回答を使用しない。</li>
+    <li>Implementation/Test/Review/closeoutをhostが自動選択しない。</li>
+    <li>現行testと新agent testがすべて成功する。</li>
+    <li>UI/APIに意図しない差分がない。</li>
+    <li>normal-pathとadaptive-pathの両方が成功する。</li>
+  </ul>
+  <h2 id="section-12-verification-strategy">12. Verification Strategy</h2>
+  <h3 id="section-121-existing-regression-gate">12.1 Existing regression gate</h3>
+  <p>各Stageで最低限、次を実行する。</p>
+  <pre><code class="language-bash">bunx vitest run tests/mission-pilot-*.test.ts
+</code></pre>
+  <p>期待結果:</p>
+  <pre><code class="language-text">Test Files  21 passed
+Tests       123 passed
+</code></pre>
+  <p>既存Mission Pilot E2Eも対象fileを明示して実行する。</p>
+  <ul>
+    <li><code>tests/e2e/mission-pilot-entry.spec.ts</code></li>
+    <li><code>tests/e2e/mission-pilot-pre-queue-handoff.spec.ts</code></li>
+    <li><code>tests/e2e/mission-pilot-through-archive.spec.ts</code></li>
+    <li><code>tests/e2e/mission-pilot-trace-separation.spec.ts</code></li>
+  </ul>
+  <p>
+    baseline数が正当な追加testによって増えることは許可するが、既存testの削除、skip、assertion弱体化でgreenにしない。
+  </p>
+  <h3 id="section-122-architecture-tests">12.2 Architecture tests</h3>
+  <ul>
+    <li>agent runtimeがpost-Queue transition tableをimportしない。</li>
+    <li>agent runtimeがTest/Review gateをnext action決定に使わない。</li>
+    <li>agent runtimeがQuestionnaire固定回答helperを使わない。</li>
+    <li>Mission Pilot moduleがworker transcript query/streamへ依存しない。</li>
+    <li>Task/LLM/error本文をsemantic keyword分類しない。</li>
+    <li>action adapterがTask/Run stateを直接DB mutationしない。</li>
+    <li>public Mission Pilot schemaへ内部runtime fieldを追加しない。</li>
+    <li>Mission Pilot Control Panelへ新status/confirmation UIを追加しない。</li>
+  </ul>
+  <h3 id="section-123-deterministic-parity-scenario">12.3 Deterministic parity scenario</h3>
+  <p>fixture providerに正常系tool callsを返させ、次を検証する。</p>
+  <ol>
+    <li>Questionnaireを作成・回答する。</li>
+    <li>Plan Artifactを作成する。</li>
+    <li>Coding Agentを開始する。</li>
+    <li>terminal outcomeを受け取る。</li>
+    <li>Testを開始する。</li>
+    <li>Reviewを開始する。</li>
+    <li>commitする。</li>
+    <li>complete/archiveする。</li>
+    <li>既存phase、Task status、trace分離、archive結果が現在と同等である。</li>
+  </ol>
+  <h3 id="section-124-adaptive-scenarios">12.4 Adaptive scenarios</h3>
+  <h4 id="scenario-a-information-gathering">Scenario A: Information gathering</h4>
+  <ul>
+    <li>最初のcontextだけでは判断できないTaskを与える。</li>
+    <li>Mission Pilotがread toolでSpecification、Artifact、repository状態を取得する。</li>
+    <li>情報取得前にImplementationを開始しない。</li>
+  </ul>
+  <h4 id="scenario-b-coding-repair">Scenario B: Coding repair</h4>
+  <ul>
+    <li>Coding Agentが修正可能なerrorを返す。</li>
+    <li>Mission Pilotがfailureとcurrent Factsを読む。</li>
+    <li>具体的なrepair Promptを生成してCoding Agentを再実行する。</li>
+    <li>修正結果と検証結果を再評価する。</li>
+    <li>成功確認後にのみ完了する。</li>
+  </ul>
+  <h4 id="scenario-c-test-failure">Scenario C: Test failure</h4>
+  <ul>
+    <li>Testが失敗する。</li>
+    <li>Mission PilotがTest結果と関連Artifactを読む。</li>
+    <li>Coding Agentへ対象を絞った修正を依頼する。</li>
+    <li>Testを再実行し、成功を確認する。</li>
+  </ul>
+  <h4 id="scenario-d-stale-revision">Scenario D: Stale revision</h4>
+  <ul>
+    <li>action実行前にTask revisionを変更する。</li>
+    <li>stale conflictをLLMへ返す。</li>
+    <li>Mission Pilotが最新状態を読み直す。</li>
+    <li>hostが旧actionを自動再実行しない。</li>
+  </ul>
+  <h4 id="scenario-e-user-override">Scenario E: User override</h4>
+  <ul>
+    <li>worker待機中にユーザーが追加messageを送る。</li>
+    <li>同じMission Pilot sessionをwakeする。</li>
+    <li>新しい指示を反映して次actionを変更する。</li>
+  </ul>
+  <h4 id="scenario-f-restart-and-compaction">Scenario F: Restart and compaction</h4>
+  <ul>
+    <li>tool call前後でprocess restartを発生させる。</li>
+    <li>side effectを重複実行しない。</li>
+    <li>同じconversation revisionから判断を継続する。</li>
+    <li>compaction後も採用済み判断と未解決事項が残る。</li>
+  </ul>
+  <h4 id="scenario-g-optional-testreview">Scenario G: Optional Test/Review</h4>
+  <ul>
+    <li>TestまたはReviewが不要なTaskを与える。</li>
+    <li>LLMが完了条件と現在成果を読んで不要と判断できる。</li>
+    <li>hostが固定工程として追加しない。</li>
+  </ul>
+  <h3 id="section-125-security-and-permission-scenarios">12.5 Security and permission scenarios</h3>
+  <ul>
+    <li>現在ユーザーにないactionを実行できない。</li>
+    <li>Play authorizationにpushがない場合はpushできない。</li>
+    <li>Task/repository scope外の操作を拒否する。</li>
+    <li>stale approval/revisionを拒否する。</li>
+    <li>idempotency keyが異なる重複side effectを防ぐ。</li>
+    <li>UIにないMission Pilot専用bypassが存在しない。</li>
+  </ul>
+  <h2 id="section-13-observability">13. Observability</h2>
+  <p>記録するもの:</p>
+  <ul>
+    <li>Mission Pilot session IDとconversation revision。</li>
+    <li>wake event IDと消費revision。</li>
+    <li>LLM assistant message。</li>
+    <li>read/action tool callとresult。</li>
+    <li>action source revisionとidempotency key。</li>
+    <li>Coding Agent repair Promptとsource refs。</li>
+    <li>terminal Run outcome refs。</li>
+    <li>compaction revision。</li>
+    <li>waiting/attention理由。</li>
+    <li>normal-pathとadaptive-pathのaction trace。</li>
+  </ul>
+  <p>記録しないもの:</p>
+  <ul>
+    <li>worker reasoning。</li>
+    <li>worker逐次tool logのMission Pilot conversationへの複製。</li>
+    <li>command stdout/stderr全文のMission Pilot contextへの複製。</li>
+  </ul>
+  <p>
+    観測結果からhostがnext actionを補正しない。System Context、tool description、read
+    model品質の改善材料として使う。
+  </p>
+  <h2 id="section-14-prohibited-changes">14. Prohibited Changes</h2>
+  <ul>
+    <li>Mission Pilot UIの再設計。</li>
+    <li>Playボタンをstatus textへ置き換える変更。</li>
+    <li>Mission Pilot専用confirmation panelの追加。</li>
+    <li>
+      <code>runtimeKind</code>、<code>runtimeState</code>等の内部fieldを公開Control
+      Summaryへ追加する変更。
+    </li>
+    <li>現行testを削除、skip、弱体化して互換性を装う変更。</li>
+    <li>過去の大規模実装commitをそのまま復元する変更。</li>
+    <li>Mission Pilot専用action registryとUI actionの二重実装。</li>
+    <li>Mission Pilot action adapterからのTask/Run DB直接mutation。</li>
+    <li>fixed phaseとagent runtimeの両方が同じsessionのnext actionを決める構成。</li>
+    <li>provider共通層、Coding Agent runtime、Todo runtimeを同時に大規模変更すること。</li>
+    <li>worker transcriptをMission Pilot promptへ投入すること。</li>
+    <li>同じ失敗Promptの無条件再送。</li>
+    <li>未検証の変更をTask完了の証拠にすること。</li>
+    <li>LLMが返した本文をhost固定文へ置換すること。</li>
+  </ul>
+  <h2 id="section-15-definition-of-done">15. Definition of Done</h2>
+  <p>次をすべて満たしたとき、このリファクタリングを完了とする。</p>
+  <ol>
+    <li>Mission Pilotが一つのlogical sessionでTask開始から完了まで継続する。</li>
+    <li>Mission Pilotが不足情報をread toolで自律的に取得できる。</li>
+    <li>次action、Test/Review要否、修正、完了をLLMが判断する。</li>
+    <li>errorまたは未達成条件からCoding Agentへ具体的なrepair Promptを送れる。</li>
+    <li>Coding Agentの結果を再取得し、成功条件を再評価できる。</li>
+    <li>成功確認前にTaskを完了しない。</li>
+    <li>正常系では現在の手続き型action sequenceと外部結果を再現できる。</li>
+    <li>非定型Taskでは固定sequenceから外れて妥当なactionを選べる。</li>
+    <li>UI、公開API、Control Summaryに意図しない変更がない。</li>
+    <li>現行Mission Pilot unit testとE2Eがすべて成功する。</li>
+    <li>新agent runtimeが固定phase/gateをsemantic decisionに使用しない。</li>
+    <li>Questionnaire回答を固定規則で決めない。</li>
+    <li>worker transcriptをMission Pilotが追跡しない。</li>
+    <li>process restartとcontext compaction後も同じconversationを継続する。</li>
+    <li>UIと同じauthorization、revision、idempotency、application commandを使用する。</li>
+    <li>Playで許可されていないpushやscope外操作を実行しない。</li>
+    <li>current userより強い権限をMission Pilotが持たない。</li>
+    <li>UIに新しいruntime statusやconfirmation表示を追加していない。</li>
+    <li>normal-path、repair-path、restart-path、user-override-pathのE2Eが成功する。</li>
+    <li>rollback期間終了後、固定workflowをproduction semantic controllerから除去できている。</li>
+  </ol>
+  <h2 id="section-16-first-implementation-slice">16. First Implementation Slice</h2>
+  <p>最初の実装ではproduction behaviorを切り替えない。次の小さな範囲に限定する。</p>
+  <ol>
+    <li>現行UI/API/test baselineを固定するcharacterization testを追加する。</li>
+    <li>内部conversation storeとtyped event inboxを追加する。</li>
+    <li>worker transcriptを保存しないarchitecture testを追加する。</li>
+    <li>Task Read Portの最小contractを追加する。</li>
+    <li>
+      LLMがread toolで情報を取得し、side effectなしで次actionを提案するshadow turnを追加する。
+    </li>
+    <li>現行21 files / 123 testsと既存E2Eが変わらず成功することを確認する。</li>
+  </ol>
+  <p>このsliceでは次を行わない。</p>
+  <ul>
+    <li>UI変更。</li>
+    <li>公開schema変更。</li>
+    <li>Play/Stop挙動の切替。</li>
+    <li>fixed coordinatorの削除。</li>
+    <li>Mission Pilotによるside effect実行。</li>
+    <li>provider共通層の大規模変更。</li>
+    <li>Coding Agent runtimeの変更。</li>
+  </ul>
+  <p>最初のsliceがgreenになった後、Stage 2以降へ進む。</p>
+  <h2 id="section-17-luna-overnight-execution-contract">17. Luna Overnight Execution Contract</h2>
+  <p>
+    この節は、Lunaが夜間に本計画を継続実装する際の実行規約である。Concept、互換境界、禁止事項より優先される例外は設けない。
+  </p>
+  <h3 id="section-171-start-protocol">17.1 Start protocol</h3>
+  <p>実装開始時に次を順番どおり行う。</p>
+  <ol>
+    <li>repository rootで<code>AGENTS.md</code>と本計画書を読む。</li>
+    <li>
+      <code>git status --short</code>を記録し、開始前から存在する変更をuser-owned changeとして扱う。
+    </li>
+    <li>開始前の変更をrevert、stash、format、stageしない。</li>
+    <li>baseline unit test、typecheck、architecture checkを実行する。</li>
+    <li>baselineが失敗した場合は、新実装を開始せず、失敗内容と開始前差分を記録する。</li>
+    <li>baselineがgreenの場合だけCheckpoint C1へ進む。</li>
+  </ol>
+  <p>
+    開始時点で本計画書と<code>AGENTS.md</code>にuser-owned
+    changeが存在する可能性がある。Lunaは自分が変更した箇所以外を整理しない。
+  </p>
+  <h3 id="section-172-work-discipline">17.2 Work discipline</h3>
+  <ul>
+    <li>Checkpointを飛ばさない。</li>
+    <li>一つのCheckpointをgreenにしてから次へ進む。</li>
+    <li>各Checkpointを独立commitにする。</li>
+    <li>前Checkpointのcommitをamendまたはsquashしない。</li>
+    <li>unrelated refactor、rename、format-allを行わない。</li>
+    <li>testを削除、skip、弱体化しない。</li>
+    <li>UI差分を新runtimeの都合で正当化しない。</li>
+    <li>provider共通層へ必要のない変更を広げない。</li>
+    <li>失敗したtestに合わせてproduction semantic ruleを追加しない。</li>
+    <li>既存のdirty changeと重なる場合は、最小差分で回避する。</li>
+    <li>未確認side effectを完了扱いにしない。</li>
+  </ul>
+  <h3 id="section-173-continue--stop-rule">17.3 Continue / stop rule</h3>
+  <p>Lunaは次の条件を満たす限り、自動的に次Checkpointへ進んでよい。</p>
+  <ul>
+    <li>current Checkpointのtargeted testがgreen。</li>
+    <li>既存Mission Pilot unit testがgreen。</li>
+    <li>typecheckがgreen。</li>
+    <li><code>git diff --check</code>がgreen。</li>
+    <li>UI/API禁止差分がない。</li>
+    <li>current Checkpoint外のproduction fileを変更していない。</li>
+  </ul>
+  <p>次の場合はcurrent Checkpoint内で修正を続け、次へ進まない。</p>
+  <ul>
+    <li>schema/bootstrapを二度実行すると失敗する。</li>
+    <li>existing testが一件でも回帰する。</li>
+    <li>Mission Pilotがworker transcriptへ依存する。</li>
+    <li>Task Action AdapterがTask/Run tableを直接mutationする。</li>
+    <li>public schemaまたはUI変更が必要に見える。</li>
+    <li>actionのidempotencyまたはcrash recoveryが未定義。</li>
+    <li>provider本文またはworker final reportを固定文へ置換している。</li>
+    <li>fixed phase/gateがagentのnext actionを決めている。</li>
+  </ul>
+  <h3 id="section-174-commit-message-sequence">17.4 Commit message sequence</h3>
+  <p>commit messageは次のprefixを使用する。番号はCheckpointと一致させる。</p>
+  <pre><code class="language-text">feat(mission-pilot): C1 add internal agent persistence
+feat(mission-pilot): C2 add read model and run outcomes
+feat(mission-pilot): C3 add shared task action registry
+feat(mission-pilot): C4 add persistent llm tool runtime
+feat(mission-pilot): C5 add typed wake events
+feat(mission-pilot): C6 add llm questionnaire drafting
+feat(mission-pilot): C7 add coding repair loop
+feat(mission-pilot): C8 connect compatibility facade
+test(mission-pilot): C9 add agent parity and recovery e2e
+refactor(mission-pilot): C10 cut over new sessions
+</code></pre>
+  <p>commitは各Checkpointの検証成功後に作成する。検証失敗状態をcheckpoint commitにしない。</p>
+  <h2 id="section-18-locked-file-layout">18. Locked File Layout</h2>
+  <p>
+    新runtimeは<code>api/modules/missionPilot/agent/</code>へ閉じ込める。既存Mission Pilot
+    rootにagent固有のprovider、conversation、tool executionを散在させない。
+  </p>
+  <h3 id="section-181-add-files">18.1 Add files</h3>
+  <pre><code class="language-text">api/db/mission-pilot-agent-schema.ts
+api/db/mission-pilot-agent-schema-bootstrap.ts
+
+api/modules/missionPilot/agent/
+  mission-pilot-agent.constants.ts
+  mission-pilot-agent.types.ts
+  mission-pilot-agent.ports.ts
+  mission-pilot-agent-session.repository.ts
+  mission-pilot-agent-turn.repository.ts
+  mission-pilot-conversation.repository.ts
+  mission-pilot-tool-call.repository.ts
+  mission-pilot-task-event.repository.ts
+  mission-pilot-task-read-model.ts
+  mission-pilot-task-read.adapter.ts
+  mission-pilot-run-outcome.adapter.ts
+  mission-pilot-task-action.registry.ts
+  mission-pilot-task-action.adapter.ts
+  mission-pilot-provider.adapter.ts
+  mission-pilot-system-context.ts
+  mission-pilot-context-compaction.ts
+  mission-pilot-compatibility-projection.ts
+  mission-pilot-questionnaire-draft.adapter.ts
+  mission-pilot-repair-request.ts
+  mission-pilot-agent-runtime.ts
+  mission-pilot-agent-wake.service.ts
+  mission-pilot-agent-startup.service.ts
+</code></pre>
+  <p>各fileの責務は一つに限定する。</p>
+  <table>
+    <caption>
+      18.1 Add files
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">File</th>
+        <th scope="col">Responsibility</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>mission-pilot-agent.types.ts</code></td>
+        <td>agent内部型。UI/shared public schemaをimportさせるための追加fieldを定義しない</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-agent.ports.ts</code></td>
+        <td>read、action、provider、conversation、eventのinterface</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-agent-session.repository.ts</code></td>
+        <td>engine ownership、runtime state、lease、revisionのCAS</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-agent-turn.repository.ts</code></td>
+        <td>一回のwake/turn claim、finish、crash reconciliation</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-conversation.repository.ts</code></td>
+        <td>ordered conversation append、load、compaction</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-tool-call.repository.ts</code></td>
+        <td>tool call claim、idempotency、result/failure保存</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-task-event.repository.ts</code></td>
+        <td>typed inbox append、dedupe、claim、consume</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-task-read-model.ts</code></td>
+        <td>providerへ渡すbounded read modelのpure type/build helpers</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-task-read.adapter.ts</code></td>
+        <td>existing query serviceからユーザー可視Factを読む</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-run-outcome.adapter.ts</code></td>
+        <td>terminal Runをtranscriptなしのoutcomeへ投影する</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-task-action.registry.ts</code></td>
+        <td>action ID、schema、scope、handler metadataの正本</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-task-action.adapter.ts</code></td>
+        <td>registry actionをexisting application commandへ渡す</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-provider.adapter.ts</code></td>
+        <td>existing <code>callProviderToolTurn</code>境界だけを利用する</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-system-context.ts</code></td>
+        <td>日本語のrole/tool guidance。fixed workflowを書かない</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-context-compaction.ts</code></td>
+        <td>token budget判定とsummary request</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-compatibility-projection.ts</code></td>
+        <td>action/eventから既存phase/activity表示だけを更新する</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-questionnaire-draft.adapter.ts</code></td>
+        <td>LLM回答を既存draft table/APIへ保存する</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-repair-request.ts</code></td>
+        <td>repair request schemaとCoding Agent Prompt renderer</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-agent-runtime.ts</code></td>
+        <td>lease付きprovider/tool loop。domain action handlerを持たない</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-agent-wake.service.ts</code></td>
+        <td>event-driven schedulingとsingle-flight</td>
+      </tr>
+      <tr>
+        <td><code>mission-pilot-agent-startup.service.ts</code></td>
+        <td>restart reconciliationとsafe resume</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-182-existing-files-allowed-to-change">18.2 Existing files allowed to change</h3>
+  <pre><code class="language-text">api/db/client.ts
+api/db/bootstrap.ts
+api/modules/missionPilot/mission-pilot.service.ts
+api/modules/missionPilot/mission-pilot-questionnaire.service.ts
+api/modules/missionPilot/mission-pilot.repository.ts
+api/modules/missionPilot/index.ts
+api/modules/nightworkers/nightworkers.task-creation.service.ts
+api/modules/nightworkers/nightworkers.workbench-message.service.ts
+api/modules/nightworkers/nightworkers.repository.ts
+api/modules/questionnaire/questionnaire-events.ts
+</code></pre>
+  <p>変更理由:</p>
+  <ul>
+    <li>DB schema登録とidempotent bootstrap。</li>
+    <li>Play/Stop/startup/run terminalのagent-owned branch。</li>
+    <li>Questionnaire readyのtyped event化。</li>
+    <li>新規Taskのinternal engine ownership作成。</li>
+    <li>user message/task updateのgeneric typed event publish。</li>
+    <li>Coding Agent repair PromptをUIと同じRun開始commandへ渡す共有command抽出。</li>
+  </ul>
+  <h3 id="section-183-files-not-allowed-to-change">18.3 Files not allowed to change</h3>
+  <p>原則として次を変更しない。</p>
+  <pre><code class="language-text">src/modules/missionPilot/components/MissionPilotControlPanel.tsx
+src/modules/missionPilot/missionPilotCommands.ts
+src/modules/missionPilot/missionPilotPresentation.ts
+shared/schemas/mission-pilot.schema.ts
+api/modules/missionPilot/mission-pilot.routes.ts
+</code></pre>
+  <p>
+    conversationやagent内部debugを公開するためのroute追加も、この実装では行わない。既存execution
+    traceへ監査eventを投影する場合も既存response consumerを壊さないappend-only
+    fieldに限定し、UIからfetchさせない。
+  </p>
+  <h3 id="section-184-no-deletion-before-cutover">18.4 No deletion before cutover</h3>
+  <p>C1からC9までは既存legacy fileを削除しない。C10でも既存testが直接参照するhelperは残す。</p>
+  <p>
+    production importがなくなり、rollback期間が終了した後にだけ、別commitでunused
+    code削除を検討する。夜間実装の完了条件にphysical deletionを含めない。
+  </p>
+  <h2 id="section-19-agent-persistence-schema">19. Agent Persistence Schema</h2>
+  <p>
+    既存<code>mission_pilot_sessions</code>をagent内部fieldで拡張しない。1:1のagent session
+    tableとappend-only tableを追加する。
+  </p>
+  <h3 id="section-191-mission_pilot_agent_sessions">
+    19.1 <code>mission_pilot_agent_sessions</code>
+  </h3>
+  <pre><code class="language-ts">type MissionPilotAgentSessionRow = {
+  sessionId: string; // PK, FK mission_pilot_sessions.id
+  engineMode: &quot;shadow&quot; | &quot;agent&quot;;
+  runtimeState: &quot;idle&quot; | &quot;running&quot; | &quot;waiting&quot; | &quot;attention&quot; | &quot;completed&quot;;
+  systemContextVersion: number;
+  conversationRevision: number;
+  lastConsumedEventSequence: number;
+  currentTurnId: string | null;
+  providerEndpointId: string | null;
+  model: string | null;
+  thinkingDepth: string | null;
+  leaseOwner: string | null;
+  leaseExpiresAt: Date | null;
+  lastFailureJson: MissionPilotActionFailure | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+</code></pre>
+  <p>constraints/indexes:</p>
+  <ul>
+    <li><code>session_id</code> primary key。</li>
+    <li>
+      <code>session_id</code>は<code>mission_pilot_sessions.id</code>へ<code>ON DELETE CASCADE</code
+      >。
+    </li>
+    <li><code>(runtime_state, lease_expires_at)</code> index。</li>
+    <li><code>conversation_revision &gt;= 0</code>はapplication validationで保証する。</li>
+    <li>agent rowが存在しないsessionはlegacy-ownedとみなす。</li>
+    <li>
+      public Control Summaryへ<code>engineMode</code>または<code>runtimeState</code>を出さない。
+    </li>
+  </ul>
+  <h3 id="section-192-mission_pilot_agent_turns">19.2 <code>mission_pilot_agent_turns</code></h3>
+  <pre><code class="language-ts">type MissionPilotAgentTurnRow = {
+  id: string;
+  sessionId: string;
+  triggerEventId: string | null;
+  status: &quot;claimed&quot; | &quot;running&quot; | &quot;waiting&quot; | &quot;completed&quot; | &quot;failed&quot; | &quot;cancelled&quot;;
+  leaseOwner: string;
+  leaseExpiresAt: Date;
+  providerCallCount: number;
+  toolCallCount: number;
+  startedAt: Date;
+  finishedAt: Date | null;
+  failureJson: MissionPilotActionFailure | null;
+};
+</code></pre>
+  <p>constraints/indexes:</p>
+  <ul>
+    <li><code>id</code> primary key。</li>
+    <li><code>(session_id, status)</code> index。</li>
+    <li>
+      sessionあたりactive turnは一件。partial indexが使えない場合はagent session CASで保証する。
+    </li>
+    <li>trigger eventとturnの対応を保持し、同じeventから二重turnを作らない。</li>
+  </ul>
+  <h3 id="section-193-mission_pilot_conversation_items">
+    19.3 <code>mission_pilot_conversation_items</code>
+  </h3>
+  <pre><code class="language-ts">type MissionPilotConversationItemRow = {
+  id: string;
+  sessionId: string;
+  sequence: number;
+  kind:
+    | &quot;system_context&quot;
+    | &quot;user&quot;
+    | &quot;assistant&quot;
+    | &quot;tool_call&quot;
+    | &quot;tool_result&quot;
+    | &quot;task_event&quot;
+    | &quot;run_outcome&quot;
+    | &quot;compaction_summary&quot;
+    | &quot;runtime_failure&quot;;
+  bodyJson: Record&lt;string, unknown&gt;;
+  sourceKind: string | null;
+  sourceId: string | null;
+  tokenEstimate: number;
+  compactedByItemId: string | null;
+  createdAt: Date;
+};
+</code></pre>
+  <p>constraints/indexes:</p>
+  <ul>
+    <li><code>(session_id, sequence)</code> unique。</li>
+    <li>
+      <code>(session_id, source_kind, source_id, kind)</code> unique when source is
+      present。SQLiteではnullable uniqueの挙動を考慮し、dedupe key columnを追加してもよい。
+    </li>
+    <li>
+      append時にagent sessionの<code>conversationRevision</code>を同一transactionでincrementする。
+    </li>
+    <li><code>bodyJson</code>は正本本文とdiagnosticを別fieldで保持する。</li>
+  </ul>
+  <h3 id="section-194-mission_pilot_agent_tool_calls">
+    19.4 <code>mission_pilot_agent_tool_calls</code>
+  </h3>
+  <pre><code class="language-ts">type MissionPilotAgentToolCallRow = {
+  id: string;
+  sessionId: string;
+  turnId: string;
+  providerCallId: string;
+  toolName: string;
+  actionId: string | null;
+  argumentsJson: Record&lt;string, unknown&gt;;
+  argumentsDigest: string;
+  idempotencyKey: string;
+  status: &quot;pending&quot; | &quot;running&quot; | &quot;completed&quot; | &quot;failed&quot; | &quot;cancelled&quot;;
+  resultJson: Record&lt;string, unknown&gt; | null;
+  failureJson: MissionPilotActionFailure | null;
+  attempt: number;
+  leaseOwner: string | null;
+  leaseExpiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  finishedAt: Date | null;
+};
+</code></pre>
+  <p>constraints/indexes:</p>
+  <ul>
+    <li><code>(session_id, provider_call_id)</code> unique。</li>
+    <li><code>(session_id, idempotency_key)</code> unique。</li>
+    <li>same idempotency key + different arguments digestはconflict。</li>
+    <li>completed callは再実行せずpersisted resultをconversationへ再投影する。</li>
+  </ul>
+  <h3 id="section-195-mission_pilot_agent_events">19.5 <code>mission_pilot_agent_events</code></h3>
+  <pre><code class="language-ts">type MissionPilotAgentEventRow = {
+  id: string;
+  sessionId: string;
+  taskId: string;
+  sequence: number;
+  eventType: MissionPilotAgentEventType;
+  sourceEventId: string;
+  taskRevision: number;
+  payloadJson: Record&lt;string, unknown&gt;;
+  status: &quot;pending&quot; | &quot;claimed&quot; | &quot;consumed&quot; | &quot;failed&quot;;
+  availableAt: Date;
+  claimedAt: Date | null;
+  consumedAt: Date | null;
+  attempt: number;
+  lastError: string | null;
+  createdAt: Date;
+};
+</code></pre>
+  <p>constraints/indexes:</p>
+  <ul>
+    <li><code>(session_id, sequence)</code> unique。</li>
+    <li><code>(session_id, source_event_id)</code> unique。</li>
+    <li><code>(status, available_at)</code> index。</li>
+    <li>event claimとturn claimを同一transactionまたはCAS chainで結ぶ。</li>
+  </ul>
+  <h3 id="section-196-bootstrap-requirements">19.6 Bootstrap requirements</h3>
+  <ul>
+    <li>
+      <code>api/db/mission-pilot-agent-schema-bootstrap.ts</code>はすべて<code
+        >CREATE TABLE IF NOT EXISTS</code
+      >と<code>CREATE INDEX IF NOT EXISTS</code>で実装する。
+    </li>
+    <li>bootstrapを連続二回実行しても成功するtestを追加する。</li>
+    <li>C1では既存table/columnをdrop、rename、backfillしない。</li>
+    <li><code>api/db/client.ts</code>へschemaをmergeする。</li>
+    <li>
+      <code>api/db/bootstrap.ts</code>から既存Mission Pilot bootstrapの後にagent bootstrapを呼ぶ。
+    </li>
+    <li>schema作成失敗時に既存Mission Pilot tableを変更しない。</li>
+  </ul>
+  <h2 id="section-20-internal-contracts-and-ports">20. Internal Contracts and Ports</h2>
+  <h3 id="section-201-task-read-model">20.1 Task read model</h3>
+  <pre><code class="language-ts">type MissionPilotTaskReadModel = {
+  task: {
+    id: string;
+    repositoryId: string;
+    title: string;
+    objective: string | null;
+    acceptanceCriteria: string | null;
+    status: string;
+    revision: number;
+  };
+  repository: {
+    id: string;
+    localPath: string;
+    branch: string;
+    allowed: boolean;
+    worktreePath: string | null;
+  };
+  specification: {
+    messageId: string;
+    artifactKind: string;
+    revision: number | null;
+    digest: string;
+  } | null;
+  questionnaire: {
+    sessionId: string;
+    status: string;
+    revision: number;
+    unresolvedQuestionIds: string[];
+    adoptedDecisionIds: string[];
+  } | null;
+  artifacts: Array&lt;{
+    id: string;
+    kind: string;
+    title: string;
+    revision: number | null;
+    digest: string;
+    sourceMessageId: string | null;
+  }&gt;;
+  queue: {
+    entryId: string;
+    status: string;
+    activeRunId: string | null;
+  } | null;
+  activeRuns: MissionPilotRunSummary[];
+  terminalRuns: MissionPilotRunSummary[];
+  availableActions: MissionPilotTaskActionDescriptor[];
+  observedAt: string;
+};
+</code></pre>
+  <p>
+    <code>revision</code>は現在Task
+    schemaに専用revisionがない場合、既存<code>updatedAt</code>のmillisecond値をCAS
+    tokenとして使う。独自の擬似revisionを本文から生成しない。
+  </p>
+  <h3 id="section-202-run-outcome">20.2 Run outcome</h3>
+  <pre><code class="language-ts">type MissionPilotRunOutcome = {
+  runId: string;
+  taskId: string;
+  executionMode: string | null;
+  terminalState: string;
+  summary: string | null;
+  finalReport: string | null;
+  blocker: {
+    code: string | null;
+    message: string;
+  } | null;
+  verificationSummary: string | null;
+  structuredFindings: Array&lt;{
+    id: string;
+    severity: string;
+    title: string;
+    body: string;
+  }&gt;;
+  changedPaths: string[];
+  commitRef: string | null;
+  artifactRefs: Array&lt;{ kind: string; id: string }&gt;;
+  completedAt: string | null;
+};
+</code></pre>
+  <p>禁止field:</p>
+  <ul>
+    <li><code>logContent</code></li>
+    <li>command stdout/stderr全文</li>
+    <li>Todo event stream</li>
+    <li>assistant/tool transcript</li>
+    <li>raw reasoning</li>
+  </ul>
+  <p>
+    <code>diffPatch</code>全文もdefault
+    outcomeへ入れない。必要な場合はユーザー可視Artifact参照またはbounded diff summaryとして別read
+    toolで取得する。
+  </p>
+  <h3 id="section-203-typed-action-failure">20.3 Typed action failure</h3>
+  <pre><code class="language-ts">type MissionPilotActionFailure = {
+  kind:
+    | &quot;schema_validation&quot;
+    | &quot;authorization&quot;
+    | &quot;revision_conflict&quot;
+    | &quot;domain_precondition&quot;
+    | &quot;transport&quot;
+    | &quot;timeout&quot;
+    | &quot;rate_limit&quot;
+    | &quot;provider_capacity&quot;
+    | &quot;authentication&quot;
+    | &quot;permission&quot;
+    | &quot;invalid_request&quot;
+    | &quot;resource_limit&quot;
+    | &quot;unknown&quot;;
+  message: string;
+  retryable: boolean;
+  code: string | null;
+  httpStatus: number | null;
+  retryAfterMs: number | null;
+  actionId: string | null;
+  idempotencyKey: string | null;
+  currentTaskRevision: number | null;
+  details: Record&lt;string, unknown&gt; | null;
+};
+</code></pre>
+  <p>
+    既存<code>StructuredProviderError</code>はこの型へlosslessに変換する。provider error
+    bodyのbounded raw textを保持する。
+  </p>
+  <h3 id="section-204-ports">20.4 Ports</h3>
+  <pre><code class="language-ts">interface MissionPilotTaskReadPort {
+  readWorkspace(taskId: string): Promise&lt;MissionPilotTaskReadModel&gt;;
+  readArtifact(taskId: string, artifactId: string): Promise&lt;unknown&gt;;
+  readRunOutcome(taskId: string, runId: string): Promise&lt;MissionPilotRunOutcome&gt;;
+  listAvailableActions(taskId: string, sessionId: string): Promise&lt;MissionPilotTaskActionDescriptor[]&gt;;
+}
+
+interface MissionPilotTaskActionPort {
+  execute(input: {
+    sessionId: string;
+    taskId: string;
+    actionId: string;
+    arguments: Record&lt;string, unknown&gt;;
+    expectedTaskRevision: number;
+    idempotencyKey: string;
+  }): Promise&lt;MissionPilotActionResult&gt;;
+}
+
+interface MissionPilotProviderPort {
+  nextTurn(input: {
+    taskId: string;
+    systemPrompt: string;
+    messages: ProviderToolMessage[];
+    tools: ProviderToolDefinition[];
+    signal: AbortSignal;
+    routeOverride: StructuredLlmModelTarget | null;
+  }): Promise&lt;ProviderToolTurnResult&gt;;
+}
+</code></pre>
+  <p>provider portは<code>api/services/structured-llm/public.ts</code>の次だけを使用する。</p>
+  <ul>
+    <li><code>buildNormalizedSupervisorLlmRequestCandidates</code></li>
+    <li><code>callProviderToolTurn</code></li>
+    <li><code>ProviderToolMessage</code></li>
+    <li><code>ProviderToolDefinition</code></li>
+    <li><code>ProviderToolTurnResult</code></li>
+    <li><code>normalizeStructuredProviderError</code></li>
+  </ul>
+  <p>provider共通typeをMission Pilot用に複製しない。</p>
+  <h2 id="section-21-read-and-action-catalog">21. Read and Action Catalog</h2>
+  <h3 id="section-211-read-tools">21.1 Read tools</h3>
+  <table>
+    <caption>
+      21.1 Read tools
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Tool</th>
+        <th scope="col">Input</th>
+        <th scope="col">Source</th>
+        <th scope="col">Output rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>read_task_workspace</code></td>
+        <td><code>{}</code></td>
+        <td>
+          <code>nightworkers.getTask/getRepository</code>, Plan workspace query, questionnaire
+          query, Run query
+        </td>
+        <td>bounded current Fact。worker transcriptなし</td>
+      </tr>
+      <tr>
+        <td><code>read_current_specification</code></td>
+        <td><code>{}</code></td>
+        <td><code>getPlanModeWorkspace</code>とcurrent Artifact selection</td>
+        <td>source message ID、digest、revisionを返す</td>
+      </tr>
+      <tr>
+        <td><code>read_artifact</code></td>
+        <td><code>{ artifactId }</code></td>
+        <td>Artifact domain query</td>
+        <td>current Task ownershipを検証する</td>
+      </tr>
+      <tr>
+        <td><code>read_run_outcome</code></td>
+        <td><code>{ runId }</code></td>
+        <td><code>getTaskRun</code>のterminal fieldsとcommit/review summary</td>
+        <td><code>logContent</code>と逐次eventsを除外する</td>
+      </tr>
+      <tr>
+        <td><code>list_available_task_actions</code></td>
+        <td><code>{}</code></td>
+        <td>Task Action Registry</td>
+        <td>schema、availability、expected revisionを返す</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>read toolはDB mutation、Task message作成、phase更新を行わない。</p>
+  <h3 id="section-212-action-registry-mapping">21.2 Action registry mapping</h3>
+  <table>
+    <caption>
+      21.2 Action registry mapping
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Action ID</th>
+        <th scope="col">Existing application command</th>
+        <th scope="col">Scope</th>
+        <th scope="col">Required arguments</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>task.message.send</code></td>
+        <td><code>appendTaskMessage</code></td>
+        <td><code>plan</code></td>
+        <td><code>content</code>、provenance metadata</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.create</code></td>
+        <td><code>createDesignQuestionnaire</code></td>
+        <td><code>plan</code></td>
+        <td><code>prompt</code>、optional source Blueprint</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.draft.save</code></td>
+        <td>extracted existing draft save command</td>
+        <td><code>plan</code></td>
+        <td>questionnaire session、answers、answer evidence</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.submit</code></td>
+        <td><code>saveDesignQuestionnaireAnswers</code></td>
+        <td><code>plan</code></td>
+        <td>session ID、answers</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.review.generate</code></td>
+        <td><code>generateDesignQuestionnaireReview</code></td>
+        <td><code>plan</code></td>
+        <td>session ID</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.review.accept</code></td>
+        <td><code>acceptDesignQuestionnaireReview</code></td>
+        <td><code>plan</code></td>
+        <td>session ID</td>
+      </tr>
+      <tr>
+        <td><code>plan.artifact.feature_plan.generate</code></td>
+        <td><code>generateFeaturePlanArtifact</code></td>
+        <td><code>plan</code></td>
+        <td>prompt、source selection、questionnaire ref</td>
+      </tr>
+      <tr>
+        <td><code>plan.artifact.blueprint.generate</code></td>
+        <td><code>generateBlueprintArtifact</code></td>
+        <td><code>plan</code></td>
+        <td>prompt、source selection</td>
+      </tr>
+      <tr>
+        <td><code>plan.artifact.data_model.generate</code></td>
+        <td><code>generateDataModelArtifact</code></td>
+        <td><code>plan</code></td>
+        <td>prompt、source selection</td>
+      </tr>
+      <tr>
+        <td><code>plan.artifact.view.generate</code></td>
+        <td><code>generatePlanViewArtifact</code></td>
+        <td><code>plan</code></td>
+        <td>target kind、prompt、source selection</td>
+      </tr>
+      <tr>
+        <td><code>plan.artifact.regenerate</code></td>
+        <td>existing Plan Artifact correction command</td>
+        <td><code>plan</code></td>
+        <td>target Artifact、defect、preserve、source revisions</td>
+      </tr>
+      <tr>
+        <td><code>task.queue.enqueue</code></td>
+        <td><code>queueTask</code></td>
+        <td><code>queue</code></td>
+        <td>current task revision</td>
+      </tr>
+      <tr>
+        <td><code>run.implementation.start</code></td>
+        <td>shared Workbench run-from-prompt command</td>
+        <td><code>implementation</code></td>
+        <td>request、model selection、source refs</td>
+      </tr>
+      <tr>
+        <td><code>review.session.start</code></td>
+        <td><code>startReviewSessionForRun</code></td>
+        <td><code>review</code></td>
+        <td>source run ID</td>
+      </tr>
+      <tr>
+        <td><code>review.run.start</code></td>
+        <td><code>startReviewRun</code></td>
+        <td><code>review</code></td>
+        <td>review session ID、options</td>
+      </tr>
+      <tr>
+        <td><code>run.stop</code></td>
+        <td><code>stopTaskRun</code></td>
+        <td>matching run scope</td>
+        <td>run ID</td>
+      </tr>
+      <tr>
+        <td><code>git.commit</code></td>
+        <td><code>commitRunGitCloseout</code></td>
+        <td><code>localCommit</code></td>
+        <td>source run ID、existing closeout input</td>
+      </tr>
+      <tr>
+        <td><code>git.push</code></td>
+        <td><code>pushRunGitCloseout</code></td>
+        <td><code>push</code></td>
+        <td>source run ID</td>
+      </tr>
+      <tr>
+        <td><code>task.complete</code></td>
+        <td><code>reviewTaskRun(..., action: &quot;complete&quot;)</code></td>
+        <td><code>taskComplete</code></td>
+        <td>source run ID、note、evidence refs</td>
+      </tr>
+      <tr>
+        <td><code>task.archive</code></td>
+        <td><code>archiveCompletedTask</code></td>
+        <td><code>taskArchive</code></td>
+        <td>existing completed Task evidence</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <code>task.delete</code>はTask完遂に不要であり、初版agent catalogへ含めない。Mission
+    Pilotに削除能力を与えることは本計画の完了条件ではない。
+  </p>
+  <h3 id="section-213-shared-coding-agent-start-command">21.3 Shared Coding Agent start command</h3>
+  <p>
+    repair Promptを確実にCoding Agentへ渡すため、<code
+      >appendWorkbenchMessage(intent: &quot;run_task&quot;)</code
+    >内部の次処理をapplication commandとして抽出する。
+  </p>
+  <pre><code class="language-ts">startWorkbenchRunFromPrompt({
+  taskId,
+  prompt,
+  source: &quot;user&quot; | &quot;mission_pilot&quot;,
+  sourceRef,
+  idempotencyKey,
+  routeOverride,
+})
+</code></pre>
+  <p>command requirements:</p>
+  <ul>
+    <li>UIの<code>run_task</code>も同じcommandを呼ぶ。</li>
+    <li>prompt messageをTaskへ保存する。</li>
+    <li>
+      <code>source: &quot;mission_pilot&quot;</code>をmetadataへ記録し、user-message wake
+      loopから除外する。
+    </li>
+    <li>idempotency keyでmessageとRunの重複作成を防ぐ。</li>
+    <li>message保存後、Run作成前にcrashした場合は再実行で同じmessageを採用する。</li>
+    <li>active equivalent Runが既にあれば新規作成せず、そのRunをresultとして返す。</li>
+    <li>public UI request/response shapeを変更しない。</li>
+  </ul>
+  <h3 id="section-214-action-validation-order">21.4 Action validation order</h3>
+  <p>全actionは次の順序で検証する。</p>
+  <ol>
+    <li>registry definition lookup。</li>
+    <li>JSON schema validation。</li>
+    <li>Mission Pilot session/task ownership。</li>
+    <li>Play authorization scope。</li>
+    <li>current Task revision。</li>
+    <li>domain precondition。</li>
+    <li>idempotency lookup。</li>
+    <li>application command execution。</li>
+    <li>persisted result verification。</li>
+    <li>tool result保存。</li>
+  </ol>
+  <p>application commandが成功したか確認できない場合は<code>completed</code>にしない。</p>
+  <h2 id="section-22-provider-and-tool-loop-algorithm">22. Provider and Tool Loop Algorithm</h2>
+  <h3 id="section-221-provider-selection">22.1 Provider selection</h3>
+  <ul>
+    <li>roleは既存<code>mission_pilot</code>を使用する。</li>
+    <li>
+      <code>buildNormalizedSupervisorLlmRequestCandidates</code>でroute candidatesを取得する。
+    </li>
+    <li>candidateごとに<code>callProviderToolTurn</code>を呼ぶ。</li>
+    <li>native tool unsupportedの場合だけ次candidateへ進む。</li>
+    <li>typed retryable provider failureは既存retry-afterと上限に従う。</li>
+    <li>authentication、permission、invalid requestを同じcandidateへ無条件retryしない。</li>
+    <li>providerが返したassistant本文とtool callsを両方保存する。</li>
+  </ul>
+  <p>
+    Codex providerにnative tool turnが未対応の場合、本実装のためにCodex
+    runtimeを改造しない。OpenAI/Azure/Bedrockまたはconfigured fallbackを使用し、全candidate
+    unsupportedならtyped attentionとする。
+  </p>
+  <h3 id="section-222-runtime-constants">22.2 Runtime constants</h3>
+  <p>初期値を一箇所にまとめる。</p>
+  <pre><code class="language-ts">export const MISSION_PILOT_AGENT_LIMITS = {
+  leaseMs: 60_000,
+  maxProviderCallsPerWake: 16,
+  maxToolCallsPerWake: 32,
+  maxProviderRetriesPerCandidate: 2,
+  softContextTokens: 80_000,
+  hardContextTokens: 120_000,
+  maxToolResultBytes: 256_000,
+} as const;
+</code></pre>
+  <p>
+    実際のconfigured model contextがこれより小さい場合はmodel capabilityのsafe
+    budgetを優先する。resource limitは固定domain
+    actionへ変換せず、conversationへfailureを保存してwaiting/attentionにする。
+  </p>
+  <h3 id="section-223-wake-pseudocode">22.3 Wake pseudocode</h3>
+  <pre><code class="language-ts">async function runMissionPilotWake(sessionId: string) {
+  const claim = await claimAgentTurn(sessionId);
+  if (!claim) return &quot;not_claimed&quot;;
+
+  const controller = registerAbortController(sessionId);
+  try {
+    await appendClaimedEventsToConversation(claim);
+
+    while (!controller.signal.aborted) {
+      await renewTurnLease(claim);
+      await compactIfNeeded(sessionId);
+
+      const messages = await loadProviderMessages(sessionId);
+      const tools = await buildToolsForCurrentAuthorization(sessionId);
+      const response = await provider.nextTurn({ messages, tools });
+
+      const persistedCalls = await persistAssistantAndToolCalls(response);
+      if (persistedCalls.length === 0) {
+        await finishTurnAsWaiting(claim);
+        return &quot;waiting&quot;;
+      }
+
+      for (const call of persistedCalls) {
+        await renewTurnLease(claim);
+        const result = await claimAndExecuteTool(call);
+        await appendToolResult(sessionId, call, result);
+
+        if (result.kind === &quot;long_running_started&quot;) {
+          await finishTurnAsWaiting(claim);
+          return &quot;waiting&quot;;
+        }
+        if (result.kind === &quot;task_completed&quot;) {
+          await finishTurnAsCompleted(claim);
+          return &quot;completed&quot;;
+        }
+      }
+    }
+
+    await finishTurnAsCancelled(claim);
+    return &quot;stopped&quot;;
+  } catch (error) {
+    const failure = normalizeFailure(error);
+    await preserveFailureAndFinishTurn(claim, failure);
+    return failure.retryable ? &quot;waiting&quot; : &quot;attention&quot;;
+  } finally {
+    unregisterAbortController(sessionId);
+  }
+}
+</code></pre>
+  <h3 id="section-224-tool-execution-ordering">22.4 Tool execution ordering</h3>
+  <ul>
+    <li>providerが複数tool callを返しても、side effect toolはprovider順に逐次実行する。</li>
+    <li>
+      read-only toolのみで依存がないことが明らかな場合でも、初版は逐次実行して監査順序を固定する。
+    </li>
+    <li>
+      一つのside effect toolがlong-running Runを開始したら、後続tool callをcancelし、terminal
+      event後にLLMへ再判断させる。
+    </li>
+    <li>Task complete/archive後の後続tool callは実行しない。</li>
+    <li>
+      tool failure後も、providerへtool resultを返して同じwake内で再判断させてよい。ただしresource
+      limitとretryable provider failure以外をhostが自動retryしない。
+    </li>
+  </ul>
+  <h3 id="section-225-system-context-requirements">22.5 System Context requirements</h3>
+  <p>System Contextは日本語で、次を含める。</p>
+  <ul>
+    <li>Mission Pilotの役割と権限上限。</li>
+    <li>Goal達成のため必要情報をread toolで取得すること。</li>
+    <li>fixed workflowを前提にしないこと。</li>
+    <li>worker transcriptは利用できず、terminal outcomeを読むこと。</li>
+    <li>error時にcurrent Factsを読み、修正、retry、別action、user questionを判断すること。</li>
+    <li>code/test/reviewの問題は必要に応じてCoding Agentへ具体的なrepair requestを送れること。</li>
+    <li>Task完了はactual actionで行うこと。</li>
+    <li>UI互換phaseを判断に使わないこと。</li>
+  </ul>
+  <p>System Contextへ個別Taskの答え、固定action sequence、error code mapを書かない。</p>
+  <h2 id="section-23-typed-event-integration">23. Typed Event Integration</h2>
+  <h3 id="section-231-event-types-and-publishers">23.1 Event types and publishers</h3>
+  <table>
+    <caption>
+      23.1 Event types and publishers
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Event</th>
+        <th scope="col">Publisher</th>
+        <th scope="col">Payload</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>mission_pilot.play_requested</code></td>
+        <td><code>mission-pilot.service.play</code></td>
+        <td>session version、reason</td>
+      </tr>
+      <tr>
+        <td><code>mission_pilot.resume_requested</code></td>
+        <td>startup/resume service</td>
+        <td>restart reason</td>
+      </tr>
+      <tr>
+        <td><code>mission_pilot.stop_requested</code></td>
+        <td><code>mission-pilot.service.stop</code></td>
+        <td>session version</td>
+      </tr>
+      <tr>
+        <td><code>task.user_message_added</code></td>
+        <td>generic Task message event adapter</td>
+        <td>message ID、Task revision。本文はconversation seed時にsourceから読む</td>
+      </tr>
+      <tr>
+        <td><code>task.state_changed</code></td>
+        <td>generic Task update event adapter</td>
+        <td>previous/current status、revision</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.ready</code></td>
+        <td>questionnaire listener</td>
+        <td>questionnaire session ID、revision</td>
+      </tr>
+      <tr>
+        <td><code>questionnaire.draft_changed</code></td>
+        <td>existing draft update path</td>
+        <td>draft ID、version、source</td>
+      </tr>
+      <tr>
+        <td><code>task_run.started</code></td>
+        <td>Run listener</td>
+        <td>run ID、execution mode</td>
+      </tr>
+      <tr>
+        <td><code>task_run.terminal</code></td>
+        <td>Run listener</td>
+        <td>run ID、terminal status。outcome本文はadapterから読む</td>
+      </tr>
+      <tr>
+        <td><code>task_action.failed</code></td>
+        <td>action adapter</td>
+        <td>tool call ID、typed failure</td>
+      </tr>
+      <tr>
+        <td><code>mission_pilot.retry_timer_elapsed</code></td>
+        <td>wake scheduler</td>
+        <td>source failure ID</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>event payloadへworker transcriptを入れない。</p>
+  <h3 id="section-232-user-message-event">23.2 User message event</h3>
+  <p>
+    generic Task message publisherをNightWorkers側へ追加する場合、Mission Pilot
+    moduleへ直接importさせない。
+  </p>
+  <pre><code class="language-ts">registerTaskMessageCreatedListener(listener)
+publishTaskMessageCreated(message)
+</code></pre>
+  <p>Mission Pilot adapterは次だけをwake対象にする。</p>
+  <ul>
+    <li><code>role === &quot;user&quot;</code>。</li>
+    <li>metadata sourceが<code>mission_pilot</code>ではない。</li>
+    <li>message IDがconversationに未投影。</li>
+    <li>agent sessionがplaying。</li>
+  </ul>
+  <p>Mission Pilot自身がCoding Agentへ送ったrepair Promptで自己wakeしない。</p>
+  <h3 id="section-233-run-event">23.3 Run event</h3>
+  <p>既存<code>registerTaskRunUpdatedListener</code>を継続使用する。</p>
+  <ul>
+    <li>legacy-owned sessionは現行<code>syncCompletedRun</code>とrecoveryへ渡す。</li>
+    <li>agent-owned sessionはterminal eventをagent inboxへ追加し、wakeをscheduleする。</li>
+    <li>agent branchではpost-Queue coordinatorを呼ばない。</li>
+    <li>started eventはactiveRun compatibility projectionに使用する。</li>
+    <li>terminal eventはrun outcome adapterのsource refだけを保存する。</li>
+  </ul>
+  <h3 id="section-234-questionnaire-event">23.4 Questionnaire event</h3>
+  <p>既存<code>registerQuestionnaireReadyListener</code>を継続使用する。</p>
+  <ul>
+    <li>legacy-owned sessionは現在の固定draft生成を維持する。</li>
+    <li>agent-owned sessionは<code>questionnaire.ready</code>をappendしてwakeする。</li>
+    <li>LLMが<code>questionnaire.draft.save</code>を呼ぶまで固定回答を保存しない。</li>
+    <li>draft保存後に既存20秒deadlineとUI projectionを開始する。</li>
+    <li>userがdraftを変更した場合はその回答を確定ユーザーFactとしてconversationへ投影する。</li>
+  </ul>
+  <h3 id="section-235-startup-recovery">23.5 Startup recovery</h3>
+  <p>startup時に次を行う。</p>
+  <ol>
+    <li>expired running turnを<code>failed</code>または<code>cancelled</code>へreconcileする。</li>
+    <li>running tool callのidempotency resultを確認する。</li>
+    <li>completed side effectのresultをtool resultへ復元する。</li>
+    <li>unconsumed eventを持つplaying agent sessionをscheduleする。</li>
+    <li>active Runを持つagent sessionは新しいRunを開始せずwaitingにする。</li>
+    <li>terminal Runなのにeventがない場合はsource IDからeventを一度だけbackfillする。</li>
+    <li>legacy recoveryは既存処理をそのまま実行する。</li>
+  </ol>
+  <h2 id="section-24-compatibility-facade-integration">24. Compatibility Facade Integration</h2>
+  <h3 id="section-241-engine-ownership">24.1 Engine ownership</h3>
+  <p>公開schemaへruntime kindを追加しない。内部判定は次の規則に固定する。</p>
+  <pre><code class="language-text">mission_pilot_agent_sessions row absent  -&gt; legacy-owned
+engine_mode = shadow                     -&gt; legacy executes, agent observes only
+engine_mode = agent                      -&gt; agent executes, legacy does not decide
+</code></pre>
+  <p>一つのsessionでlegacyとagentが同時にside effectを決める状態を禁止する。</p>
+  <h3 id="section-242-new-task-ownership">24.2 New Task ownership</h3>
+  <ul>
+    <li>C1からC9では新規Taskのdefaultをlegacyのままにする。</li>
+    <li>agent testはhelperで明示的にagent rowを作る。</li>
+    <li>C10で新規Task creation transactionへagent row作成を追加し、defaultをagentに切り替える。</li>
+    <li>既存Taskはagent rowがないためlegacyのまま完走できる。</li>
+    <li>existing session migrationは夜間実装の必須条件にしない。</li>
+    <li>shadow/agent ownershipはUI/APIへ表示しない。</li>
+  </ul>
+  <h3 id="section-243-play">24.3 Play</h3>
+  <p>public <code>play(taskId, expectedVersion)</code> signatureとresponseを維持する。</p>
+  <p>agent-owned branch:</p>
+  <ol>
+    <li>existing <code>claimPlay</code>相当でauthorization、desiredState、versionを更新する。</li>
+    <li>initial Task promptを一度だけconversationへseedする。</li>
+    <li><code>mission_pilot.play_requested</code>をappendする。</li>
+    <li>first wakeを開始する。</li>
+    <li>
+      first wakeが<code>waiting</code>、<code>attention</code>、<code>completed</code>のstable
+      boundaryへ到達するまでawaitする。
+    </li>
+    <li>
+      existing <code>missionPilot</code> summary、<code>run: null</code>、<code>messages: []</code>
+      shapeを返す。
+    </li>
+  </ol>
+  <p>
+    HTTP client disconnectでagent turnを自動停止しない。Stop actionまたはlease
+    cancellationだけを停止根拠にする。
+  </p>
+  <h3 id="section-244-stop">24.4 Stop</h3>
+  <p>agent-owned branch:</p>
+  <ol>
+    <li>existing expectedVersion CASでdesiredStateをstoppedへ更新する。</li>
+    <li>active provider AbortControllerをabortする。</li>
+    <li>pending tool callsをcancelする。ただしrunning side effectはresult reconcile対象にする。</li>
+    <li>active Task Runがあればexisting <code>stopTaskRun</code>を呼ぶ。</li>
+    <li>public response shapeを維持する。</li>
+  </ol>
+  <h3 id="section-245-phase-projection">24.5 Phase projection</h3>
+  <p>compatibility projectionは次の情報だけを使用する。</p>
+  <ul>
+    <li>agent action ID。</li>
+    <li>tool call status。</li>
+    <li>Task Run started/terminal typed event。</li>
+    <li>questionnaire draft state。</li>
+    <li>Task status。</li>
+  </ul>
+  <p>Task本文、LLM本文、error本文を読まない。</p>
+  <p>normal-path projection example:</p>
+  <table>
+    <caption>
+      24.5 Phase projection
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Observed action/event</th>
+        <th scope="col">Existing phase projection</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Play claim</td>
+        <td><code>starting</code></td>
+      </tr>
+      <tr>
+        <td>Questionnaire ready/draft</td>
+        <td><code>waiting_intervention</code>または既存intake phase</td>
+      </tr>
+      <tr>
+        <td>Plan Artifact action</td>
+        <td><code>generating_artifacts</code></td>
+      </tr>
+      <tr>
+        <td>Queue action completed</td>
+        <td><code>queued</code></td>
+      </tr>
+      <tr>
+        <td>Implementation Run started</td>
+        <td><code>implementing</code></td>
+      </tr>
+      <tr>
+        <td>Test Run started</td>
+        <td><code>testing</code></td>
+      </tr>
+      <tr>
+        <td>Review Run started</td>
+        <td><code>reviewing</code></td>
+      </tr>
+      <tr>
+        <td>commit action running</td>
+        <td><code>committing</code></td>
+      </tr>
+      <tr>
+        <td>Task complete action</td>
+        <td><code>completed</code></td>
+      </tr>
+      <tr>
+        <td>archive action</td>
+        <td><code>archived</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    このtableはpresentation projectionであり、逆方向の<code>phase -&gt; action</code
+    >変換を実装しない。
+  </p>
+  <h3 id="section-246-execution-trace">24.6 Execution trace</h3>
+  <p>既存<code>pilot_thought</code> channelへ次をappendする。</p>
+  <ul>
+    <li>assistant message。</li>
+    <li>read/action tool開始と完了のbounded summary。</li>
+    <li>repair Prompt summaryとsource refs。</li>
+    <li>waiting reason。</li>
+    <li>runtime failure。</li>
+  </ul>
+  <p>
+    worker chat、tool log、command outputをPilot Thoughtへcopyしない。既存trace separation
+    E2Eを維持する。
+  </p>
+  <h2 id="section-25-coding-agent-repair-implementation">25. Coding Agent Repair Implementation</h2>
+  <h3 id="section-251-repair-request-construction">25.1 Repair request construction</h3>
+  <p>repair requestはhostがerror種別から自動生成しない。LLMがtool argumentsとして構造化する。</p>
+  <p><code>run.implementation.start</code>は通常requestとrepair requestの両方を受ける。</p>
+  <pre><code class="language-ts">type RunImplementationStartInput = {
+  request: string;
+  sourceRefs: Array&lt;{ kind: string; id: string; digest?: string }&gt;;
+  repair?: MissionPilotRepairRequest | null;
+  providerEndpointId?: string | null;
+  model?: string | null;
+  thinkingDepth?: string | null;
+};
+</code></pre>
+  <p>
+    hostはschema、Task ownership、source
+    ref存在、revisionだけを検証する。<code>observedProblem</code>本文の意味を再分類しない。
+  </p>
+  <h3 id="section-252-prompt-rendering">25.2 Prompt rendering</h3>
+  <p>Coding Agentへ渡すPromptは次の順序でrenderする。</p>
+  <pre><code class="language-text">[Mission Pilot Repair Request]
+
+## Goal
+...
+
+## Observed Problem
+...
+
+## Current Canonical References
+- kind / id / revision / digest
+
+## Requested Outcome
+...
+
+## Preserve
+- ...
+
+## Verification
+- ...
+
+## Prior Attempts
+- run refs only
+</code></pre>
+  <p>
+    Mission Pilotの推測とworker本文を区別する。worker final
+    reportまたはblockerは引用用fieldとして保持し、host diagnosticに置き換えない。
+  </p>
+  <h3 id="section-253-repair-completion">25.3 Repair completion</h3>
+  <p>repair Run terminal event後は自動的にTestやReviewを開始しない。</p>
+  <ol>
+    <li><code>read_run_outcome</code>をLLMへ提示する。</li>
+    <li>current Task workspaceを再取得可能にする。</li>
+    <li>LLMが追加read、別repair、Test、Review、completeを選ぶ。</li>
+    <li>previous repair requestとnew requestをconversationに残す。</li>
+    <li>
+      same source revision + same request digestの再送はtool-level idempotencyで同じresultを返す。
+    </li>
+    <li>異なる修正を行う場合はnew requestとnew idempotency keyを必要とする。</li>
+  </ol>
+  <h3 id="section-254-non-code-failures">25.4 Non-code failures</h3>
+  <p>次は例示であり、host分岐ではない。System ContextでLLMへ判断材料として説明する。</p>
+  <ul>
+    <li>transport/rate limit/provider capacity: retryable metadataを見る。</li>
+    <li>authentication/permission:同じactionを無条件retryしない。</li>
+    <li>revision conflict:current Factsを読み直す。</li>
+    <li>missing user preference:既存Task messageで質問する。</li>
+    <li>code/test/review defect:Coding Agent repairを検討する。</li>
+    <li>unavailable action:available actionを読み直す。</li>
+  </ul>
+  <h2 id="section-26-checkpoint-implementation-matrix">26. Checkpoint Implementation Matrix</h2>
+  <h3 id="c0-baseline-evidence">C0: Baseline evidence</h3>
+  <p>Change:</p>
+  <ul>
+    <li>production code変更なし。</li>
+    <li>baseline commandsと結果をimplementation logへ記録する。</li>
+    <li>UI/API contract architecture testを必要に応じて追加する。</li>
+  </ul>
+  <p>Gate:</p>
+  <ul>
+    <li>existing Mission Pilot unit test green。</li>
+    <li>typecheck green。</li>
+    <li>current E2E source assertionsを変更しない。</li>
+  </ul>
+  <h3 id="c1-add-internal-persistence">C1: Add internal persistence</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>agent DB schema/bootstrap。</li>
+    <li>repositoriesのCRUD/CAS unit test。</li>
+    <li>DB client/bootstrap registration。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>Mission Pilot serviceへ接続しない。</li>
+    <li>agent rowを既存/new Taskへ自動作成しない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>schema bootstrap twice。</li>
+    <li>conversation sequence concurrency。</li>
+    <li>event dedupe。</li>
+    <li>tool idempotency conflict。</li>
+    <li>turn lease single owner。</li>
+  </ul>
+  <h3 id="c2-add-read-model-and-run-outcome">C2: Add read model and Run outcome</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>read model、read adapter、Run outcome adapter。</li>
+    <li>no-transcript architecture test。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>providerを呼ばない。</li>
+    <li>Task/Runをmutationしない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>current Artifact selection。</li>
+    <li>terminal outcome本文保持。</li>
+    <li><code>logContent</code>、raw tool events、command output不在。</li>
+    <li>another TaskのArtifact/Run拒否。</li>
+  </ul>
+  <h3 id="c3-add-task-action-registry">C3: Add Task Action Registry</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>registry、schema validation、action adapter。</li>
+    <li>shared Workbench run-from-prompt command。</li>
+    <li>existing UI pathをshared commandへ接続するがresponseを変えない。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>Mission Pilot runtimeからactionを呼ばない。</li>
+    <li>direct DB mutation handlerを追加しない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>action/tool schema生成。</li>
+    <li>authorization scope rejection。</li>
+    <li>stale revision。</li>
+    <li>idempotent Run start。</li>
+    <li>UI <code>run_task</code> regression。</li>
+  </ul>
+  <h3 id="c4-add-persistent-providertool-runtime">C4: Add persistent provider/tool runtime</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>provider adapter、System Context、runtime、compaction。</li>
+    <li>fixture providerを使うruntime unit test。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>production Playへ接続しない。</li>
+    <li>actual Task side effectをfixture test以外で実行しない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>read -&gt; action -&gt; tool result loop。</li>
+    <li>assistant text-only waiting。</li>
+    <li>provider unsupported candidate fallback。</li>
+    <li>retryable provider failure上限。</li>
+    <li>Stop abort。</li>
+    <li>context compaction/resume。</li>
+  </ul>
+  <h3 id="c5-add-typed-events-and-wake-service">C5: Add typed events and wake service</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>task message generic listener。</li>
+    <li>Run/questionnaire event adapter。</li>
+    <li>wake scheduler、startup reconciliation。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>legacy-owned sessionのevent処理を変更しない。</li>
+    <li>agent defaultを有効化しない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>user message wake once。</li>
+    <li>Mission Pilot self-message no wake。</li>
+    <li>terminal Run event once。</li>
+    <li>active Run waits without polling。</li>
+    <li>restart recovers expired turn/tool call。</li>
+  </ul>
+  <h3 id="c6-add-llm-questionnaire-draft">C6: Add LLM Questionnaire draft</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>agent draft adapter。</li>
+    <li>current questionnaire serviceにagent-owned event branch。</li>
+    <li>existing deadline/submit path再利用。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>legacy fixed draft helperを削除しない。</li>
+    <li>UIを変更しない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>LLM answer保存。</li>
+    <li>user edit evidence優先。</li>
+    <li>deadline submit。</li>
+    <li>provider failure時にfixed answerをsubmitしない。</li>
+    <li>current questionnaire tests green。</li>
+  </ul>
+  <h3 id="c7-add-coding-agent-repair-loop">C7: Add Coding Agent repair loop</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>repair schema/renderer。</li>
+    <li>implementation action integration。</li>
+    <li>terminal outcome re-evaluation fixture。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>failure -&gt; repair Prompt -&gt; new Run。</li>
+    <li>Prompt source refs/digest。</li>
+    <li>preserve/verification保持。</li>
+    <li>same request idempotency。</li>
+    <li>repair Run後にhostがTestを自動開始しない。</li>
+  </ul>
+  <h3 id="c8-connect-compatibility-facade">C8: Connect compatibility facade</h3>
+  <p>Add/modify:</p>
+  <ul>
+    <li>agent-owned Play/Stop branch。</li>
+    <li>compatibility phase projection。</li>
+    <li>trace projection。</li>
+    <li>startup service integration。</li>
+  </ul>
+  <p>Do not:</p>
+  <ul>
+    <li>public schema/route/UIを変更しない。</li>
+    <li>new Task defaultをagentにしない。</li>
+  </ul>
+  <p>Target tests:</p>
+  <ul>
+    <li>internal agent-owned session Play/Stop。</li>
+    <li>public response exact match。</li>
+    <li>existing Control Summary fields only。</li>
+    <li>normal-path phase projection。</li>
+    <li>legacy session unchanged。</li>
+  </ul>
+  <h3 id="c9-agent-e2e-and-parity">C9: Agent E2E and parity</h3>
+  <p>Add:</p>
+  <ul>
+    <li>deterministic agent normal-path E2E。</li>
+    <li>Coding repair E2E。</li>
+    <li>restart/idempotency integration test。</li>
+    <li>optional Test/Review scenario。</li>
+    <li>UI no-change assertion。</li>
+  </ul>
+  <p>Gate:</p>
+  <ul>
+    <li>all existing Mission Pilot unit/E2E green。</li>
+    <li>all new agent unit/E2E green。</li>
+    <li>typecheck、architecture、docs checks green。</li>
+  </ul>
+  <h3 id="c10-cut-over-new-sessions">C10: Cut over new sessions</h3>
+  <p>Change:</p>
+  <ul>
+    <li>new Task creation transactionでagent session rowを作る。</li>
+    <li>default <code>engineMode = &quot;agent&quot;</code>。</li>
+    <li>existing session row absenceはlegacyのまま。</li>
+    <li>test helperでlegacy/agent ownershipを明示できるようにする。</li>
+  </ul>
+  <p>Gate:</p>
+  <ul>
+    <li>existing Task continues legacy。</li>
+    <li>new Task uses agent internally。</li>
+    <li>public API/UIから差を観測できない。</li>
+    <li>agent normal-path and repair E2E green。</li>
+    <li>current legacy E2E green。</li>
+  </ul>
+  <p>C10後もlegacy files/tablesをdropしない。</p>
+  <h2 id="section-27-verification-commands">27. Verification Commands</h2>
+  <h3 id="section-271-fast-gate-after-every-checkpoint">27.1 Fast gate after every Checkpoint</h3>
+  <pre><code class="language-bash">git diff --check
+bunx vitest run tests/mission-pilot-*.test.ts
+bun run typecheck
+</code></pre>
+  <p>既存baselineの21 files / 123 testsは少なくとも維持する。new test追加後は総数が増える。</p>
+  <h3 id="section-272-architecture-gate-after-c2-and-later">
+    27.2 Architecture gate after C2 and later
+  </h3>
+  <pre><code class="language-bash">bun run check:architecture
+bun run check:docs
+</code></pre>
+  <p>Biomeは変更fileに限定して実行してよい。</p>
+  <pre><code class="language-bash">bunx biome check api/modules/missionPilot/agent api/db/mission-pilot-agent-schema.ts api/db/mission-pilot-agent-schema-bootstrap.ts
+</code></pre>
+  <h3 id="section-273-existing-mission-pilot-e2e-gate">27.3 Existing Mission Pilot E2E gate</h3>
+  <pre><code class="language-bash">bun run test:e2e \
+  tests/e2e/mission-pilot-entry.spec.ts \
+  tests/e2e/mission-pilot-pre-queue-handoff.spec.ts \
+  tests/e2e/mission-pilot-through-archive.spec.ts \
+  tests/e2e/mission-pilot-trace-separation.spec.ts
+</code></pre>
+  <p>
+    実行環境都合でE2E server起動に失敗した場合は、test failureとenvironment
+    failureを区別して記録する。assertion failureをenvironment failure扱いしない。
+  </p>
+  <h3 id="section-274-provider-regression-gate-after-c4">27.4 Provider regression gate after C4</h3>
+  <pre><code class="language-bash">bun run test:supervisor-regression
+bunx vitest run tests/structured-llm/services-structured-llm-02.test.ts
+</code></pre>
+  <p>Mission Pilot implementationのためにprovider regression expectationを変更しない。</p>
+  <h3 id="section-275-final-gate">27.5 Final gate</h3>
+  <pre><code class="language-bash">bun run verify:fast
+bun run typecheck
+bun run check:architecture
+bun run check:docs
+bun run test:e2e \
+  tests/e2e/mission-pilot-entry.spec.ts \
+  tests/e2e/mission-pilot-pre-queue-handoff.spec.ts \
+  tests/e2e/mission-pilot-through-archive.spec.ts \
+  tests/e2e/mission-pilot-trace-separation.spec.ts \
+  tests/e2e/mission-pilot-agent-autopilot.spec.ts \
+  tests/e2e/mission-pilot-agent-repair.spec.ts
+</code></pre>
+  <p>
+    <code>verify:fast</code>がrepository-wide unrelated failureを含む場合も、Mission Pilot targeted
+    gateは別に報告する。
+  </p>
+  <h2 id="section-28-test-file-plan">28. Test File Plan</h2>
+  <p>追加test fileは責務単位に分ける。</p>
+  <pre><code class="language-text">tests/mission-pilot-agent-schema.test.ts
+tests/mission-pilot-agent-session-repository.test.ts
+tests/mission-pilot-conversation-repository.test.ts
+tests/mission-pilot-task-event-inbox.test.ts
+tests/mission-pilot-task-read-model.test.ts
+tests/mission-pilot-run-outcome-adapter.test.ts
+tests/mission-pilot-no-transcript-boundary.test.ts
+tests/mission-pilot-task-action-registry.test.ts
+tests/mission-pilot-agent-runtime.test.ts
+tests/mission-pilot-agent-wake.test.ts
+tests/mission-pilot-agent-questionnaire.test.ts
+tests/mission-pilot-agent-repair.test.ts
+tests/mission-pilot-agent-compatibility.test.ts
+tests/mission-pilot-semantic-control-architecture.test.ts
+
+tests/e2e/mission-pilot-agent-autopilot.spec.ts
+tests/e2e/mission-pilot-agent-repair.spec.ts
+</code></pre>
+  <h3 id="section-281-semantic-control-architecture-assertions">
+    28.1 Semantic-control architecture assertions
+  </h3>
+  <p>new agent directory全体に対して次のimport/identifierを禁止する。</p>
+  <ul>
+    <li><code>MissionPilotPostQueuePhase</code></li>
+    <li><code>evaluateImplementationCompletionGate</code></li>
+    <li><code>evaluateTestCompletionGate</code></li>
+    <li><code>evaluateReviewCompletionGate</code></li>
+    <li><code>MISSION_PILOT_CORRECTION_LIMITS</code></li>
+    <li><code>missionPilotPhaseRuns</code></li>
+    <li><code>missionPilotReviewDecisions</code></li>
+    <li><code>missionPilotCloseouts</code></li>
+    <li><code>start_test</code></li>
+    <li><code>start_review</code></li>
+    <li><code>run_closeout</code></li>
+  </ul>
+  <p>
+    compatibility projection fileだけはexisting phase stringを使用できる。projection
+    fileからruntime/action adapterへのimportを禁止し、runtimeからprojection resultをnext
+    actionへ戻せない依存方向にする。
+  </p>
+  <h3 id="section-282-no-transcript-assertions">28.2 No-transcript assertions</h3>
+  <p>new agent directoryから次への依存を禁止する。</p>
+  <ul>
+    <li><code>listTaskRunEvents</code></li>
+    <li><code>listTaskRunActivityEvents</code></li>
+    <li><code>logContent</code></li>
+    <li>worker assistant/tool message query。</li>
+    <li>command output stream。</li>
+  </ul>
+  <p>
+    <code>getTaskRun</code>を使うadapterでは、返却objectから許可fieldを明示pickする。spreadでRun
+    row全体を返さない。
+  </p>
+  <h3 id="section-283-ui-compatibility-assertions">28.3 UI compatibility assertions</h3>
+  <ul>
+    <li><code>MissionPilotControlPanel.tsx</code>にagent runtime importがない。</li>
+    <li>public Control Summaryに<code>engineMode</code>、<code>runtimeState</code>がない。</li>
+    <li>composer controlはbuttonのまま。</li>
+    <li><code>確認が必要です</code>等の新status labelを追加しない。</li>
+    <li>Play/Stop aria-labelと既存iconを維持する。</li>
+  </ul>
+  <h2 id="section-29-rollback-plan">29. Rollback Plan</h2>
+  <h3 id="section-291-primary-rollback-switch">29.1 Primary rollback switch</h3>
+  <p>
+    agent session rowがないsessionはlegacy-ownedである。この性質をprimary rollback boundaryとする。
+  </p>
+  <ul>
+    <li>C1-C9ではdefault agent rowを作らないため、production behaviorは変わらない。</li>
+    <li>C10のnew Task ownership作成をrevertすれば、新規Taskもlegacyへ戻る。</li>
+    <li>
+      既にagent rowを持つTaskは、active turn/tool
+      callをreconcileしてからrowの<code>engineMode</code>を<code>shadow</code>へ変更するか、safe
+      boundaryでrowを削除する。
+    </li>
+    <li>running side effectがある間にownershipを切り替えない。</li>
+  </ul>
+  <h3 id="section-292-commit-rollback-order">29.2 Commit rollback order</h3>
+  <p>rollbackは逆順に行う。</p>
+  <pre><code class="language-text">C10 ownership cutover
+C9 agent E2E only
+C8 compatibility facade
+C7 repair loop
+C6 questionnaire agent branch
+C5 typed event integration
+C4 provider/runtime
+C3 action registry
+C2 read model
+C1 additive schema
+</code></pre>
+  <p>
+    C1 schema tableはcode rollback時にdropしなくてよい。未参照additive
+    tableとして残し、別migrationで削除する。data lossを避けるため、夜間rollbackで<code
+      >DROP TABLE</code
+    >を実行しない。
+  </p>
+  <h3 id="section-293-failed-side-effect-rollback">29.3 Failed side effect rollback</h3>
+  <p>
+    Git commit、archive、Run start等の成立済みdomain actionは、runtime code
+    rollbackを理由に自動的に巻き戻さない。
+  </p>
+  <ul>
+    <li>persisted application command resultを正本とする。</li>
+    <li>
+      in-flight tool
+      callを<code>completed</code>、<code>failed</code>、<code>unknown</code>へreconcileする。
+    </li>
+    <li><code>unknown</code>のまま同じside effectを再実行しない。</li>
+    <li>current Task/Run/repository stateをユーザーへ報告する。</li>
+    <li>Git destructive recoveryを自動実行しない。</li>
+  </ul>
+  <h3 id="section-294-revert-friendly-design-rules">29.4 Revert-friendly design rules</h3>
+  <ul>
+    <li>Checkpointごとにcommitを分ける。</li>
+    <li>schemaはadditiveにする。</li>
+    <li>UI/public schema変更を含めない。</li>
+    <li>existing legacy runtimeをC10後も残す。</li>
+    <li>agent ownershipをinternal rowだけで切り替える。</li>
+    <li>common provider behaviorを変更しない。</li>
+  </ul>
+  <h2 id="section-30-luna-execution-ledger">30. Luna Execution Ledger</h2>
+  <p>Lunaは各Checkpoint完了時に、このtableを更新してよい。commit hashと実行したgateを記録する。</p>
+  <table>
+    <caption>
+      30. Luna Execution Ledger
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">Status</th>
+        <th scope="col">Commit</th>
+        <th scope="col">Targeted tests</th>
+        <th scope="col">Existing MP tests</th>
+        <th scope="col">Typecheck</th>
+        <th scope="col">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>C0 Baseline</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C1 Persistence</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C2 Read model</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C3 Action registry</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C4 Tool runtime</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C5 Typed events</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C6 Questionnaire</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C7 Repair loop</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C8 Compatibility</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C9 E2E parity</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>C10 Cutover</td>
+        <td>pending</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <code>Status</code
+    >は<code>pending</code>、<code>in_progress</code>、<code>passed</code>、<code>blocked</code>のいずれかとする。<code>passed</code>はcommitとgate結果が揃った場合だけ使用する。
+  </p>
+  <h2 id="section-31-locked-implementation-decisions">31. Locked Implementation Decisions</h2>
+  <p>夜間実装中に再判断して設計を広げないため、次を固定する。</p>
+  <ol>
+    <li>UIは変更しない。</li>
+    <li>public Mission Pilot schemaとrouteは変更しない。</li>
+    <li>agent persistenceは別tableに追加する。</li>
+    <li>agent row absenceをlegacy ownershipとする。</li>
+    <li>new Task default cutoverは最後のC10で行う。</li>
+    <li>existing sessionの一括migrationは行わない。</li>
+    <li>providerはexisting native tool turn境界を使う。</li>
+    <li>Codex provider tool対応を本作業へ含めない。</li>
+    <li>worker transcriptをMission Pilotへ渡さない。</li>
+    <li>read adapterは許可fieldをexplicit pickする。</li>
+    <li>action adapterはexisting application commandを呼び、Task/Run DBを直接mutationしない。</li>
+    <li>Coding Agent repair PromptはLLMが作る。</li>
+    <li>hostはrepair要否をerror keywordで決めない。</li>
+    <li>phaseはcompatibility projectionだけに使う。</li>
+    <li>normal-pathはdeterministic provider fixtureで再現する。</li>
+    <li>existing testsを維持し、新agent testsを追加する。</li>
+    <li>legacy codeのphysical deletionは夜間実装へ含めない。</li>
+    <li>rollbackで成立済みdomain side effectを巻き戻さない。</li>
+  </ol>
+  <p>
+    以上を変更する必要が生じた場合、Lunaは独断で変更せず、該当Checkpointを<code>blocked</code>として理由と代替案を記録する。
+  </p>
+</article>

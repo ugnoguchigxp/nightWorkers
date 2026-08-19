@@ -1,0 +1,698 @@
+<article lang="ja">
+  <h1 id="mission-pilot-user-equivalent-recovery-change-ledger">
+    Mission Pilot User-Equivalent Recovery Change Ledger
+  </h1>
+  <h2 id="baseline">Baseline</h2>
+  <ul>
+    <li>Recorded at: <code>2026-07-29 22:54 JST</code></li>
+    <li>HEAD: <code>b7b1621a feat: enforce workspace authority and secret boundaries</code></li>
+    <li>Working tree at M0 start: clean</li>
+    <li>
+      Coding Agent tree digest:
+      <ul>
+        <li><code>b746ed831f5ff1a96988c2da33d1b0d2a5b26b1f88e7f3732f1c39108a9f114f</code></li>
+        <li>
+          Source:
+          <code
+            >git ls-tree -r HEAD api/modules/codingAgent src/modules/codingAgent
+            shared/modules/codingAgent | shasum -a 256</code
+          >
+        </li>
+      </ul>
+    </li>
+    <li>
+      Implementation plan:
+      <ul>
+        <li>
+          <code>spec/docs/mission-pilot-user-equivalent-recovery-implementation-plan.html</code>
+        </li>
+      </ul>
+    </li>
+  </ul>
+  <h2 id="baseline-verification">Baseline Verification</h2>
+  <table>
+    <caption>
+      Baseline Verification
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Command</th>
+        <th scope="col">Result</th>
+        <th scope="col">Evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>bun run check:architecture</code></td>
+        <td>passed</td>
+        <td>
+          1,346 files checked; module、SystemContext、Coding Agent
+          semantic-control、standalone、Task Operator boundaries passed
+        </td>
+      </tr>
+      <tr>
+        <td><code>bun run typecheck</code></td>
+        <td>passed</td>
+        <td>native TypeScript check exited 0</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot focused regression, 33 files / 186 tests</td>
+        <td>failed</td>
+        <td>31 files passed、2 files failed、183 tests passed、3 failed</td>
+      </tr>
+      <tr>
+        <td><code>tests/mission-pilot-agent-runtime.test.ts</code> standalone</td>
+        <td>failed</td>
+        <td>
+          Task update action did not change title; expected
+          <code>updated by persistent agent</code>, received <code>agent runtime</code>
+        </td>
+      </tr>
+      <tr>
+        <td><code>tests/mission-pilot-agent-action-idempotency.test.ts</code></td>
+        <td>failed</td>
+        <td>
+          one expected domain precondition became revision conflict; one message mutation returned
+          failure
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Baseline failures are pre-existing at M0 and are not accepted as final-state exceptions. They
+    must be resolved by the canonical action / revision work before M2 is marked passed.
+  </p>
+  <h2 id="production-activation-graph">Production Activation Graph</h2>
+  <pre><code class="language-text">POST /mission-pilot/tasks/:taskId/play
+  -&gt; api/modules/missionPilot/mission-pilot.routes.ts
+  -&gt; api/modules/missionPilot/mission-pilot.service.ts::play
+  -&gt; claimAgentPlay
+  -&gt; scheduleMissionPilotAgentWake
+  -&gt; mission-pilot-agent-runtime.ts
+  -&gt; mission-pilot-task-read.adapter.ts
+  -&gt; mission-pilot-task-action.adapter.ts
+  -&gt; mission-pilot-action-command-executor.ts
+  -&gt; Task Operator public command
+</code></pre>
+  <p>
+    Mission Pilot does not directly import the Coding Agent module in this path. The remaining
+    indirect dependencies are recorded below.
+  </p>
+  <h2 id="baseline-violations">Baseline Violations</h2>
+  <table>
+    <caption>
+      Baseline Violations
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Current path</th>
+        <th scope="col">Violation</th>
+        <th scope="col">Target checkpoint</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>V1</td>
+        <td><code>api/modules/missionPilot/agent/mission-pilot-task-action.registry.ts</code></td>
+        <td>Mission Pilot duplicates 38 action contracts</td>
+        <td>M2</td>
+      </tr>
+      <tr>
+        <td>V2</td>
+        <td><code>api/modules/taskOperator/policies/task-operator-command-catalog.ts</code></td>
+        <td>Task Operator has 37 IDs; <code>plan.artifact.regenerate</code> is absent</td>
+        <td>M2</td>
+      </tr>
+      <tr>
+        <td>V3</td>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-task-action-unavailable.ts</code>
+        </td>
+        <td>Questionnaire submit comment and empty unavailable map conflict</td>
+        <td>M2</td>
+      </tr>
+      <tr>
+        <td>V4</td>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-action-execution.repository.ts</code>
+        </td>
+        <td>scans Run / Queue tables and parses <code>coding_agent.requested</code></td>
+        <td>M4</td>
+      </tr>
+      <tr>
+        <td>V5</td>
+        <td><code>api/modules/missionPilot/agent/mission-pilot-run-outcome.adapter.ts</code></td>
+        <td>reads Run、commit、action tables directly</td>
+        <td>M4</td>
+      </tr>
+      <tr>
+        <td>V6</td>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-conversation-query.repository.ts</code>
+        </td>
+        <td>reads active Run / Queue tables to derive phase</td>
+        <td>M4 / M5</td>
+      </tr>
+      <tr>
+        <td>V7</td>
+        <td><code>api/modules/missionPilot/mission-pilot.service.ts</code></td>
+        <td>Run listener has unreachable terminal branches</td>
+        <td>M5</td>
+      </tr>
+      <tr>
+        <td>V8</td>
+        <td>
+          <code>api/modules/missionPilot/agent/mission-pilot-conversation-query.repository.ts</code>
+        </td>
+        <td>turn finish does not consistently version and publish Control Summary</td>
+        <td>M5</td>
+      </tr>
+      <tr>
+        <td>V9</td>
+        <td><code>api/modules/queue/queue-repository-command.types.ts</code></td>
+        <td>Queue imports Mission Pilot provenance type</td>
+        <td>M4</td>
+      </tr>
+      <tr>
+        <td>V10</td>
+        <td><code>api/modules/taskOperator/application/task-operator.command.ts</code></td>
+        <td>
+          Task Operator emits <code>missionPilotAction</code> /
+          <code>missionPilotActionKey</code> metadata
+        </td>
+        <td>M4</td>
+      </tr>
+      <tr>
+        <td>V11</td>
+        <td><code>api/modules/missionPilot/mission-pilot-plan-intake.service.ts</code></td>
+        <td>dynamically imports legacy plan coordinator</td>
+        <td>M6</td>
+      </tr>
+      <tr>
+        <td>V12</td>
+        <td><code>tests/live/mission-pilot-plan-pipeline-live.test.ts</code></td>
+        <td>live test calls legacy coordinator and authorization V2</td>
+        <td>M6 / M7</td>
+      </tr>
+      <tr>
+        <td>V13</td>
+        <td>Mission Pilot Task Operator contexts</td>
+        <td>use synthetic automation identity without structural user delegation</td>
+        <td>M3</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="resolution-summary">Resolution Summary</h2>
+  <table>
+    <caption>
+      Resolution Summary
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Resolution</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>V1 / V2</td>
+        <td>
+          Task Operatorのcanonical action registryを正本にし、Mission Pilot
+          registryはそこから導出するよう変更した。
+        </td>
+      </tr>
+      <tr>
+        <td>V3</td>
+        <td>
+          <code>questionnaire.submit</code>をMission Pilot unavailable actionとして固定し、draft /
+          intervention pathへ統一した。
+        </td>
+      </tr>
+      <tr>
+        <td>V4 / V5 / V6</td>
+        <td>
+          Mission PilotのRun / Queue正本scan、Coding Agent event本文parse、直接outcome
+          queryを削除し、Task Operator receipt / resourceへ統一した。
+        </td>
+      </tr>
+      <tr>
+        <td>V7 / V8</td>
+        <td>
+          lifecycle listener、Control Summary version、transaction後realtime
+          publishを一つのpersistent runtime経路へ整理した。
+        </td>
+      </tr>
+      <tr>
+        <td>V9 / V10</td>
+        <td>
+          Queue / Task OperatorからMission Pilot固有provenance fieldを除去し、role非依存command
+          context / receiptへ置換した。
+        </td>
+      </tr>
+      <tr>
+        <td>V11 / V12</td>
+        <td>
+          旧coordinatorと旧live testを削除し、公開Playとpersistent runtimeを通すlive
+          canaryへ置換した。
+        </td>
+      </tr>
+      <tr>
+        <td>V13</td>
+        <td>
+          authorization V4へsubject user、delegation ref、capability
+          digestを保存し、各commandでcurrent user capabilityとの積集合を検証するよう変更した。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="additional-findings-resolved-during-e2e">Additional Findings Resolved During E2E</h2>
+  <table>
+    <caption>
+      Additional Findings Resolved During E2E
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Finding</th>
+        <th scope="col">Resolution</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>E1</td>
+        <td>
+          provider tool fixtureの<code>implementation</code> scopeが未登録の場合、Mission
+          Pilot用<code>default</code> scopeへfallbackしていた
+        </td>
+        <td>scopeを完全一致にし、異なるroleのfixture turnを消費しないcontract testを追加</td>
+      </tr>
+      <tr>
+        <td>E2</td>
+        <td>
+          Bun <code>bun:sqlite</code>の同期readとlibSQLの非同期writeが同一DBで競合し、Mission Pilot
+          action receipt書込みがlockした
+        </td>
+        <td>sync SQLite adapterをlibSQLへ統一</td>
+      </tr>
+      <tr>
+        <td>E3</td>
+        <td>Questionnaire draft取得直後のcanonical refreshが、未確定の回答案を空へ戻した</td>
+        <td>
+          Mission Pilot frontend projectionをrole moduleへ置き、draft refをstate更新と同時に更新
+        </td>
+      </tr>
+      <tr>
+        <td>E4</td>
+        <td>Task Goal表示が内部activation JSONへ依存していた</td>
+        <td>canonical Task objectiveのread-only projectionへ変更</td>
+      </tr>
+      <tr>
+        <td>E5</td>
+        <td>Mission Pilot thought read modelからactivity eventが欠落した</td>
+        <td>
+          Agent非依存Task activity queryを追加し、Mission Pilot側でowner / channelを限定して投影
+        </td>
+      </tr>
+      <tr>
+        <td>E6</td>
+        <td>
+          共通worker / Nightworkers consumerのCoding Agent public index静的importがruntime
+          indexを循環初期化した
+        </td>
+        <td>Coding Agent側を変更せず、consumer側のpublic API利用を必要時の遅延loadへ変更</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="legacy-runtime-consumers">Legacy Runtime Consumers</h2>
+  <p><code>runMissionPilotPlanPipeline</code> has the following direct consumers at M0:</p>
+  <ul>
+    <li><code>api/modules/missionPilot/mission-pilot-plan-intake.service.ts</code></li>
+    <li><code>tests/live/mission-pilot-plan-pipeline-live.test.ts</code></li>
+    <li>self-retry inside <code>mission-pilot-plan-coordinator.service.ts</code></li>
+  </ul>
+  <p>
+    The persistent runtime production entrypoints do not import the legacy coordinator directly. The
+    dynamic import in plan intake remains a production-reachable risk until M6.
+  </p>
+  <h2 id="change-ownership">Change Ownership</h2>
+  <table>
+    <caption>
+      Change Ownership
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Path family</th>
+        <th scope="col">Ownership in this implementation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/modules/missionPilot/**</code></td>
+        <td>task-owned</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/taskOperator/**</code></td>
+        <td>task-owned only for role-neutral Task Operator contract</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/queue/**</code></td>
+        <td>task-owned only for removal of Mission Pilot-specific coupling</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/agentsShare/**</code></td>
+        <td>task-owned only for role-neutral event / receipt contracts</td>
+      </tr>
+      <tr>
+        <td><code>shared/modules/missionPilot/**</code></td>
+        <td>task-owned for Mission Pilot delegation / public schema</td>
+      </tr>
+      <tr>
+        <td><code>shared/modules/taskOperator/**</code></td>
+        <td>task-owned for role-neutral Task Operator schema</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/**</code></td>
+        <td>read-only; never modify</td>
+      </tr>
+      <tr>
+        <td><code>src/modules/codingAgent/**</code></td>
+        <td>read-only; never modify</td>
+      </tr>
+      <tr>
+        <td><code>shared/modules/codingAgent/**</code></td>
+        <td>read-only; never modify</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="checkpoint-ledger">Checkpoint Ledger</h2>
+  <table>
+    <caption>
+      Checkpoint Ledger
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Checkpoint</th>
+        <th scope="col">Status</th>
+        <th scope="col">Verification</th>
+        <th scope="col">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>M0 Baseline / ledger</td>
+        <td>passed</td>
+        <td>baseline commands above</td>
+        <td>Existing three test failures recorded; Coding Agent digest fixed</td>
+      </tr>
+      <tr>
+        <td>M1 Boundary guardrails</td>
+        <td>passed</td>
+        <td><code>check:architecture</code>、user-equivalent boundary</td>
+        <td>role import、canonical table read、forbidden toolを検査</td>
+      </tr>
+      <tr>
+        <td>M2 Canonical action contract</td>
+        <td>passed</td>
+        <td>action catalog / Task Operator / fixture catalog tests</td>
+        <td>baseline 3 failuresも解消</td>
+      </tr>
+      <tr>
+        <td>M3 Delegated user authorization</td>
+        <td>passed</td>
+        <td>delegated authorization tests、live permission revoke</td>
+        <td>authorization V4</td>
+      </tr>
+      <tr>
+        <td>M4 Run receipt / outcome boundary</td>
+        <td>passed</td>
+        <td>Task Operator contract / regressions、repair E2E</td>
+        <td>receipt refだけで復旧</td>
+      </tr>
+      <tr>
+        <td>M5 Runtime lifecycle / realtime</td>
+        <td>passed</td>
+        <td>runtime、completion、trace、E2E</td>
+        <td>publish / finish / waitを検証</td>
+      </tr>
+      <tr>
+        <td>M6 Legacy isolation</td>
+        <td>passed</td>
+        <td>ownership firewall、source / activation tests</td>
+        <td>legacy production pathを削除</td>
+      </tr>
+      <tr>
+        <td>M7 Integration / live</td>
+        <td>passed</td>
+        <td>E2E 7/7、Codex live 1/1</td>
+        <td>production persistent loopを通過</td>
+      </tr>
+      <tr>
+        <td>M8 Cleanup / canary</td>
+        <td>passed</td>
+        <td><code>verify:base</code>、Coding Agent 131/131</td>
+        <td>isolated canary。production deployは対象外</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="final-verification-evidence">Final Verification Evidence</h2>
+  <table>
+    <caption>
+      Final Verification Evidence
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Command / suite</th>
+        <th scope="col">Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>bun run check:architecture</code></td>
+        <td>passed。module、SystemContext、Coding Agent standalone、Task Operator境界を検証</td>
+      </tr>
+      <tr>
+        <td><code>bun run typecheck</code></td>
+        <td>passed</td>
+      </tr>
+      <tr>
+        <td><code>bun run lint</code></td>
+        <td>passed。1,754 files</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot / Task Operator focused suite</td>
+        <td>31 files passed、157 passed、1 skipped</td>
+      </tr>
+      <tr>
+        <td>Coding Agent regression suite</td>
+        <td>20 files passed、131 passed</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot deterministic Playwright</td>
+        <td>7 passed</td>
+      </tr>
+      <tr>
+        <td><code>bun run verify:base</code></td>
+        <td>passed</td>
+      </tr>
+      <tr>
+        <td>persistent Mission Pilot real Codex provider</td>
+        <td>1 passed、約55秒</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="coding-agent-untouched-result">Coding Agent Untouched Result</h2>
+  <p>次のproduction pathは、M0のHEADに対してtracked / untracked差分とも0件である。</p>
+  <pre><code class="language-text">api/modules/codingAgent/**
+src/modules/codingAgent/**
+shared/modules/codingAgent/**
+</code></pre>
+  <p>M0で記録したCoding Agent tree digestは変更されていない。</p>
+  <h2 id="post-implementation-code-review">Post-Implementation Code Review</h2>
+  <p>
+    実装完了後に、Mission Pilotを「ユーザーの代替作業者」に限定する観点で production
+    pathを再読し、次の追加問題を修正した。
+  </p>
+  <table>
+    <caption>
+      Post-Implementation Code Review
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Review finding</th>
+        <th scope="col">Resolution</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>R1</td>
+        <td>
+          Task Operatorのdirect principalがcurrent user capabilityを読まず、全capabilityを得られた
+        </td>
+        <td>
+          direct / delegatedの両方でcurrent user
+          capabilityを正本として読み、delegation時だけ委任capabilityとの積集合にした
+        </td>
+      </tr>
+      <tr>
+        <td>R2</td>
+        <td>
+          action argumentsにも<code>expectedTaskRevision</code>が入り、command
+          envelopeのrevisionと二重管理されていた
+        </td>
+        <td>revisionをcommand envelopeだけへ集約し、action schemaを操作固有argumentだけにした</td>
+      </tr>
+      <tr>
+        <td>R3</td>
+        <td>generic <code>execute_task_action</code>とaction別legacy tool名が併存していた</td>
+        <td>
+          provider公開APIをread 4種、generic execute 1種、agent control 2種の計7 toolへ固定した
+        </td>
+      </tr>
+      <tr>
+        <td>R4</td>
+        <td>
+          receipt readが<code>actorKind</code>を条件に含めず、同じactor IDの別principalと衝突し得た
+        </td>
+        <td>
+          receipt lookupをDB unique keyと同じ<code>actorKind + actorId + idempotencyKey</code>にした
+        </td>
+      </tr>
+      <tr>
+        <td>R5</td>
+        <td>failure復旧がerror messageのkeyword判定に依存していた</td>
+        <td>
+          Task Operator
+          failureのkind、retryable、revision、HTTP情報を構造化保存し、その値だけで復旧判断するよう変更した
+        </td>
+      </tr>
+      <tr>
+        <td>R6</td>
+        <td>
+          event claim後にcurrent-step contextがunread eventを再読するため、trigger
+          eventが空になる競合があった
+        </td>
+        <td>
+          claim結果へtrigger event rangeを保持してcontextへ渡し、retry attemptもevent
+          payloadから構造的に復元した
+        </td>
+      </tr>
+      <tr>
+        <td>R7</td>
+        <td>
+          bounded Task本文とtimeline本文だけで最終判断でき、切り詰められた正本を回収できなかった
+        </td>
+        <td>
+          <code>task_text</code> / <code>task_message</code> resourceとpagingを追加し、Play時のTask
+          Goalも完全な正本を取得するよう変更した
+        </td>
+      </tr>
+      <tr>
+        <td>R8</td>
+        <td>
+          Run outcomeがstatus中心で、Mission
+          Pilotがverification、blocker、変更pathを再評価できなかった
+        </td>
+        <td>
+          Task Operatorのbounded <code>run_outcome</code>へ結果、検証、blocker、変更path、commit /
+          artifact refを追加した
+        </td>
+      </tr>
+      <tr>
+        <td>R9</td>
+        <td>Questionnaire draft取得・poll・直列保存がPlanMode componentへ残っていた</td>
+        <td>
+          Mission Pilot frontend hookへ移し、PlanModeはMission Pilot public
+          APIだけを利用する構造にした
+        </td>
+      </tr>
+      <tr>
+        <td>R10</td>
+        <td>Mission Pilot traceとTask message event busがNightworkers内部へ置かれていた</td>
+        <td>role固有traceをMission Pilotへ、role非依存message eventをTask moduleへ移した</td>
+      </tr>
+      <tr>
+        <td>R11</td>
+        <td>Questionnaire submitだけ回答配列のitem schemaが未指定だった</td>
+        <td>draftと同じcanonical answer schemaをTask Operator registryで再利用した</td>
+      </tr>
+      <tr>
+        <td>R12</td>
+        <td>runtime、Task Operator command、PlanMode viewerが600行上限を超えた</td>
+        <td>
+          failure変換、active Run policy、settings / Mission Pilot draft
+          hookへ責務分割し、全fileを上限内へ戻した
+        </td>
+      </tr>
+      <tr>
+        <td>R13</td>
+        <td>
+          generic execute toolが必須のTask
+          revisionをnullableな<code>expectedResourceRevision</code>として公開し、fixtureだけ旧二重形式を模倣していた
+        </td>
+        <td>
+          <code>expectedTaskRevision: integer</code>へ統一し、resource kindもTask
+          Operator正本のenumから公開した。旧conversationのread互換だけを維持した
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="review-verification">Review Verification</h3>
+  <table>
+    <caption>
+      Review Verification
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Command / suite</th>
+        <th scope="col">Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>bun run verify:base</code></td>
+        <td>
+          passed。tracked artifact、architecture、S11t fixture、typecheck、lint、supervisor
+          regressionを含む
+        </td>
+      </tr>
+      <tr>
+        <td>全Vitest初回</td>
+        <td>
+          352 files passed、1 fileのMission Pilot SystemContext固定hashだけ不一致、2,206 tests
+          passed、1 skipped
+        </td>
+      </tr>
+      <tr>
+        <td><code>tests/s11t-system-context.test.ts</code>（Mission Pilot hash更新後）</td>
+        <td>14 passed。Coding Agent hashは不変</td>
+      </tr>
+      <tr>
+        <td>全Vitest再実行（hash更新後）</td>
+        <td>353 files、2,207 passed、1 skipped</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot deterministic Playwright</td>
+        <td>7 passed</td>
+      </tr>
+      <tr>
+        <td>generic tool / Task Operator focused regression（最終API更新後）</td>
+        <td>7 files、51 passed</td>
+      </tr>
+      <tr>
+        <td>persistent Mission Pilot real Codex provider（最終API更新後）</td>
+        <td>1 passed、約54秒</td>
+      </tr>
+      <tr>
+        <td>Coding Agent production diff</td>
+        <td>0 files</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    固定hashの更新は、<code>task_text</code> / <code>task_message</code>の完全取得を要求する日本語
+    SystemContext本文を照合した上でMission Pilotの2値だけを更新した。 Coding
+    AgentのSystemContext本文とhashは変更していない。
+  </p>
+</article>

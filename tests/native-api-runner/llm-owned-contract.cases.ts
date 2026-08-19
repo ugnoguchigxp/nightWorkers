@@ -677,7 +677,7 @@ describe("Native API LLM-owned Todo contract", () => {
 		await db.insert(verificationDocuments).values({
 			taskId: task.id,
 			runId: run.id,
-			sourceSpecPath: "spec/docs/native-readiness.md",
+			sourceSpecPath: "spec/docs/native-readiness.html",
 			documentJson: {},
 			generatedAt: new Date(),
 			status: "active",

@@ -1,0 +1,560 @@
+<article lang="ja">
+  <h1 id="codebase-review-remediation-program-索引">Codebase Review Remediation Program 索引</h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>proposed</code></li>
+    <li>Document created: 2026-08-16</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Baseline branch: <code>main</code></li>
+    <li>Baseline HEAD at planning start: <code>4d4c57705326932583cce35d356663ccbef8ad32</code></li>
+    <li>Baseline worktree: dirty</li>
+    <li>Implementation authorization: not started</li>
+  </ul>
+  <p>
+    この文書は、2026-08-16に精査したOpus 5コードベースレビュー28件を、変更責務と
+    検証境界が独立する5つの実装計画へ割り当てる索引である。レビューの重大度をそのまま
+    採用せず、現行コードで再確認した事実、実害、既存の安全策、既存計画との重複を基に
+    優先順位を定める。
+  </p>
+  <p>
+    本programの実装では、開始時点から存在する未コミット変更をユーザー所有の変更として
+    扱う。復元、上書き、暗黙の取り込みを行わず、競合する場合は対象差分を分離する。
+  </p>
+  <h2 id="section-1-結論">1. 結論</h2>
+  <p>28件の扱いは次のとおりとする。</p>
+  <table>
+    <caption>
+      1. 結論
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">判定</th>
+        <th scope="col">件数</th>
+        <th scope="col">扱い</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>妥当で修正対象</td>
+        <td>21</td>
+        <td>対応するエリア計画で実装・検証する</td>
+      </tr>
+      <tr>
+        <td>条件付きで修正対象</td>
+        <td>6</td>
+        <td>指摘の核だけを採用し、重大度または修正方法を補正する</td>
+      </tr>
+      <tr>
+        <td>改修根拠として不成立</td>
+        <td>1</td>
+        <td><code>m2</code>。数値観測だけを残し、600行上限の緩和や統合を行わない</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Criticalの<code>C1</code>、<code>C2</code>、<code>C3</code>、<code>C4</code>はrelease
+    blockerとして先に解消する。
+  </p>
+  <h2 id="section-2-作業エリア">2. 作業エリア</h2>
+  <table>
+    <caption>
+      2. 作業エリア
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Area</th>
+        <th scope="col">計画書</th>
+        <th scope="col">主な責務</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>A</td>
+        <td>
+          <a href="./execution-security-and-resource-safety-implementation-plan.html"
+            >Execution Security / Resource Safety</a
+          >
+        </td>
+        <td>command、secret、fetch、background process、Git subprocess、file read</td>
+      </tr>
+      <tr>
+        <td>B</td>
+        <td>
+          <a href="./run-queue-state-integrity-implementation-plan.html"
+            >Run / Queue State Integrity</a
+          >
+        </td>
+        <td>Run終端CAS、Task projection、Queue lease、重複admission、claim競合</td>
+      </tr>
+      <tr>
+        <td>C</td>
+        <td>
+          <a href="./agent-runtime-boundary-and-llm-reliability-implementation-plan.html"
+            >Agent Runtime Boundary / LLM Reliability</a
+          >
+        </td>
+        <td>Codex安全境界、role module、provider parse、tool arguments、token budget、abort</td>
+      </tr>
+      <tr>
+        <td>D</td>
+        <td>
+          <a href="./frontend-server-state-and-ux-implementation-plan.html"
+            >Frontend Server State / UX</a
+          >
+        </td>
+        <td>Query key、Settings cache、error UI、polling、i18n、手動fetch</td>
+      </tr>
+      <tr>
+        <td>E</td>
+        <td>
+          <a href="./api-contract-and-verification-quality-implementation-plan.html"
+            >API Contract / Verification Quality</a
+          >
+        </td>
+        <td>error envelope、critical coverage、UI testの信頼性</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-3-finding-allocation">3. Finding allocation</h2>
+  <table>
+    <caption>
+      3. Finding allocation
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">判定</th>
+        <th scope="col">優先度</th>
+        <th scope="col">Area</th>
+        <th scope="col">実装上の扱い</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>C1</td>
+        <td>妥当</td>
+        <td>P0</td>
+        <td>A</td>
+        <td>shell構文をfail-closeし、read-only prefix判定によるpolicy bypassを廃止する</td>
+      </tr>
+      <tr>
+        <td>C2</td>
+        <td>妥当</td>
+        <td>P0</td>
+        <td>A</td>
+        <td><code>run_command</code>にもproject secret境界を強制する</td>
+      </tr>
+      <tr>
+        <td>C3</td>
+        <td>妥当</td>
+        <td>P0</td>
+        <td>A</td>
+        <td>SSRF、redirect、DNS、Jina fallbackの外部送信を制御する</td>
+      </tr>
+      <tr>
+        <td>C4</td>
+        <td>妥当</td>
+        <td>P0</td>
+        <td>B</td>
+        <td>Run終端遷移をCAS化し、Task/Queue projectionを整合させる</td>
+      </tr>
+      <tr>
+        <td>M1</td>
+        <td>条件付き妥当</td>
+        <td>P1</td>
+        <td>C</td>
+        <td>Codex sandboxを無効扱いせず、NightWorkers policyとの非対称だけを解消する</td>
+      </tr>
+      <tr>
+        <td>M2</td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td>C</td>
+        <td>
+          Coding AgentからNightWorkers private repository/orchestrationへの直接依存をport化する
+        </td>
+      </tr>
+      <tr>
+        <td>M3</td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td>C</td>
+        <td>Mission Pilot persistenceからTask Operatorへの直接依存をcompositionへ移す</td>
+      </tr>
+      <tr>
+        <td>M4</td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td>A</td>
+        <td>Run所有background processをRun終端時に停止する。終端hookはArea Bを使用する</td>
+      </tr>
+      <tr>
+        <td>M5</td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td>B</td>
+        <td>Queue cancel/resumeをlease-awareな状態別commandにする</td>
+      </tr>
+      <tr>
+        <td>M6</td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td>B</td>
+        <td>Task status更新をversion付きprojectionへ集約する</td>
+      </tr>
+      <tr>
+        <td>M7</td>
+        <td>妥当、重大度補正</td>
+        <td>P2</td>
+        <td>D</td>
+        <td>repositories query keyを共通化する</td>
+      </tr>
+      <tr>
+        <td>M8</td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td>D</td>
+        <td>Settings save/loadをQuery cacheの正本へ統合する</td>
+      </tr>
+      <tr>
+        <td>M9</td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td>D</td>
+        <td>Task Consoleのerror状態とterminal polling停止を実装する</td>
+      </tr>
+      <tr>
+        <td>M10</td>
+        <td>条件付き妥当</td>
+        <td>P3</td>
+        <td>C</td>
+        <td>推定式を一律化せず、用途別estimator interfaceとbudget不変条件を追加する</td>
+      </tr>
+      <tr>
+        <td>M11</td>
+        <td>条件付き妥当</td>
+        <td>P1</td>
+        <td>E</td>
+        <td>既存Q7-02を再利用し、最新coverageを再測定して未達だけを補う</td>
+      </tr>
+      <tr>
+        <td>M12</td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td>A</td>
+        <td>Git subprocessをtimeout、output cap、非対話環境付きrunnerへ統合する</td>
+      </tr>
+      <tr>
+        <td>M13</td>
+        <td>条件付き妥当</td>
+        <td>P3</td>
+        <td>B</td>
+        <td><code>claimNextQueuedTask</code>のCAS競合時にbounded retryする</td>
+      </tr>
+      <tr>
+        <td>M14</td>
+        <td>条件付き妥当</td>
+        <td>P2</td>
+        <td>C</td>
+        <td>raw引数を保持しつつ、parse/schema不正をdispatch前にtyped failureへする</td>
+      </tr>
+      <tr>
+        <td>m1</td>
+        <td>妥当</td>
+        <td>P3</td>
+        <td>D</td>
+        <td>server state取得を段階的にQuery optionsへ寄せる</td>
+      </tr>
+      <tr>
+        <td>m2</td>
+        <td>不成立</td>
+        <td>対象外</td>
+        <td>なし</td>
+        <td>600行上限を緩和しない。凝集度の別根拠なしにfile統合しない</td>
+      </tr>
+      <tr>
+        <td>m3</td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td>E</td>
+        <td>一般REST error envelopeを共通化し、command protocolは別契約として維持する</td>
+      </tr>
+      <tr>
+        <td>m4</td>
+        <td>条件付き妥当</td>
+        <td>P2</td>
+        <td>E</td>
+        <td>coverage用branch testを削除せず、重要UIにbehavior testを追加する</td>
+      </tr>
+      <tr>
+        <td>m5</td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td>A</td>
+        <td><code>read_file</code>にsize/binary/range制限を追加する</td>
+      </tr>
+      <tr>
+        <td>m6</td>
+        <td>妥当</td>
+        <td>P3</td>
+        <td>D</td>
+        <td>Task Console、repositories、confirm文言を辞書へ移す</td>
+      </tr>
+      <tr>
+        <td>m7</td>
+        <td>妥当</td>
+        <td>P3</td>
+        <td>D</td>
+        <td>Project Evaluationのpoll cursorをref化する</td>
+      </tr>
+      <tr>
+        <td>m8</td>
+        <td>妥当、重大度補正</td>
+        <td>P1</td>
+        <td>C</td>
+        <td>OpenAI streamの破損recordを<code>invalid_response</code>へ変換する</td>
+      </tr>
+      <tr>
+        <td>m9</td>
+        <td>妥当、重大度補正</td>
+        <td>P1</td>
+        <td>B</td>
+        <td>同一Taskのactive Queue Entry重複をDB不変条件で防ぐ</td>
+      </tr>
+      <tr>
+        <td>m10</td>
+        <td>妥当</td>
+        <td>P3</td>
+        <td>C</td>
+        <td>retry backoff後、provider再呼び出し前にabortを再確認する</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-4-shared-invariants">4. Shared invariants</h2>
+  <p>全エリアは次を維持する。</p>
+  <ol>
+    <li>ユーザー文言、command本文、error messageをkeywordや正規表現で意味分類しない。</li>
+    <li>
+      Hostはstatus、revision、lease、schema、ownership、pathなどの構造的不変条件だけを強制する。
+    </li>
+    <li>
+      LLMが返した本文、破損tool argument、provider
+      response本文は診断用に保持し、固定文へ差し替えない。
+    </li>
+    <li>
+      副作用のある操作はserver側で権限、revision、idempotency、workspace authorityを検証する。
+    </li>
+    <li>Coding AgentとMission Pilotの所有権を相互に移さない。</li>
+    <li>既存のTask Operator、Evidence、Closeout、Quality計画の意味判断を重複実装しない。</li>
+    <li>回帰testを先に追加し、失敗を確認してからproduction codeを変更する。</li>
+    <li>既存の未コミット変更と競合するfileは、実装開始前にaccepted baselineを確定する。</li>
+  </ol>
+  <h2 id="section-5-implementation-waves">5. Implementation waves</h2>
+  <h3 id="wave-0-baseline固定">Wave 0: Baseline固定</h3>
+  <ul>
+    <li><code>git status --short --branch</code>、<code>git rev-parse HEAD</code>を保存する。</li>
+    <li>Areaごとに対象fileと既存未コミット差分の重複を確認する。</li>
+    <li>security/state findingの失敗再現testを先に追加する。</li>
+    <li>full coverageは同じreports directoryで並行実行しない。</li>
+  </ul>
+  <h3 id="wave-1-release-blockers">Wave 1: Release blockers</h3>
+  <ul>
+    <li>Area A: <code>C1</code>、<code>C2</code>、<code>C3</code>。</li>
+    <li>Area B: <code>C4</code>。</li>
+    <li>blocker解消後、Area Aが定義したsecurity contractをArea CのCodex runtimeへ接続する。</li>
+  </ul>
+  <h3 id="wave-2-lifecycle--state-integrity">Wave 2: Lifecycle / state integrity</h3>
+  <ul>
+    <li>Area B: <code>M5</code>、<code>M6</code>、<code>m9</code>、<code>M13</code>。</li>
+    <li>Area A: <code>M4</code>をArea Bのterminal transition hookへ接続する。</li>
+    <li>Area A: <code>M12</code>、<code>m5</code>。</li>
+  </ul>
+  <h3 id="wave-3-runtime--architecture">Wave 3: Runtime / architecture</h3>
+  <ul>
+    <li>Area C: <code>M1</code>、<code>M14</code>、<code>m8</code>、<code>m10</code>。</li>
+    <li>その後に<code>M2</code>、<code>M3</code>のmodule boundary移行を行う。</li>
+    <li><code>M10</code>は観測・boundary testを先に行い、必要な場合だけestimatorを変更する。</li>
+  </ul>
+  <h3 id="wave-4-frontend--api--quality">Wave 4: Frontend / API / quality</h3>
+  <ul>
+    <li>Area DとArea Eは、server contractが確定した後に並行して実施できる。</li>
+    <li><code>m1</code>は一括rewriteせず、対象画面ごとに移行する。</li>
+    <li><code>m4</code>はcoverage行数の削減を目的にせず、重要挙動の証明追加を目的にする。</li>
+  </ul>
+  <h3 id="section-51-推奨実装順">5.1 推奨実装順</h3>
+  <p>
+    実装順は重大度だけでなく、後続Areaが利用するcontractの確定順で固定する。各行を一つの change
+    setとして完了させ、同じ行にないticketを一つの巨大な変更へまとめない。
+  </p>
+  <table>
+    <caption>
+      5.1 推奨実装順
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">順序</th>
+        <th scope="col">実行ticket</th>
+        <th scope="col">完了してから次へ進む理由</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0</td>
+        <td><code>E-T0</code></td>
+        <td>dirtyなcoverage/Settings差分をaccepted baselineにし、既存変更の上書きを防ぐ</td>
+      </tr>
+      <tr>
+        <td>1</td>
+        <td><code>A-T0</code>, <code>B-T0</code></td>
+        <td>P0 defectを修正前に再現し、成功条件を固定する</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><code>A-T1</code>, <code>A-T2</code>, <code>A-T3</code></td>
+        <td>command、secret、SSRFのrelease blockerを先に閉じる</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><code>B-T1</code>, <code>B-T2</code>, <code>B-T3</code></td>
+        <td>Run terminal CASとprojection transactionを後続lifecycleの正本にする</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>
+          <code>B-T4</code>, <code>B-T5</code>, <code>B-T6</code>, <code>B-T7</code>,
+          <code>A-T4</code>
+        </td>
+        <td>Queue lifecycleとRun-owned process cleanupを確定済みterminal hookへ接続する</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><code>A-T5</code>, <code>A-T6</code></td>
+        <td>独立したresource上限を追加し、Area Aを完了可能にする</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td><code>C-T0</code>, <code>C-T1</code></td>
+        <td>Codex laneの安全性を実測し、Area Aのcontractへ接続する</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td><code>C-T7</code>, <code>C-T8</code>, <code>C-T10</code></td>
+        <td>provider/tool failureとabortを小さい独立変更で先に安定させる</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td>
+          <code>C-T2</code>, <code>C-T3</code>, <code>C-T4</code>, <code>C-T5</code>,
+          <code>C-T6</code>
+        </td>
+        <td>port定義、adapter、caller移行、architecture guardの順でrole境界を移す</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td><code>C-T9</code></td>
+        <td>estimatorは観測結果から必要な差分だけを変更する</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td>
+          <code>E-T1</code>, <code>E-T2</code>, <code>E-T3a</code>, <code>E-T3b</code>,
+          <code>E-T3c</code>, <code>E-T3d</code>, <code>E-T3e</code>
+        </td>
+        <td>一般REST errorの正本とFrontend decoderを先に提供する</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td>
+          <code>D-T0</code>, <code>D-T1</code>, <code>D-T2</code>, <code>D-T3</code>,
+          <code>D-T4</code>, <code>D-T5</code>, <code>D-T6</code>, <code>E-T5</code>
+        </td>
+        <td>Frontendをfeature単位で移行し、同じchange setでbehaviorを証明する</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td><code>E-T4</code>, <code>E-T6</code></td>
+        <td>最新coverageに未達がある場合だけ補強し、600行guardを再確認する</td>
+      </tr>
+      <tr>
+        <td>13</td>
+        <td>program verification</td>
+        <td>全Areaの限定test成功後にfull gateを直列実行する</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <code>A-T1</code>〜<code>A-T3</code>と<code>B-T1</code>はproduction
+    fileが重ならない場合に限り並行実装できる。ただし
+    <code>A-T4</code>は<code>B-T3</code>完了前、<code>D-T1</code>はSettingsのaccepted
+    baseline確定前、<code>E-T4</code>は<code>E-T0</code>で未達が 再現する前に開始しない。
+  </p>
+  <h3 id="section-52-terra実行プロトコル">5.2 Terra実行プロトコル</h3>
+  <p>
+    各Area文書の<code>*-Tn</code>をTerraへ一件ずつ渡す。依頼文にはticket本文を省略せず含め、次の共通手順を
+    必須とする。
+  </p>
+  <ol>
+    <li>
+      <code>git rev-parse HEAD</code>と<code>git status --short</code>を記録し、ticketのwrite
+      setに既存差分があれば停止する。
+    </li>
+    <li>
+      ticketに列挙したproduction
+      file、symbol、近接testを開き、記載との不一致があれば実装せず計画を更新する。
+    </li>
+    <li>先にred testを追加して対象testだけを実行し、想定理由で失敗したことを記録する。</li>
+    <li>
+      write
+      set外を変更しない。必要になった場合は新しいticketとして切り出し、現在ticketを拡張しない。
+    </li>
+    <li>production codeを変更し、対象test、typecheck、architecture/lintの順で検証する。</li>
+    <li>
+      <code>git diff --check</code>と<code>git diff --stat</code
+      >を確認し、変更file、test結果、未検証事項を報告する。
+    </li>
+    <li>
+      完了条件を一つでも満たせない場合は<code>完了</code>と報告せず、ticket記載のstop
+      conditionをそのまま報告する。
+    </li>
+  </ol>
+  <p>
+    Terraへ複数ticketを一度に渡す場合も、上記の順でcommit可能な差分を保つ。調査結果から別設計へ
+    変える必要が生じた場合、型やpublic contractを推測で作らず、本program文書を先に改訂する。
+  </p>
+  <h2 id="section-6-program-verification">6. Program verification</h2>
+  <p>各Areaの限定testに加えて、統合時に次を実行する。</p>
+  <pre><code class="language-bash">bun run check:architecture
+bun run typecheck
+bun run lint
+node scripts/run-vitest.mjs run
+bun run test:coverage
+node scripts/verify.mjs full
+</code></pre>
+  <p>
+    <code>test:coverage</code>は単独で実行し、別processが同じ<code>coverage</code>
+    directoryを使用していないことを
+    事前確認する。実行環境や外部service不足で実行できないgateは、未検証として記録し、passへ
+    読み替えない。
+  </p>
+  <h2 id="section-7-program-completion-criteria">7. Program completion criteria</h2>
+  <p>次をすべて満たしたときだけprogramを完了とする。</p>
+  <ol>
+    <li><code>C1</code>〜<code>C4</code>の再現testが修正前に失敗し、修正後に成功している。</li>
+    <li>
+      Finding allocationで対象Areaを持つ27件について、実装結果または「観測のみで変更不要」の
+      evidenceが各Area文書へ記録されている。
+    </li>
+    <li>
+      <code>m2</code>を理由に600行上限を緩和、削除、またはlarge-file baselineを拡大していない。
+    </li>
+    <li>Run、Task、Queue、background processのterminal stateに矛盾がない。</li>
+    <li>
+      Native runtimeとCodex runtimeが、定義したsecret・workspace・副作用境界を同じ意味で守る。
+    </li>
+    <li>一般REST errorとCoding Agent command protocolの契約がそれぞれ一意である。</li>
+    <li>critical coverage gateとfull verificationが成功する。</li>
+    <li>
+      実装完了した各Area計画を<code>spec/docs/.archived</code>へ移し、未完了Areaだけを<code>spec/docs</code>に残す。
+    </li>
+  </ol>
+</article>

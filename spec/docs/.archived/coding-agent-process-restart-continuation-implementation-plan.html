@@ -1,0 +1,1055 @@
+<article lang="ja">
+  <h1 id="coding-agent-process-restart-continuation-implementation-plan">
+    Coding Agent Process Restart Continuation Implementation Plan
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>implemented</code></li>
+    <li>Implementation verified: 2026-08-03</li>
+    <li>
+      Release canary status: deterministic 3-run canary completed; live Codex process-restart canary
+      is reserved for a credentialed release-candidate environment
+    </li>
+    <li>Document created: 2026-08-03</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>
+      Primary scope: Coding Agent process ownership、startup reconciliation、同一Run
+      resume、Workbench intake routing、in-flight tool recovery、Queue整合性
+    </li>
+    <li>
+      Related plans:
+      <ul>
+        <li><code>spec/docs/coding-agent-llm-owned-todo-refactor-plan.html</code></li>
+        <li><code>spec/docs/coding-agent-runtime-reliability-recovery-plan.html</code></li>
+      </ul>
+    </li>
+    <li>
+      Trigger incident:
+      <ul>
+        <li>Task: <code>6d37323c-e169-4c7f-8331-cb5ce998f65a</code></li>
+        <li>Run: <code>9db202ee-4e6f-47e6-b11a-81dce341925d</code></li>
+        <li>Codex thread: <code>019fc5e7-9ea3-7a70-b241-87c33743744b</code></li>
+        <li>
+          2026-08-03 13:45 JSTの開発サーバー停止・再起動後、ユーザーの「再開してください。」がfresh
+          Run開始へ誤routingされ、<code>RUN_ALREADY_ACTIVE</code>で停止した。
+        </li>
+      </ul>
+    </li>
+  </ul>
+  <h2 id="section-1-目的">1. 目的</h2>
+  <p>
+    Coding Agent実行中にAPI processまたはworker
+    processが停止しても、保存済みの正本を失わず、ユーザーの次の依頼から安全に同じ実装作業を継続できるようにする。
+  </p>
+  <p>実現する状態は次のとおり。</p>
+  <ol>
+    <li>
+      process停止を、ユーザーcancelやTask失敗と混同せず、構造的な<code>process_interrupted</code>
+      pauseとして保存する。
+    </li>
+    <li>
+      Run、Agent Mode Session、Todo、workspaceのidentityを維持し、provider
+      threadはproviderが再開を許可する限り同じidentityを再利用する。
+    </li>
+    <li>
+      通常chatの意味解釈はLLMへ委ね、hostはLLMの構造化された<code>start</code> /
+      <code>resume</code>判断と保存状態の整合性だけを検証する。
+    </li>
+    <li>
+      resume時にfresh Runを作成せず、同じRunへ新しいruntime execution ownerをCASで割り当てる。
+    </li>
+    <li>
+      crash時に結果未保存だったtool
+      callは成功・失敗を推定せず、<code>unknown_outcome</code>としてLLMへ返す。
+    </li>
+    <li>
+      provider threadのresumeが失敗しても、同じRun、Todo、workspaceを維持したままlossless State
+      Card付きfresh provider threadへfallbackする。
+    </li>
+    <li>Task、Run、Queue、runtime ownershipの各projectionが常に同じ状態を示す。</li>
+  </ol>
+  <p>
+    本計画はCoding Agentへ意味別mode、固定workflow、tool
+    allowlistを追加しない。Taskの意味、次action、Todo、再検証、完了判断はLLMが所有し、hostはidentity、authority、revision、lease、idempotency、workspace
+    attestationだけを強制する。
+  </p>
+  <h2 id="section-2-インシデントで確認した事実">2. インシデントで確認した事実</h2>
+  <h3 id="section-21-停止直前">2.1 停止直前</h3>
+  <ul>
+    <li>Runは<code>running</code>だった。</li>
+    <li>
+      Todo
+      <code>step-1</code
+      >から<code>step-4</code>は<code>passed</code>、<code>step-5</code>は<code>running</code>だった。
+    </li>
+    <li>
+      最終Run eventは<code>bun run test:coverage</code
+      >の<code>tool.call_started</code>で、対応する<code>tool.call_finished</code>は存在しなかった。
+    </li>
+    <li>Codex rollout JSONLも同じtool callで終了していた。</li>
+    <li>workspaceの未commit差分は残っていた。</li>
+  </ul>
+  <h3 id="section-22-再起動直後">2.2 再起動直後</h3>
+  <ul>
+    <li>
+      Queue
+      entryは<code>processing</code>のまま、ownerは終了済みの<code>api-process:3991</code>だった。
+    </li>
+    <li>
+      Runは<code>running</code>、runtime session stateは<code>active</code>、provider thread
+      IDも保存済みだった。
+    </li>
+    <li>新しいAPI processは別PIDで起動したが、旧ownerを即時に失効させなかった。</li>
+    <li>
+      startup Queue reconciliationは30分のstale
+      threshold内としてentryを<code>normal</code>扱いした。
+    </li>
+  </ul>
+  <h3 id="section-23-ユーザー依頼後">2.3 ユーザー依頼後</h3>
+  <ul>
+    <li>Composerはメッセージ内容に関係なく<code>intent=intake</code>を送った。</li>
+    <li>Plan Mode gateのLLMは、既存Feature Planを再利用して実装を継続できると判断した。</li>
+    <li>hostは<code>action=coding_agent</code>をfresh Run開始として扱った。</li>
+    <li>
+      fresh Run preconditionが既存<code>running</code>
+      Runを検出し、<code>RUN_ALREADY_ACTIVE</code>を返した。
+    </li>
+    <li>
+      fresh start前にTask
+      statusを<code>ready</code>へ更新したため、Task=<code>ready</code>、Run=<code>running</code>、Queue=<code>processing</code>という不整合が残った。
+    </li>
+  </ul>
+  <h3 id="section-24-既存recoveryの不足">2.4 既存recoveryの不足</h3>
+  <ul>
+    <li>
+      <code>resumeTaskRunTodo</code
+      >は、Todoが<code>needs_human</code>、またはRunに明示的な<code>runtimePause</code>がある場合だけ利用できる。
+    </li>
+    <li>abrupt process lossは<code>runtimePause</code>を作成しない。</li>
+    <li>
+      Queue stale recoveryはQueue
+      entryだけを<code>needs_human</code>へ移し得るが、Run、Task、runtime
+      ownerを同じtransactionで遷移させない。
+    </li>
+    <li>graceful shutdownはin-process Coding Agent runtimeをcancelと区別したpauseへ移さない。</li>
+    <li>
+      provider thread resumeのunit testはあるが、process restartをまたぐ同一Run end-to-end
+      testがない。
+    </li>
+  </ul>
+  <h2 id="section-3-root-cause">3. Root Cause</h2>
+  <pre><code class="language-text">API process停止
+    |
+    v
+in-memory runtime executionだけが消失
+    |
+    v
+Run=running / Queue=processing / provider session=active が永続化されたまま残る
+    |
+    v
+startup recoveryは旧process ownershipを即時判定できない
+    |
+    v
+通常chatは intake -&gt; coding_agent -&gt; fresh start と解釈される
+    |
+    v
+active Run guardがfresh startを拒否
+    |
+    v
+同一Run resume commandへ到達しない
+</code></pre>
+  <p>
+    根本原因はprovider threadの欠落ではない。process-bound runtime
+    ownershipが正本化されていないことと、LLMの<code>coding_agent</code>判断をhostが<code
+      >start new Run</code
+    >へ一意に写像していることの組み合わせである。
+  </p>
+  <h2 id="section-4-scope">4. Scope</h2>
+  <h3 id="section-41-in-scope">4.1 In scope</h3>
+  <ul>
+    <li>Coding Agent runtime execution ownershipの永続化</li>
+    <li>graceful shutdownとabrupt restartのinterruption reconciliation</li>
+    <li>同一Run / Todo / Agent Mode Session / workspace / provider sessionのresume</li>
+    <li>Workbench intake decisionの<code>start</code> / <code>resume</code>構造化</li>
+    <li>in-flight tool callの<code>unknown_outcome</code> recovery evidence</li>
+    <li>Queue lease、Task status、Run statusの原子的projection</li>
+    <li>direct user RunとMission Pilot handoff Runのprovenance維持</li>
+    <li>deterministic restart integration testとCodex canary</li>
+  </ul>
+  <h3 id="section-42-out-of-scope">4.2 Out of scope</h3>
+  <ul>
+    <li>Mission Pilot runtimeのrestart設計変更</li>
+    <li>Coding Agentの新しい意味別mode</li>
+    <li>user messageのregex / keyword分類</li>
+    <li>crashしたtool callのhostによる意味的な成功・失敗判定</li>
+    <li>workspace差分の自動rollback</li>
+    <li>別Taskとしての自動再作成</li>
+    <li>providerの内部rollout formatの独自解析・改変</li>
+  </ul>
+  <h2 id="section-5-target-invariants">5. Target Invariants</h2>
+  <h3 id="section-51-identity">5.1 Identity</h3>
+  <ul>
+    <li>resume前後で<code>task_run.id</code>は変わらない。</li>
+    <li>resume前後で<code>agent_mode_session_id</code>は変わらない。</li>
+    <li>
+      current Todoのcanonical
+      ID、<code>todoKey</code>、revision、statusは、人間またはLLMの明示commandなしに変更しない。
+    </li>
+    <li>
+      <code>workspace_id</code>、allocation version、repository identity revision、attestation
+      digestが一致しない場合はresumeをfail-closeする。
+    </li>
+    <li>provider threadが利用可能なら同じ<code>provider_session_id</code>を使用する。</li>
+    <li>
+      provider resume失敗時だけ、同じRunとAgent Mode Sessionの下に新しいprovider session
+      stateを作る。
+    </li>
+  </ul>
+  <h3 id="section-52-ownership">5.2 Ownership</h3>
+  <ul>
+    <li><code>task_runs.status=running</code>だけをruntime生存の証拠にしない。</li>
+    <li>
+      各実行中Runは、durableなexecution owner、owner instance、lease
+      version、heartbeatを一つだけ持つ。
+    </li>
+    <li>同じRunを二つのprocessが同時にresumeできない。</li>
+    <li>
+      <code>api_process</code> ownerは単一API boot
+      identityに結び付け、別bootによるstartup時に旧ownerを即時reconcileできる。
+    </li>
+    <li>
+      isolated worker ownerはworker managerの構造的なprocess/IPC
+      stateを確認し、確認不能な場合だけlease expiryを使用する。
+    </li>
+  </ul>
+  <h3 id="section-53-interruption">5.3 Interruption</h3>
+  <ul>
+    <li>
+      process
+      interruptionは<code>cancelled</code>、<code>failed</code>、<code>timed_out</code>へ自動変換しない。
+    </li>
+    <li>
+      canonicalなinterruptible Run
+      statusを<code>running</code>、<code>context_compiling</code>、<code>finalizing</code>に固定し、各statusから<code>needs_human</code>への遷移を共通status
+      contractで明示する。
+    </li>
+    <li>
+      interruption後はRun=<code>needs_human</code>、Task=<code>needs_human</code>、Queue=<code>needs_human</code>、execution
+      owner=<code>interrupted</code>を同じtransactionで確定する。
+    </li>
+    <li>
+      running
+      Todoはrunningのまま保持し、hostが暗黙に<code>needs_human</code>や<code>failed</code>へ変えない。
+    </li>
+    <li>
+      <code>contextSnapshot.runtimePause</code>にはinterruption revision、reason、owner、workspace
+      binding、current Todo ref、unresolved tool call refsを保存する。
+    </li>
+  </ul>
+  <h3 id="section-54-resume">5.4 Resume</h3>
+  <ul>
+    <li>
+      resumeはexpected interruption revision、Run status、Todo revision、workspace
+      attestation、execution owner lease versionをCASで検証する。
+    </li>
+    <li>CAS成功後だけRunとTaskを<code>running</code>、Queueを<code>processing</code>へ戻す。</li>
+    <li>二重resumeの二つ目はtyped conflictを返し、新しいruntimeを起動しない。</li>
+    <li>launch前失敗はRunを再び<code>needs_human</code>へ戻し、ユーザー文と失敗本文を保持する。</li>
+    <li>provider本文を固定host messageへ差し替えない。</li>
+  </ul>
+  <h3 id="section-55-chat-routing">5.5 Chat routing</h3>
+  <ul>
+    <li>user textをkeywordで分類しない。</li>
+    <li>
+      LLM decisionは<code>plan_mode</code> / <code>coding_agent</code>に加え、Coding Agent command
+      dispositionとして<code>start_new_run</code> / <code>resume_existing_run</code>を返す。
+    </li>
+    <li>
+      LLMへ渡すresume candidateはhostが構造的に検証した一件だけとし、LLMにrunIdを生成させない。
+    </li>
+    <li>hostはdecisionとcandidate snapshot digestの一致を検証する。</li>
+    <li>
+      active resumable
+      Runがある状態で<code>start_new_run</code>が選ばれても、既存Runを暗黙cancelしない。typed
+      conflictまたは明示的なRun解決操作へ進む。
+    </li>
+  </ul>
+  <h3 id="section-56-in-flight-tool-call">5.6 In-flight tool call</h3>
+  <ul>
+    <li>
+      <code>started</code>があり<code>finished</code>がないtool
+      callをhostが成功または失敗へ分類しない。
+    </li>
+    <li>
+      tool call ID、tool名、normalized arguments digest、event sequence、workspace/source
+      digestを<code>unknown_outcome</code> evidenceとして保持する。
+    </li>
+    <li>
+      idempotencyを持つserver-side toolは既存journalとserver-side
+      preconditionで再試行可否を検証する。
+    </li>
+    <li>
+      native command / Codex execは自動再実行せず、LLMがworkspace
+      Factとevidenceを読み、再検証または別actionを選ぶ。
+    </li>
+  </ul>
+  <h3 id="section-57-provenance-and-role-boundary">5.7 Provenance and role boundary</h3>
+  <ul>
+    <li>
+      user-direct RunとMission Pilot handoff
+      Runは、保存済み<code>requestProvenance</code>で区別する。
+    </li>
+    <li>process interruptionとresumeは元provenanceを変更しない。</li>
+    <li>resume request自体のprovenanceは追加監査eventとして保存する。</li>
+    <li>
+      Coding
+      Agent固有application、repository、runtime、schemaは<code>api/modules/codingAgent</code>が所有する。
+    </li>
+    <li>
+      Queue、server、Workbenchは公開application commandまたはAgent非依存portだけを利用し、Coding
+      Agent内部repository/runtimeをimportしない。
+    </li>
+    <li>Mission Pilot package/moduleからCoding Agent内部実装をimportしない。</li>
+  </ul>
+  <h2 id="section-6-採用設計">6. 採用設計</h2>
+  <h3 id="section-61-durable-execution-ownership">6.1 Durable execution ownership</h3>
+  <p>
+    Coding Agent moduleに<code>coding_agent_run_executions</code>を追加する。Queue leaseはscheduling
+    ownership、当該tableはruntime execution ownershipとして責務を分ける。
+  </p>
+  <pre><code class="language-ts">type CodingAgentRunExecution = {
+  runId: string;
+  agentModeSessionId: string;
+  status: &quot;active&quot; | &quot;interrupted&quot; | &quot;released&quot;;
+  ownerKind: &quot;api_process&quot; | &quot;worker_process&quot;;
+  ownerInstanceId: string;
+  ownerPid: number | null; // diagnostics only
+  leaseVersion: number;
+  acquiredAt: Date;
+  heartbeatAt: Date;
+  leaseExpiresAt: Date;
+  interruptionRevision: number;
+  interruptionReason: &quot;graceful_shutdown&quot; | &quot;process_restarted&quot; | &quot;worker_lost&quot; | null;
+  interruptionSnapshot: CodingAgentProcessInterruptionSnapshot | null;
+};
+</code></pre>
+  <ul>
+    <li><code>ownerInstanceId</code>はAPI/worker bootごとのUUIDとし、PIDをauthorityにしない。</li>
+    <li>
+      unique keyは<code>run_id</code>とし、claim / heartbeat / interrupt / releaseをCAS
+      updateで行う。
+    </li>
+    <li>schema、bootstrap、repositoryは<code>api/modules/codingAgent/persistence</code>へ置く。</li>
+    <li>
+      Drizzle clientがschemaを束ねるためのimportだけを<code>api/db/client.ts</code>へ追加する。
+    </li>
+    <li>migrationはadditiveとし、既存active Runをstartup reconciliationで安全にbackfillする。</li>
+  </ul>
+  <h3 id="section-62-process-interruption-snapshot">6.2 Process interruption snapshot</h3>
+  <pre><code class="language-ts">type CodingAgentProcessInterruptionSnapshot = {
+  version: 1;
+  kind: &quot;process_interrupted&quot;;
+  revision: number;
+  interruptedAt: string;
+  reason: &quot;graceful_shutdown&quot; | &quot;process_restarted&quot; | &quot;worker_lost&quot;;
+  previousOwner: {
+    kind: &quot;api_process&quot; | &quot;worker_process&quot;;
+    instanceId: string;
+    leaseVersion: number;
+  };
+  run: {
+    id: string;
+    agentModeSessionId: string;
+    status: &quot;running&quot; | &quot;context_compiling&quot; | &quot;finalizing&quot;;
+  };
+  currentTodo: {
+    id: string;
+    todoKey: string;
+    revision: number;
+    status: &quot;running&quot;;
+  } | null;
+  workspace: {
+    id: string;
+    allocationVersion: number;
+    repositoryIdentityRevision: number;
+    attestationId: string;
+    attestationDigest: string;
+  };
+  providerSession: {
+    stateId: string;
+    providerThreadId: string;
+    model: string | null;
+  } | null;
+  unresolvedToolCalls: Array&lt;{
+    callId: string;
+    toolName: string;
+    argumentsDigest: string;
+    startedEventSeq: number;
+    evidenceRef: string;
+    outcome: &quot;unknown&quot;;
+  }&gt;;
+};
+</code></pre>
+  <p>
+    snapshotは正本rowへの参照とdigestを保持し、大きいraw payloadはevent
+    pagingで再取得できるようにする。
+  </p>
+  <h3 id="section-63-startup-reconciliation">6.3 Startup reconciliation</h3>
+  <p>startup順序を次に固定する。</p>
+  <ol>
+    <li>DB bootstrap / migrationを完了する。</li>
+    <li>current API boot identityを生成する。</li>
+    <li>Coding Agent execution ownershipをreadする。</li>
+    <li>
+      旧<code>api_process</code> boot ownerのactive executionをCASで<code>interrupted</code>へ移す。
+    </li>
+    <li>
+      Run、Task、Queue、runtimePauseを同じDB transactionで<code>needs_human</code>へprojectする。
+    </li>
+    <li><code>run.process_interrupted</code> eventとsystem messageを一度だけ保存する。</li>
+    <li>generic Queue reconciliationを実行する。</li>
+    <li>HTTP / WebSocketで新規requestを受け付ける。</li>
+  </ol>
+  <p>
+    <code>api_process</code>は同一NightWorkers server boot内だけ有効というhost
+    invariantを採用する。isolated workerはworker managerがlive
+    ownershipを返す場合はinterruptせず、owner不在またはIPC切断を確認した場合だけ<code>worker_lost</code>へ移す。
+  </p>
+  <p>startup reconciliationは同じinterruption revisionに対してidempotentでなければならない。</p>
+  <h3 id="section-64-graceful-shutdown">6.4 Graceful shutdown</h3>
+  <ul>
+    <li>userのStopは従来どおり<code>cancelled</code>であり、process shutdownと分離する。</li>
+    <li>
+      Agent runtimeへ<code>stop</code>とは別の<code>suspendForHostShutdown</code> signalを追加する。
+    </li>
+    <li>
+      shutdown signalでは、current ownerのRunだけをinterruptedへCASし、provider streamをabortする。
+    </li>
+    <li>interruption確定後にWebSocket、MCP、DBをcloseする。</li>
+    <li>
+      runtime closeoutはhost interruptionをterminal outcomeとして処理せず、final reportやTodo
+      statusを上書きしない。
+    </li>
+    <li>
+      shutdown timeoutで完全pauseできなかったRunは、次startupのabrupt reconciliationが回収する。
+    </li>
+  </ul>
+  <h3 id="section-65-same-run-resume-application-command">
+    6.5 Same-Run resume application command
+  </h3>
+  <p>
+    <code>agentsShare</code>にはrole横断で同じ意味を持つcommand contract /
+    portだけを置き、実装はCoding Agent moduleが所有する。
+  </p>
+  <pre><code class="language-ts">type ResumeInterruptedCodingAgentRunCommand = {
+  runId: string;
+  expectedInterruptionRevision: number;
+  todoId: string | null;
+  expectedTodoRevision: number | null;
+  userContext: string;
+  requestProvenance: CodingAgentRequestProvenance;
+};
+</code></pre>
+  <p>Coding Agent application serviceは次をtransaction/CASで検証する。</p>
+  <ul>
+    <li>Runが<code>needs_human</code></li>
+    <li>runtimePause.kindが<code>process_interrupted</code></li>
+    <li>expected interruption revision一致</li>
+    <li>execution ownershipが<code>interrupted</code></li>
+    <li>Agent Mode SessionがactiveでRunと一致</li>
+    <li>current Todo ID / revision / running status一致</li>
+    <li>workspace bindingと最新attestation一致</li>
+    <li>Queue entryのactiveRunId一致</li>
+    <li>同じTaskに別active Runがない</li>
+  </ul>
+  <p>
+    成功時はnew execution ownerをclaimし、Run / Task / Queueをrunning
+    projectionへ戻す。同じRunの<code>startTaskRun</code> preparationを再利用するが、fresh
+    Run作成とAgent Mode Session作成は実行しない。
+  </p>
+  <h3 id="section-66-workbench-intake-decision">6.6 Workbench intake decision</h3>
+  <p>既存Plan Mode gateの日本語System ContextとJSON contractを拡張する。</p>
+  <pre><code class="language-ts">type CodingAgentIntakeDecision = {
+  shouldStartPlanMode: boolean;
+  action: &quot;plan_mode&quot; | &quot;coding_agent&quot;;
+  runDisposition: &quot;start_new_run&quot; | &quot;resume_existing_run&quot; | null;
+  reason: string;
+};
+</code></pre>
+  <ul>
+    <li><code>action=plan_mode</code>では<code>runDisposition=null</code>。</li>
+    <li><code>action=coding_agent</code>ではrun dispositionを必須とする。</li>
+    <li>
+      hostはresumable candidateのRun
+      IDをpromptへauthority付きFactとして渡すが、outputにIDを生成させない。
+    </li>
+    <li>
+      persisted gate resultにはprompt digestだけでなく、Task revision、candidate Run
+      ID、interruption revision、Todo revision、workspace attestation
+      digestから作る<code>routingSnapshotDigest</code>を保存する。
+    </li>
+    <li>snapshotが変わったdecisionは再利用しない。</li>
+    <li><code>resume_existing_run</code>ではsame-Run resume commandを呼ぶ。</li>
+    <li>
+      <code>start_new_run</code>ではfresh start
+      preconditionを先に検証し、成功するtransaction内でだけTask projectionを変更する。
+    </li>
+    <li>catch pathはTask statusを変更しない。</li>
+    <li>
+      <code>adjust_running</code
+      >の文字列intentは意味判断の正本にせず、互換surfaceとして残す場合も同じLLM
+      decisionへ正規化する。
+    </li>
+  </ul>
+  <p>
+    System Context source、生成catalog JSON、generated TypeScriptを同じ変更単位で更新し、S11t
+    runtime/CLI境界を維持する。
+  </p>
+  <h3 id="section-67-provider-thread-continuation">6.7 Provider thread continuation</h3>
+  <ul>
+    <li>
+      same-Run resume
+      preparationは<code>agent_mode_session_id</code>で<code>runtime_session_states</code>をlookupする。
+    </li>
+    <li>provider sessionがactiveなら<code>resumeThread(providerThreadId)</code>を使用する。</li>
+    <li>最新user contextとprocess interruption State Cardを新しいturnへ渡す。</li>
+    <li>
+      unresolved tool callは<code>unknown_outcome</code> evidenceとして渡し、自動再実行しない。
+    </li>
+    <li>resume成功時は同じprovider session stateの<code>lastSeenAt</code>を更新する。</li>
+    <li>resume失敗時はraw errorをeventへ保存し、旧stateを<code>resume_failed</code>へ変更する。</li>
+    <li>
+      fallbackは同じRun、Todo、workspace、Agent Mode Sessionを維持し、新しいprovider session
+      stateだけを作る。
+    </li>
+    <li>provider response本文とfallback後の本文を固定文へ差し替えない。</li>
+  </ul>
+  <h3 id="section-68-queue-integration">6.8 Queue integration</h3>
+  <ul>
+    <li>Queueはruntime生存判定をRun statusだけで行わず、Coding Agentの公開recovery portを呼ぶ。</li>
+    <li>
+      Queue-only <code>needs_human</code> mutationを廃止し、Run / Task / execution ownerを含むatomic
+      interruption transitionへ委譲する。
+    </li>
+    <li>30分stale thresholdは未知ownerや外部workerのfallback watchdogとして残す。</li>
+    <li>process boot交代が確認できる<code>api_process</code> ownerはstale thresholdを待たない。</li>
+    <li>
+      resume claim成功時にQueue lease owner、version、heartbeatをnew execution ownerへ同期する。
+    </li>
+    <li>terminal closeoutは既存Queue completionを使用する。</li>
+  </ul>
+  <h2 id="section-7-実装フェーズ">7. 実装フェーズ</h2>
+  <h3 id="phase-0-incident-fixtureとbaseline固定">Phase 0: Incident fixtureとbaseline固定</h3>
+  <h4 id="実装">実装</h4>
+  <ol>
+    <li>
+      Run / Todo / Queue / runtime session / workspaceをincidentと同じ状態へ作るfixtureを追加する。
+    </li>
+    <li><code>tool.call_started</code>だけを保存し、result未保存でprocess消失した状態を作る。</li>
+    <li>
+      Workbenchへ任意のresume意味を持つmessageを送り、現状でfresh
+      startと<code>RUN_ALREADY_ACTIVE</code>になるtestを追加する。
+    </li>
+    <li>Task statusが<code>ready</code>へ壊れる現状もfailure evidenceとして固定する。</li>
+    <li>baseline schema、Run event sequence、System Context digestを記録する。</li>
+  </ol>
+  <h4 id="主な対象">主な対象</h4>
+  <ul>
+    <li><code>tests/services.coding-agent-process-restart.test.ts</code></li>
+    <li><code>tests/nightworkers-workbench-routes/*</code></li>
+    <li><code>tests/implementation-queue-resilience.test.ts</code></li>
+    <li><code>tests/codex-agent-runtime/llm-owned-contract.cases.ts</code></li>
+  </ul>
+  <h4 id="完了条件">完了条件</h4>
+  <ul>
+    <li>
+      production変更前に、restart後のfresh start衝突を一つのdeterministic scenarioとして再現できる。
+    </li>
+    <li>failureがprovider thread欠落ではなくrouting / ownership不整合であることをassertできる。</li>
+  </ul>
+  <h3 id="phase-1-runtime-execution-ownership-persistence">
+    Phase 1: Runtime execution ownership persistence
+  </h3>
+  <h4 id="実装-1">実装</h4>
+  <ol>
+    <li>Coding Agent-owned schema、bootstrap、migrationを追加する。</li>
+    <li>claim、heartbeat、interrupt、resume claim、releaseのrepository methodをCASで実装する。</li>
+    <li>runtime launch時にowner rowを作成し、heartbeatをRun / Queueと同時更新する。</li>
+    <li>terminal closeout時にownerをreleasedへ移す。</li>
+    <li>
+      migration前active Runはowner unknownとしてbackfillし、startupで安全にinterruptedへ移す。
+    </li>
+  </ol>
+  <h4 id="主な対象-1">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/persistence/runtime-execution-schema.ts</code></li>
+    <li><code>api/modules/codingAgent/persistence/runtime-execution.repository.ts</code></li>
+    <li><code>api/modules/codingAgent/application/runtime-execution-ownership.service.ts</code></li>
+    <li><code>api/db/client.ts</code></li>
+    <li><code>drizzle/migrations/&lt;next&gt;_coding_agent_run_executions.sql</code></li>
+  </ul>
+  <h4 id="完了条件-1">完了条件</h4>
+  <ul>
+    <li>同じRunへの二重claimは一件だけ成功する。</li>
+    <li>stale revision、別owner、terminal Runはmutationされない。</li>
+    <li>existing Run / runtime sessionをreadできる。</li>
+  </ul>
+  <h3 id="phase-2-process-interruptionとstartupshutdown-reconciliation">
+    Phase 2: Process interruptionとstartup/shutdown reconciliation
+  </h3>
+  <h4 id="実装-2">実装</h4>
+  <ol>
+    <li>interruption snapshot builderとunresolved tool call projectorを追加する。</li>
+    <li>startupで旧API boot ownerをreconcileするapplication serviceを追加する。</li>
+    <li>
+      interruptible statusの共通定義を追加し、Run status transition tableとactive Run
+      queryを同じ定義へ揃える。
+    </li>
+    <li>Run / Task / Queue / execution owner / runtimePauseをatomicに更新する。</li>
+    <li>graceful shutdown用suspend signalをAgent runtimeへ追加する。</li>
+    <li>
+      <code>server.ts</code>はCoding Agent公開lifecycle commandをstartup / shutdown順序へ接続する。
+    </li>
+    <li>generic Queue reconcileがQueueだけを変更しないようrecovery portへ委譲する。</li>
+  </ol>
+  <h4 id="主な対象-2">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/application/process-interruption.service.ts</code></li>
+    <li><code>api/modules/codingAgent/context/process-interruption-snapshot.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/NativeAgentRuntime.ts</code></li>
+    <li><code>api/modules/codingAgent/index.ts</code></li>
+    <li><code>api/server.ts</code></li>
+    <li><code>api/modules/queue/queue-health.service.ts</code></li>
+    <li><code>api/modules/nightworkers/run-orchestration/status.ts</code></li>
+    <li><code>shared/schemas/nightworkers/run.schema.ts</code></li>
+    <li>Agent非依存のlifecycle contract / portだけを置く<code>api/modules/agentsShare</code></li>
+  </ul>
+  <h4 id="完了条件-2">完了条件</h4>
+  <ul>
+    <li>abrupt restart直後、30分待たずにRunがresumable pauseへ移る。</li>
+    <li>graceful shutdownとabrupt restartが同じcanonical snapshotを作る。</li>
+    <li>running Todo、provider session、workspace bindingが変化しない。</li>
+    <li>reconciliationを複数回実行してもeventとrevisionが重複しない。</li>
+  </ul>
+  <h3 id="phase-3-same-run-resume-command">Phase 3: Same-Run resume command</h3>
+  <h4 id="実装-3">実装</h4>
+  <ol>
+    <li>shared command contract / portへinterrupted Run resumeを追加する。</li>
+    <li>
+      Coding Agent handlerからNightWorkers internal resume importを除去し、Coding Agent application
+      serviceがresume ownershipを持つ。
+    </li>
+    <li>resume preconditionとworkspace attestationをtransactionで検証する。</li>
+    <li>new execution owner claimとRun / Task / Queue projectionを一つのtransactionで更新する。</li>
+    <li>same Run preparation / launchを呼び、新しいTaskRunやAgent Mode Sessionを作成しない。</li>
+    <li>launch失敗時はsame Runを再びresumable pauseへ戻す。</li>
+  </ol>
+  <h4 id="主な対象-3">主な対象</h4>
+  <ul>
+    <li><code>api/modules/agentsShare/contracts/coding-agent-run.ts</code></li>
+    <li><code>api/modules/agentsShare/ports/coding-agent-run.ts</code></li>
+    <li><code>api/modules/codingAgent/application/coding-agent-run.handler.ts</code></li>
+    <li><code>api/modules/codingAgent/application/resume-interrupted-run.service.ts</code></li>
+    <li><code>api/modules/codingAgent/application/start-coding-agent-run.service.ts</code></li>
+    <li>
+      既存<code>api/modules/nightworkers/run-orchestration/resume-task-run*.ts</code>のCoding
+      Agent固有責務を移動または薄いhost adapter化
+    </li>
+  </ul>
+  <h4 id="完了条件-3">完了条件</h4>
+  <ul>
+    <li>resume結果のRun ID、Agent Mode Session ID、Todo ID、workspace IDが停止前と一致する。</li>
+    <li>concurrent resumeでruntimeが二重起動しない。</li>
+    <li>direct / Mission Pilot provenanceが保持される。</li>
+  </ul>
+  <h3 id="phase-4-workbench-semantic-routingとmutation-atomicity">
+    Phase 4: Workbench semantic routingとmutation atomicity
+  </h3>
+  <h4 id="実装-4">実装</h4>
+  <ol>
+    <li>intake gate JSON schemaへ<code>runDisposition</code>を追加する。</li>
+    <li>structurally resumableなcandidate snapshotをpromptへ追加する。</li>
+    <li><code>routingSnapshotDigest</code>をpersist / reload contractへ追加する。</li>
+    <li><code>resume_existing_run</code>をsame-Run resume commandへdispatchする。</li>
+    <li>fresh start前のTask=<code>ready</code> mutationを削除し、成功後projectionへ移す。</li>
+    <li>failure catchでTask / Run / Queue stateを変更しない。</li>
+    <li>prompt文言は日本語を維持し、regex / keyword branchを追加しない。</li>
+    <li>TOML、catalog JSON、generated TypeScriptを同時更新する。</li>
+  </ol>
+  <h4 id="主な対象-4">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/intake/plan-mode-gate.ts</code></li>
+    <li><code>api/systemContexts/contexts/codingAgent/plan-mode-gate.context.toml</code></li>
+    <li><code>api/systemContexts/generated/catalog.json</code></li>
+    <li><code>api/systemContexts/generated/catalog.generated.ts</code></li>
+    <li><code>api/modules/nightworkers/nightworkers.workbench.service.ts</code></li>
+    <li>Workbench route / gate tests</li>
+  </ul>
+  <h4 id="完了条件-4">完了条件</h4>
+  <ul>
+    <li>LLM fixtureがresumeを選ぶとfresh Runが作られない。</li>
+    <li>textのkeywordを変更してもfixtureの構造化decisionどおりにrouteされる。</li>
+    <li>stale routing snapshotは拒否され、最新stateの再取得へ進む。</li>
+    <li>start失敗後もTask statusが元のprojectionから変わらない。</li>
+  </ul>
+  <h3 id="phase-5-provider-continuationとunknown-outcome-recovery">
+    Phase 5: Provider continuationとunknown-outcome recovery
+  </h3>
+  <h4 id="実装-5">実装</h4>
+  <ol>
+    <li>process interruption State CardをCodex runtime promptへ追加する。</li>
+    <li>same provider thread resume成功caseを実装・検証する。</li>
+    <li>incomplete provider turnのresume挙動をfixture化する。</li>
+    <li>resume不可の場合はsame Run内fresh provider thread fallbackを使用する。</li>
+    <li>unresolved tool call evidenceをLLMへ渡し、host自動再実行を禁止する。</li>
+    <li>server-side idempotent toolとnative execのrecovery表示を分ける。</li>
+    <li>provider stateのlastSeenAt、resume success / failure eventを更新する。</li>
+  </ol>
+  <h4 id="主な対象-5">主な対象</h4>
+  <ul>
+    <li><code>api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-prompt.ts</code></li>
+    <li><code>api/modules/codingAgent/runtime/codex-runtime-closeout.ts</code></li>
+    <li><code>api/modules/codingAgent/context/context-packet.ts</code></li>
+    <li>
+      <code>api/services/runtime-session-state.ts</code>からCoding
+      Agent固有責務をmodule内repositoryへ移す範囲
+    </li>
+    <li>Codex resume contract tests</li>
+  </ul>
+  <h4 id="完了条件-5">完了条件</h4>
+  <ul>
+    <li>providerが許可する場合は同じthread IDで次turnが開始する。</li>
+    <li>
+      providerが拒否してもRun / Todo / workspaceは同じで、過去eventとunknown outcomeを参照できる。
+    </li>
+    <li>tool callが暗黙に成功、失敗、再実行へ分類されない。</li>
+    <li>raw resume errorとprovider本文が保持される。</li>
+  </ul>
+  <h3 id="phase-6-integrationcanaryrollout">Phase 6: Integration、canary、rollout</h3>
+  <h4 id="deterministic-e2e">Deterministic E2E</h4>
+  <p>登録済みtest Project rootを使い、次を一つのscenarioで実行する。</p>
+  <ol>
+    <li>server boot AでCoding Agent Runを開始する。</li>
+    <li>Todoを作成し、current Todoをrunningにする。</li>
+    <li>provider thread IDとworkspace attestationを保存する。</li>
+    <li>
+      fixture runtimeがside-effectまたはverification toolの<code>started</code>
+      eventを保存した直後で停止する。
+    </li>
+    <li>server boot AをSIGKILL相当で終了する。</li>
+    <li>同じDBと登録済みProjectでserver boot Bを起動する。</li>
+    <li>startup reconciliationがRunを<code>process_interrupted</code>へ移すことを確認する。</li>
+    <li>Workbenchへuser messageを送る。</li>
+    <li>LLM fixtureが<code>resume_existing_run</code>を返す。</li>
+    <li>同じRun / Todo / Agent Mode Session / workspaceでruntimeを開始する。</li>
+    <li>provider resumeまたはsame-Run fallback後、workspaceを再観測して検証を続ける。</li>
+    <li>TodoをLLM commandでterminalへ移し、Runを完了する。</li>
+  </ol>
+  <h4 id="canary">Canary</h4>
+  <ul>
+    <li>deterministic E2Eを3回連続で成功させる。</li>
+    <li>live Codex canaryで、verification command中にdev serverを一度停止・再起動する。</li>
+    <li>user resume後に同じRun IDとthread IDで継続することを確認する。</li>
+    <li>
+      providerがincomplete turn resumeを拒否する場合はsame-Run fallback
+      evidenceを確認し、thread変更を明示記録する。
+    </li>
+    <li>
+      canaryは登録済みProjectの専用worktreeで実行し、provider用一時directoryを作業成果の証拠にしない。
+    </li>
+  </ul>
+  <h4 id="rollout">Rollout</h4>
+  <ol>
+    <li>ownership persistenceを先に有効化し、既存runtimeの動作を変えず観測する。</li>
+    <li>startup reconciliationをfixture / test環境で有効化する。</li>
+    <li>same-Run resumeとWorkbench routingを同じreleaseで有効化する。</li>
+    <li>Queue-only stale mutationを削除する。</li>
+    <li>canary成功後にdefault wiringとする。</li>
+  </ol>
+  <p>
+    user-visibleな別runtime modeやkeyword fallbackは追加しない。rollbackは新application
+    wiringを戻すことで行い、追加したownership row、events、runtimePauseは監査情報として保持する。
+  </p>
+  <h2 id="section-8-test-matrix">8. Test Matrix</h2>
+  <table>
+    <caption>
+      8. Test Matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Layer</th>
+        <th scope="col">Scenario</th>
+        <th scope="col">Expected</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Ownership</td>
+        <td>同じRunを二processがclaim</td>
+        <td>一件だけ成功、他方はtyped conflict</td>
+      </tr>
+      <tr>
+        <td>Ownership</td>
+        <td>old API boot owner</td>
+        <td>startup直後にinterrupted</td>
+      </tr>
+      <tr>
+        <td>Ownership</td>
+        <td>live isolated worker</td>
+        <td>interruptしない</td>
+      </tr>
+      <tr>
+        <td>Shutdown</td>
+        <td>graceful server stop</td>
+        <td>cancelledではなくprocess_interrupted</td>
+      </tr>
+      <tr>
+        <td>Restart</td>
+        <td>SIGKILL後startup</td>
+        <td>30分待たずresumable pause</td>
+      </tr>
+      <tr>
+        <td>State</td>
+        <td>interruption transaction</td>
+        <td>Task / Run / Queue / ownerがneeds_human整合</td>
+      </tr>
+      <tr>
+        <td>Todo</td>
+        <td>interruption時running Todo</td>
+        <td>ID / revision / statusを保持</td>
+      </tr>
+      <tr>
+        <td>Workspace</td>
+        <td>attestation一致</td>
+        <td>same workspace resume</td>
+      </tr>
+      <tr>
+        <td>Workspace</td>
+        <td>attestation不一致</td>
+        <td>fail-close、mutationなし</td>
+      </tr>
+      <tr>
+        <td>Intake</td>
+        <td>LLM=<code>resume_existing_run</code></td>
+        <td>same Run resume</td>
+      </tr>
+      <tr>
+        <td>Intake</td>
+        <td>LLM=<code>start_new_run</code> + active pause</td>
+        <td>implicit cancelせずtyped conflict</td>
+      </tr>
+      <tr>
+        <td>Intake</td>
+        <td>stale routing digest</td>
+        <td>decisionを再利用しない</td>
+      </tr>
+      <tr>
+        <td>Mutation</td>
+        <td>fresh start失敗</td>
+        <td>Task status不変</td>
+      </tr>
+      <tr>
+        <td>Resume</td>
+        <td>二重submit</td>
+        <td>runtime一件、二件目revision conflict</td>
+      </tr>
+      <tr>
+        <td>Codex</td>
+        <td>provider thread resume成功</td>
+        <td>same thread ID</td>
+      </tr>
+      <tr>
+        <td>Codex</td>
+        <td>provider thread resume失敗</td>
+        <td>same Run内fresh thread + State Card</td>
+      </tr>
+      <tr>
+        <td>Tool</td>
+        <td>started without finished</td>
+        <td>unknown_outcome evidence、auto rerunなし</td>
+      </tr>
+      <tr>
+        <td>Tool</td>
+        <td>idempotent server mutation</td>
+        <td>idempotency / revisionで安全に再試行</td>
+      </tr>
+      <tr>
+        <td>Provenance</td>
+        <td>direct Run resume</td>
+        <td>orchestrationRef=nullを維持</td>
+      </tr>
+      <tr>
+        <td>Provenance</td>
+        <td>Mission Pilot handoff resume</td>
+        <td>元orchestrationRefを維持</td>
+      </tr>
+      <tr>
+        <td>Reconciliation</td>
+        <td>startupを二回実行</td>
+        <td>event / revision重複なし</td>
+      </tr>
+      <tr>
+        <td>Closeout</td>
+        <td>resume後完了</td>
+        <td>TodoとRunがLLM command後にterminal</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-9-verification-commands">9. Verification Commands</h2>
+  <h3 id="focused">Focused</h3>
+  <pre><code class="language-bash">bun run test -- tests/services.coding-agent-process-restart.test.ts
+bun run test -- tests/services.resume-task-run.test.ts
+bun run test -- tests/implementation-queue-resilience.test.ts
+bun run test -- tests/coding-agent-run-handler.test.ts
+bun run test -- tests/coding-agent-plan-mode-thread-handoff.test.ts
+bun run test -- tests/services.runtime-session-state.test.ts
+bun run test -- tests/services.codex-agent-runtime.test.ts
+</code></pre>
+  <h3 id="system-context--s11t">System Context / S11t</h3>
+  <pre><code class="language-bash">bun run s11tnext:lint
+bun run s11tnext:build
+bun run s11tnext:check
+</code></pre>
+  <h3 id="repository-gates">Repository gates</h3>
+  <pre><code class="language-bash">bun install --frozen-lockfile --ignore-scripts
+bun run typecheck
+bun run lint
+bun run check:architecture
+bun run check:docs
+bun run build:backend
+bun run verify
+</code></pre>
+  <h3 id="e2e--canary">E2E / canary</h3>
+  <pre><code class="language-bash">bun run test -- tests/services.coding-agent-process-restart.test.ts \
+  tests/nightworkers-workbench-routes/routes-workbench-02.test.ts \
+  -t &quot;reconciles an old boot owner|routes a continuation request&quot;
+</code></pre>
+  <p>
+    live Codex canaryは通常gateと分離し、credentialと専用registered
+    Projectを用意したrelease候補で明示実行する。
+  </p>
+  <h2 id="section-10-observability">10. Observability</h2>
+  <p>次の構造eventを追加する。</p>
+  <ul>
+    <li><code>run.execution_owner_claimed</code></li>
+    <li><code>run.execution_owner_heartbeat</code></li>
+    <li><code>run.process_interrupted</code></li>
+    <li><code>run.resume_requested</code></li>
+    <li><code>run.resume_claimed</code></li>
+    <li><code>run.provider_thread_resumed</code></li>
+    <li><code>run.provider_thread_resume_failed</code></li>
+    <li><code>run.provider_thread_fallback_started</code></li>
+    <li><code>run.unresolved_tool_call_detected</code></li>
+  </ul>
+  <p>
+    heartbeat eventはDB更新ごとにtimelineへ大量追加せず、ownership rowの時刻を正本とする。timeline
+    eventはowner claim、interruption、resume、releaseなど状態遷移に限定する。
+  </p>
+  <p>計測する値は次のとおり。</p>
+  <ul>
+    <li>process interruption件数とreason</li>
+    <li>startupからinterruption確定までの時間</li>
+    <li>user resumeからruntime開始までの時間</li>
+    <li>same-Run resume成功率</li>
+    <li>same provider thread resume成功率</li>
+    <li>same-Run fresh provider fallback率</li>
+    <li>unresolved tool call件数</li>
+    <li>二重resume conflict件数</li>
+    <li>Task / Run / Queue projection不整合件数</li>
+    <li>restart後に新規Run衝突した件数（目標0）</li>
+  </ul>
+  <p>これらの値からTaskの意味や完了可否を自動判定しない。</p>
+  <h2 id="section-11-rollback-conditions">11. Rollback Conditions</h2>
+  <p>次のいずれかを検出した場合はdefault wiringを戻す。</p>
+  <ul>
+    <li>live ownerを誤ってinterruptedへ移した。</li>
+    <li>同じRunでruntimeが二重起動した。</li>
+    <li>workspace attestation不一致を通過した。</li>
+    <li>process interruptionによりrunning Todoが暗黙変更された。</li>
+    <li>direct / Mission Pilot provenanceが変化した。</li>
+    <li>provider本文またはraw resume errorが失われた。</li>
+    <li>QueueとRunが異なるactiveRunIdを示した。</li>
+    <li>fresh start正常系がresume candidate誤検出で停止した。</li>
+  </ul>
+  <p>
+    rollback時は新table、events、runtimePauseを削除しない。新しいstartup / resume dispatcher
+    wiringだけを無効化し、保存済み監査情報をread可能に保つ。
+  </p>
+  <h2 id="section-12-完了条件">12. 完了条件</h2>
+  <p>本計画は次のすべてを満たした場合にのみ<code>completed</code>へ更新する。</p>
+  <ul>
+    <li>abrupt / gracefulの両方でprocess interruptionがcanonical pauseとして保存される。</li>
+    <li>restart直後に旧API ownerを検出し、stale thresholdを待たない。</li>
+    <li>Run、Task、Queue、execution ownerが同じ状態を示す。</li>
+    <li>running Todoをhostが暗黙変更しない。</li>
+    <li>WorkbenchのLLM decisionがsame-Run resumeを選択できる。</li>
+    <li>user resumeで新しいTaskRunを作らない。</li>
+    <li>Run、Agent Mode Session、Todo、workspace identityが停止前後で一致する。</li>
+    <li>providerが許可する場合は同じCodex thread IDを再利用する。</li>
+    <li>
+      provider resume失敗時もsame-Run fallbackで過去context、unresolved tool call、workspace
+      Factを参照できる。
+    </li>
+    <li>in-flight tool callをhostが自動成功・失敗・再実行へ分類しない。</li>
+    <li>二重resume、stale revision、workspace mismatchがfail-closeする。</li>
+    <li>fresh start失敗でTask statusが壊れない。</li>
+    <li>user-direct / Mission Pilot handoff provenanceが保持される。</li>
+    <li>
+      focused tests、S11t checks、typecheck、architecture check、docs check、backend build、full
+      verifyがgreenになる。
+    </li>
+    <li>deterministic restart E2Eが3回連続成功する。</li>
+    <li>
+      live Codex canaryが成功するか、provider拒否時のsame-Run fallbackが仕様どおり観測される。
+    </li>
+  </ul>
+  <h2 id="section-13-implementation-closeout">13. Implementation Closeout</h2>
+  <p>2026-08-03にPhase 1〜6のproduction wiringとdeterministic verificationを完了した。</p>
+  <ul>
+    <li>
+      durable execution owner table、boot identity、claim / heartbeat / interrupt / release
+      CASを追加した。
+    </li>
+    <li>
+      graceful shutdown、旧API boot、worker exit、Queue stale recoveryをcanonical
+      <code>process_interrupted</code> pauseへ統合した。
+    </li>
+    <li>Task、Run、Queue、execution ownerを同一transactionで遷移させ、running Todoを維持した。</li>
+    <li>
+      Workbench intakeのLLM
+      contractへ<code>runDisposition</code>を追加し、構造検証済みcandidateとrouting snapshot
+      digestからsame-Run resume commandへdispatchした。
+    </li>
+    <li>
+      provider thread resume成功、raw resume failure、same-Run fresh-thread
+      fallbackを構造eventへ記録した。
+    </li>
+    <li>
+      started-without-finished tool callを<code>unknown</code>としてState
+      Cardへ投影し、hostによる自動再実行を追加しなかった。
+    </li>
+    <li>deterministic restart / Workbench resume scenarioは3回連続成功した。</li>
+    <li>
+      focused 69 tests、全Vitest 2,418 tests、S11t
+      lint/build/check、typecheck、lint、architecture、docs、frontend/backend build、<code
+        >bun run verify</code
+      >がgreenになった。
+    </li>
+    <li>
+      follow-up reviewで800行超の手書きtest 2件をfixture / deadline / route supportへ分割し、worker
+      exitのowner PID照合、Queue recoveryのexecution lease失効条件、same-Run prepareのstatus /
+      context CAS、二重再開時のterminal化防止、resume errorのsecret
+      redaction、監査event失敗時の正本遷移維持を追加した。
+    </li>
+  </ul>
+  <p>
+    live Codex process-restart canaryは、通常のlocal
+    gateから分離するという本計画の方針に従い、この実装Runでは実行していない。credential、専用registered
+    Project、release-candidate buildを用意した環境でのみ実施し、providerがincomplete
+    turnを拒否した場合は今回追加したsame-Run fallback eventを確認する。したがってproduction
+    implementationは完了しているが、本書のstatusはrelease
+    canary完了まで<code>completed</code>ではなく<code>implemented</code>とする。
+  </p>
+</article>

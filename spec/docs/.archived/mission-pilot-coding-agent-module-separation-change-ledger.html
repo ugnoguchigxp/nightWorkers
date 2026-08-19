@@ -1,0 +1,182 @@
+<article lang="ja">
+  <h1 id="mission-pilot--coding-agent-分離-change-ledger">
+    Mission Pilot / Coding Agent 分離 Change Ledger
+  </h1>
+  <p>
+    実装開始時点の既存差分を保持するためのC0台帳。既存差分は本計画の実装開始前から存在していたため、実装対象ではなく保全対象として扱う。
+  </p>
+  <table>
+    <caption>
+      Mission Pilot / Coding Agent 分離 Change Ledger
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">current path / group</th>
+        <th scope="col">current consumers</th>
+        <th scope="col">classification</th>
+        <th scope="col">target public API</th>
+        <th scope="col">target path</th>
+        <th scope="col">checkpoint</th>
+        <th scope="col">pre-existing dirty change</th>
+        <th scope="col">replacement test</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/modules/missionPilot/**</code></td>
+        <td>Mission Pilot route、session、agent runtime</td>
+        <td>missionPilot</td>
+        <td><code>api/modules/missionPilot/index.ts</code></td>
+        <td>同module内のpublic index配下</td>
+        <td>C5-C8</td>
+        <td>あり</td>
+        <td>Mission Pilot action / event tests</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/planMode/**</code></td>
+        <td>NightWorkers、Mission Pilot、Plan UI、Coding Agent continuation</td>
+        <td>split then delete</td>
+        <td>Mission Pilot planning API、neutral Questionnaire/Artifact command</td>
+        <td><code>api/modules/missionPilot/planning</code> と既存中立module</td>
+        <td>C6-C8</td>
+        <td>あり</td>
+        <td><code>mission-pilot-plan-ownership</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/coding-agent-context/**</code></td>
+        <td>Coding Agent runtime、run orchestration、MCP</td>
+        <td>codingAgent</td>
+        <td>Coding Agent context public API</td>
+        <td><code>api/modules/codingAgent/context</code></td>
+        <td>C3</td>
+        <td>あり</td>
+        <td>Coding Agent context packet tests</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/codingAgent/runtime/**</code></td>
+        <td>run orchestration、Review、provider transport</td>
+        <td>mixed</td>
+        <td>Coding Agent runtime public API、neutral outcome/session contract</td>
+        <td><code>api/modules/codingAgent/runtime</code> と既存generic service</td>
+        <td>C3/C7</td>
+        <td>あり</td>
+        <td>runtime / boundary tests</td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/**</code></td>
+        <td>Coding Agent、Review、GitWorktree、MCP</td>
+        <td>mixed</td>
+        <td>Coding Agent catalog とgeneric tool library</td>
+        <td><code>api/modules/codingAgent/tools</code> と既存generic service</td>
+        <td>C4/C8</td>
+        <td>あり</td>
+        <td>tool registry tests</td>
+      </tr>
+      <tr>
+        <td><code>api/services/structured-generation/prompts/mission-pilot-*</code></td>
+        <td>Mission Pilot runtime、Questionnaire</td>
+        <td>missionPilot</td>
+        <td>Mission Pilot prompt API</td>
+        <td><code>api/modules/missionPilot/prompts</code></td>
+        <td>C6/C9</td>
+        <td>あり</td>
+        <td>prompt contract tests</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/questionnaire/**</code></td>
+        <td>UI、route、Task application、Mission Pilot</td>
+        <td>neutral domain + missionPilot autonomy</td>
+        <td>中立Questionnaire command/query、Mission Pilot action adapter</td>
+        <td>既存module + <code>missionPilot/questionnaire</code></td>
+        <td>C5-C8</td>
+        <td>あり</td>
+        <td>Questionnaire event tests</td>
+      </tr>
+      <tr>
+        <td><code>api/modules/specification/**</code></td>
+        <td>UI、artifact generators、Mission Pilot</td>
+        <td>neutral domain + missionPilot planning</td>
+        <td>中立Artifact command/query、Mission Pilot selection</td>
+        <td>既存module + <code>missionPilot/artifacts</code></td>
+        <td>C5-C8</td>
+        <td>あり</td>
+        <td>artifact ownership tests</td>
+      </tr>
+      <tr>
+        <td><code>src/modules/missionPilot/**</code></td>
+        <td>Mission Pilot UI</td>
+        <td>missionPilot</td>
+        <td>Mission Pilot public UI API</td>
+        <td>同module</td>
+        <td>C10</td>
+        <td>あり</td>
+        <td>Pilot UI tests</td>
+      </tr>
+      <tr>
+        <td><code>src/modules/nightworkers/**</code></td>
+        <td>Task shell composition</td>
+        <td>neutral composition</td>
+        <td>role public index only</td>
+        <td><code>src/modules/agentsShare</code> を介したcomposition</td>
+        <td>C10</td>
+        <td>あり</td>
+        <td>workspace boundary tests</td>
+      </tr>
+      <tr>
+        <td><code>tests/**</code></td>
+        <td>契約・回帰検証</td>
+        <td>test-only</td>
+        <td>replacement contract tests</td>
+        <td><code>tests/</code></td>
+        <td>全checkpoint</td>
+        <td>あり</td>
+        <td>baseline and final matrix</td>
+      </tr>
+      <tr>
+        <td>
+          <code>.agent-ontology/boundary-policy.json</code>,
+          <code>scripts/check-module-boundaries.mjs</code>
+        </td>
+        <td>architecture check</td>
+        <td>guardrail</td>
+        <td>public module roots / dependency check</td>
+        <td>同path</td>
+        <td>C1/C11</td>
+        <td>あり</td>
+        <td><code>role-module-boundary</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="c0-evidence">C0 evidence</h2>
+  <ul>
+    <li>Baseline: <code>node scripts/run-vitest.mjs run ...</code>（8 files / 35 tests passed）</li>
+    <li>Boundary: <code>node scripts/check-module-boundaries.mjs</code>（1139 files checked）</li>
+    <li>
+      作業開始時のtracked / untracked差分は <code>git status --short</code> の結果として保持した。
+    </li>
+  </ul>
+  <h2 id="review-remediation-evidence">Review remediation evidence</h2>
+  <ul>
+    <li>
+      Coding Agent runtime本体とNative Local
+      Runnerを<code>api/modules/codingAgent/runtime</code>へ移動し、旧<code>api/services/agent-runtime</code>をretired
+      pathとして境界検査で禁止した。
+    </li>
+    <li>
+      Mission Pilot固有route、Questionnaire intake、Artifact input解決、shared schema、frontend
+      focus/i18nを対応するrole moduleへ移動した。
+    </li>
+    <li>
+      Mission Pilotのtool turn policyとArtifact policyを分離し、Coding Agent provider policyをNative
+      API request adapterへ明示的に適用した。
+    </li>
+    <li>
+      terminal eventはcloseout write完了後にpublishし、同期・非同期subscriber
+      failureを<code>Promise.allSettled</code>で隔離した。
+    </li>
+    <li>
+      最終検証: typecheck、lint、architecture、production build、326 test files / 2013 tests
+      passed。
+    </li>
+  </ul>
+</article>

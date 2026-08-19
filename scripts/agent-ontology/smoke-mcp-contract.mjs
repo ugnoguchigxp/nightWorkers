@@ -33,7 +33,7 @@ if (!validation.ok) {
       ? checkBoundary({
           repoRoot,
           primaryModule: first,
-          plannedFiles: ['spec/docs/coding-agent-module-ontology-implementation-plan.md'],
+          plannedFiles: ['spec/docs/coding-agent-module-ontology-implementation-plan.html'],
         })
       : null,
     verification: first ? getVerificationPlan({ repoRoot, primaryModule: first }) : null,

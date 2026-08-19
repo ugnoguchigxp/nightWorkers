@@ -1,0 +1,874 @@
+<article lang="ja">
+  <h1 id="agent-runtime-boundary--llm-reliability-実装計画">
+    Agent Runtime Boundary / LLM Reliability 実装計画
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>completed</code></li>
+    <li>Document created: 2026-08-16</li>
+    <li>Implemented: 2026-08-16</li>
+    <li>
+      Parent program:
+      <a href="./codebase-review-remediation-program-index.html"
+        >Codebase Review Remediation Program</a
+      >
+    </li>
+    <li>
+      Findings: <code>M1</code>, <code>M2</code>, <code>M3</code>, <code>M10</code>,
+      <code>M14</code>, <code>m8</code>, <code>m10</code>
+    </li>
+    <li>Implementation authorization: completed</li>
+  </ul>
+  <h2 id="実装結果">実装結果</h2>
+  <ul>
+    <li>
+      C-T0/C-T1: Codex CLI <code>0.144.4</code> (darwin/arm64, <code>workspace-write</code>)
+      を実測した結果、Project secret、repository外、
+      symlink外部へのread/writeを遮断できないことを確認した。そのため当該platformのCodex laneは
+      <code>CODEX_RUNTIME_SECURITY_CONTRACT_UNSATISFIED</code
+      >でfail-closedにした。測定値・値を含まないdigest・schemaは
+      <code>tests/fixtures/codex-runtime-security-capabilities/</code>に保存した。
+    </li>
+    <li>
+      C-T2〜C-T5: Coding Agentのhost portと<code>api/composition/coding-agent</code>
+      adapterを導入し、 Coding AgentからNightWorkers private
+      implementationへの直接importを禁止した。unit/integration testは 明示的なfake
+      hostを注入し、production adapterをVitest共通setupへ読み込まない。
+    </li>
+    <li>
+      C-T6: Mission Pilot persistenceのTask Operator value importをcomposition supplied host
+      inputへ置換した。
+    </li>
+    <li>
+      C-T7〜C-T10: malformed tool argument / OpenAI SSEをlossless typed failureに統一し、用途別token
+      budgetと abort後retry停止を検証した。
+    </li>
+    <li>
+      検証: 関連Vitest 14 file / 100 tests、追加したhost-boundary suites 3 file / 20 tests、
+      <code>bun run check:architecture</code>が成功した。全体<code>tsc</code>は本計画外の<code
+        >safe-outbound-fetch</code
+      >
+      / <code>fetch-content</code>の 未完差分で失敗するため、この計画の完了判定には含めていない。
+    </li>
+  </ul>
+  <h2 id="section-1-目的">1. 目的</h2>
+  <p>
+    Native API runtimeとCodex SDK runtimeのsecurity propertyを明示し、Agent role moduleがhost
+    private 実装へ直接依存しない構造へ移行する。同時に、provider stream、tool argument、token
+    budget、abortを losslessかつtypedなfailure contractへ揃える。
+  </p>
+  <p>変更後は次を満たす。</p>
+  <ol>
+    <li>Codex SDK laneがNightWorkersのsecret/workspace/副作用境界を迂回しない。</li>
+    <li>Coding AgentとMission Pilotが、host repositoryや別moduleの内部実装を直接importしない。</li>
+    <li>
+      malformed provider response/tool argumentを本文ごと保持し、実行前に構造的不正として止める。
+    </li>
+    <li>token budgetは用途別の推定根拠とsoft/hard不変条件を持つ。</li>
+    <li>abort後に新しいprovider attemptを開始しない。</li>
+  </ol>
+  <h2 id="section-2-非目的">2. 非目的</h2>
+  <ul>
+    <li><code>approvalPolicy: never</code>だけを理由にCodex sandboxが無効だと扱わない。</li>
+    <li>headless runtimeへ対話approval UIを根拠なく追加しない。</li>
+    <li>Coding Agentへ意味別mode、固定workflow、tool allowlistを追加しない。</li>
+    <li>Native API runtimeとCodex SDK runtimeを別Agent roleとして分割しない。</li>
+    <li>provider parse failure時にLLM本文を固定error messageへ置き換えない。</li>
+    <li>すべてのtoken estimateを同じ除数へ統一しない。</li>
+    <li>Task interpretation、Todo、完了判断をprovider adapterへ移さない。</li>
+  </ul>
+  <h2 id="section-3-現行の確認済み不足">3. 現行の確認済み不足</h2>
+  <h3 id="section-31-runtime-security-asymmetry">3.1 Runtime security asymmetry</h3>
+  <ul>
+    <li>
+      Codex SDKは<code>workspace-write</code>、<code>approvalPolicy: never</code>、repository
+      rootをworking directoryにする。
+    </li>
+    <li>
+      OS sandboxは存在するが、Codex built-in shell/filesystemはNightWorkers worker tool
+      policyを通らない。
+    </li>
+    <li>
+      MCP toolごとの<code>approval_mode: approve</code>とglobal
+      approvalの最終挙動は現行コードだけでは証明できない。
+    </li>
+    <li>Native API runtimeはworker-tool dispatcherからworkspace confinementを要求する。</li>
+  </ul>
+  <h3 id="section-32-role-module-boundary">3.2 Role module boundary</h3>
+  <ul>
+    <li>
+      <code>api/modules/codingAgent</code>の16 production fileがNightWorkers
+      repository/orchestrationへ直接依存する。
+    </li>
+    <li>Mission Pilot persistenceの3 fileがTask Operator runtime functionへ直接依存する。</li>
+    <li>現行architecture checkはこれらを検出せずpassする。</li>
+  </ul>
+  <h3 id="section-33-provider--tool-structural-failure">3.3 Provider / tool structural failure</h3>
+  <ul>
+    <li>
+      Codex tool argument parse失敗は<code>{ _raw }</code>へ変換され、tool call自体は<code
+        >ok: true</code
+      >となる。
+    </li>
+    <li>
+      mutating toolには下流validationがあるが、引数なしread toolはmalformed
+      argumentを無視して実行する。
+    </li>
+    <li>OpenAI SSE JSON parse失敗はwarn後にrecordをdropする。</li>
+    <li>drop後のcontentが偶然validなら、部分欠落したresponseが正常扱いされ得る。</li>
+  </ul>
+  <h3 id="section-34-budget--cancellation">3.4 Budget / cancellation</h3>
+  <ul>
+    <li>
+      general estimateは文字数/4、native context gateは保守的な文字数/3、Mission PilotはUTF-8
+      byte/4+bufferを使う。
+    </li>
+    <li>Mission Pilot既定値はsoft 24k、hard 32kで、既定経路はhard判定より先にcompactionする。</li>
+    <li>
+      provider retry backoffはabortでresolveするが、continue後のattempt開始前に再checkしない。
+    </li>
+  </ul>
+  <h2 id="section-4-target-invariants">4. Target invariants</h2>
+  <ol>
+    <li>Runtime laneの違いでProject secretとworkspace write boundaryの意味が変わらない。</li>
+    <li>Security enforcementはprompt instructionだけに依存しない。</li>
+    <li>
+      <code>approvalPolicy</code>、MCP approval、OS sandbox、NightWorkers server
+      authorizationを別の層として記録する。
+    </li>
+    <li>
+      Coding Agent固有portはCoding Agent moduleが所有し、host
+      adapterをcomposition/registrationで注入する。
+    </li>
+    <li>Mission Pilot package/persistenceはTask Operator操作を既存host port経由で行う。</li>
+    <li>
+      Provider adapterはprovider呼出、JSON抽出、schema検証、typed
+      failure、最小限の互換正規化だけを行う。
+    </li>
+    <li>
+      malformed raw本文はbounded diagnosticとして保持するが、schema-valid argumentへ偽装しない。
+    </li>
+    <li>retryは明示的retryableな一時障害だけに限定し、abort後はattempt数を増やさない。</li>
+    <li>soft budgetはhard budget以下でなければならず、設定不正をruntime開始前に拒否する。</li>
+  </ol>
+  <h2 id="section-5-ownership">5. Ownership</h2>
+  <table>
+    <caption>
+      5. Ownership
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Concern</th>
+        <th scope="col">Owner</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Coding Agent host ports</td>
+        <td><code>api/modules/codingAgent</code></td>
+      </tr>
+      <tr>
+        <td>Coding Agent host adapters</td>
+        <td>Agent private repositoryを逆importしないcomposition/registration root</td>
+      </tr>
+      <tr>
+        <td>Mission Pilot host ports</td>
+        <td><code>packages/mission-pilot</code></td>
+      </tr>
+      <tr>
+        <td>Mission Pilot host adapters</td>
+        <td><code>api/composition/mission-pilot</code></td>
+      </tr>
+      <tr>
+        <td>Shared role-independent contract</td>
+        <td>
+          必要な場合だけ<code>api/modules/agentsShare</code>または<code
+            >shared/modules/agentsShare</code
+          >
+        </td>
+      </tr>
+      <tr>
+        <td>Provider codec/failure</td>
+        <td>provider service/module</td>
+      </tr>
+      <tr>
+        <td>Native runtime orchestration</td>
+        <td><code>api/modules/codingAgent/runtime</code></td>
+      </tr>
+      <tr>
+        <td>SystemContext</td>
+        <td><code>api/systemContexts</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <code>agentsShare</code>へNightWorkers
+    repository、route、role判定、role固有toolを移して境界を迂回しない。
+  </p>
+  <h2 id="section-6-implementation-phases">6. Implementation phases</h2>
+  <h3 id="phase-c0-runtime-security-capability-matrix">
+    Phase C0: Runtime security capability matrix
+  </h3>
+  <h4 id="implementation">Implementation</h4>
+  <p>現在利用するCodex SDK/CLI versionと対象OSごとに、次をfixture repositoryで実測する。</p>
+  <ul>
+    <li>repository内通常file read/write。</li>
+    <li>repository外file read/write。</li>
+    <li><code>.env</code>、<code>.env.*</code>、PEM/key、registry credential file read。</li>
+    <li>shell child process、symlink、absolute path。</li>
+    <li>network access。</li>
+    <li>MCP <code>approval_mode</code>とglobal <code>approvalPolicy</code>の組合せ。</li>
+    <li>server側authorization拒否時のCodex event/result。</li>
+  </ul>
+  <p>
+    結果をversion付き<code>CodexRuntimeSecurityCapability</code> snapshotとしてtest
+    fixtureへ保存する。
+  </p>
+  <h4 id="decision-gate">Decision gate</h4>
+  <ul>
+    <li>
+      Codex runtimeへcustom OS deny ruleを注入できる場合は、Area Aのsecret
+      catalogからruleを生成する。
+    </li>
+    <li>
+      注入できない場合は、promptだけで完了扱いにしない。登録済みrepo rootを維持したままsecret readを
+      OS/server境界で防げる別の実装を決めるまで、Codex laneをsecurity-equivalentと判定しない。
+    </li>
+    <li>一時directoryを実作業workspaceとして扱う回避策は採用しない。</li>
+  </ul>
+  <h4 id="acceptance">Acceptance</h4>
+  <ul>
+    <li>「neverだから危険」「workspace-writeだから安全」のどちらの推測にも依存しない。</li>
+    <li>実測結果と採用したenforcement mechanismが対応している。</li>
+  </ul>
+  <h3 id="phase-c1-runtime-security-contractを共通化する">
+    Phase C1: Runtime security contractを共通化する
+  </h3>
+  <h4 id="implementation-1">Implementation</h4>
+  <ol>
+    <li>
+      Area Aのsecret catalog、workspace authority、outbound policyをruntime security
+      contractへ束ねる。
+    </li>
+    <li>Native runtimeは既存worker tool/confinementでcontractを満たす。</li>
+    <li>Codex runtimeはPhase C0で選んだOS/server enforcementを使用する。</li>
+    <li>runtime開始前preflightで、要求contractを満たせない構成をtyped failureにする。</li>
+    <li>
+      <code>approvalPolicy</code>を変更する場合は、headless approval
+      transportと停止手段を先に定義する。
+    </li>
+    <li>
+      MCP mutating toolはserver側のTask ownership、revision、idempotency、Run bindingを維持する。
+    </li>
+  </ol>
+  <h4 id="acceptance-1">Acceptance</h4>
+  <ul>
+    <li>同じfixture secret/security caseがNative/Codex両laneで同じ結果になる。</li>
+    <li>Codex built-in shellを使ってもProject secretを取得できない。</li>
+    <li>approval待ちで無期限hangしない。</li>
+  </ul>
+  <h3 id="phase-c2-coding-agent-host-port-extraction">
+    Phase C2: Coding Agent host port extraction
+  </h3>
+  <h4 id="implementation-2">Implementation</h4>
+  <ol>
+    <li>
+      16 direct importerを用途別にinventory化する。
+      <ul>
+        <li>Run load/update。</li>
+        <li>start/resume/finalize。</li>
+        <li>Task/Todo/context/evidence query。</li>
+        <li>event/ledger persistence。</li>
+      </ul>
+    </li>
+    <li>Coding Agent moduleが必要最小限のtyped portを所有する。</li>
+    <li>
+      portはdomain commandまたはbounded projectionを返し、NightWorkers repository
+      rowをそのまま公開しない。
+    </li>
+    <li>host adapterをruntime registration/compositionで注入する。</li>
+    <li>callerを一群ずつportへ移し、最後にprivate importをarchitecture checkで禁止する。</li>
+    <li><code>nightworkers.repository</code>を別名でre-exportして移行済みとしない。</li>
+  </ol>
+  <h4 id="acceptance-2">Acceptance</h4>
+  <ul>
+    <li>
+      <code>api/modules/codingAgent</code
+      >から<code>api/modules/nightworkers</code>のrepository、orchestration、serviceへの direct
+      importが0件である。
+    </li>
+    <li>Coding Agent standalone entrypointのtestがhost fake portだけで実行できる。</li>
+    <li>Task解釈や完了判断の所有権はCoding Agent applicationに残る。</li>
+  </ul>
+  <h3 id="phase-c3-mission-pilot-persistence-boundary">
+    Phase C3: Mission Pilot persistence boundary
+  </h3>
+  <h4 id="implementation-3">Implementation</h4>
+  <ol>
+    <li>authorization作成に必要なuser capability snapshot/digestをhost inputまたはportへ移す。</li>
+    <li>
+      agent session backfillで必要なTask Operator projectionをMission Pilot host read
+      portから取得する。
+    </li>
+    <li>action definition参照をMission Pilot packageのaction contract portへ接続する。</li>
+    <li>
+      <code>api/composition/mission-pilot</code>でTask Operator public application
+      commandへadapterを実装する。
+    </li>
+    <li>persistence rootからTask Operator runtime importを禁止するarchitecture ruleを追加する。</li>
+  </ol>
+  <h4 id="acceptance-3">Acceptance</h4>
+  <ul>
+    <li>
+      Mission Pilot persistenceから<code>api/modules/taskOperator</code>へのruntime
+      importが0件である。
+    </li>
+    <li>persistenceはDB capabilityとMission Pilot public contractだけを扱う。</li>
+    <li>capability digestとauthorization結果が移行前後で一致するfixture testがある。</li>
+  </ul>
+  <h3 id="phase-c4-lossless-malformed-tool-argument-handling">
+    Phase C4: Lossless malformed tool argument handling
+  </h3>
+  <h4 id="implementation-4">Implementation</h4>
+  <ol>
+    <li>
+      provider codec resultを次のdiscriminated unionへ変更する。
+      <pre><code class="language-ts">type ParsedToolArguments =
+  | { ok: true; value: Record&lt;string, unknown&gt;; raw: string }
+  | { ok: false; raw: string; failure: &quot;invalid_json&quot; | &quot;non_object&quot; };
+</code></pre>
+    </li>
+    <li>raw本文はprovider turn/session historyへbounded保存する。</li>
+    <li>
+      <code>ok: false</code>はtool dispatch前に<code>INVALID_TOOL_ARGS</code>相当のtyped tool
+      resultへ変換する。
+    </li>
+    <li>
+      引数なしtoolを含め、tool
+      schemaの<code>additionalProperties</code>、required、型を共通validatorで検証する。
+    </li>
+    <li>mutating tool固有のauthorization/revision validationは下流に維持する。</li>
+    <li>OpenAI、Bedrock、Codexの互換正規化を同じ契約へ揃える。</li>
+  </ol>
+  <h4 id="acceptance-4">Acceptance</h4>
+  <ul>
+    <li>malformed JSONでread toolもmutating toolも実行されない。</li>
+    <li>raw引数はdiagnostic/historyから再取得できる。</li>
+    <li>schema failureがprovider本文の固定文置換を起こさない。</li>
+  </ul>
+  <h3 id="phase-c5-openai-stream-invalid-response">Phase C5: OpenAI stream invalid response</h3>
+  <h4 id="implementation-5">Implementation</h4>
+  <ul>
+    <li>SSE framingは空dataと<code>[DONE]</code>だけを正常skipする。</li>
+    <li>
+      JSON parse不能recordは、payload preview/digestを保持した<code>StructuredProviderError</code>の
+      <code>invalid_response</code>へ変換する。
+    </li>
+    <li>既にemit済みdeltaがある場合も、最終resultをsuccessにしない。</li>
+    <li>retryはprovider failure policyで明示的retryableとされた場合だけ行う。</li>
+    <li>local-compatible endpointのcompatibility fallbackは既存回数上限を維持する。</li>
+  </ul>
+  <h4 id="acceptance-5">Acceptance</h4>
+  <ul>
+    <li>中間record破損後にvalid JSON contentが組み上がってもsuccessにならない。</li>
+    <li>malformed payload全体を無制限にlog/persistしない。</li>
+    <li>callerは<code>invalid_response</code>とschema-invalid model本文を区別できる。</li>
+  </ul>
+  <h3 id="phase-c6-budget-estimator-contract">Phase C6: Budget estimator contract</h3>
+  <h4 id="implementation-6">Implementation</h4>
+  <ol>
+    <li>
+      推定用途を<code>usage_estimate</code>、<code>context_gate</code>、<code>compaction_gate</code>として型または明示parameterで区別する。
+    </li>
+    <li>provider/model capabilityと使用したalgorithm versionをbudget eventに残す。</li>
+    <li>
+      Native context gateの保守的/3は、model-specific
+      tokenizerまたはより強いevidenceがない限り維持する。
+    </li>
+    <li>Mission Pilotのsoft/hard設定に<code>soft &lt;= hard</code>を強制する。</li>
+    <li>
+      日本語、ASCII、emoji、巨大tool schema、provider message/tool callを含むboundary
+      testを追加する。
+    </li>
+    <li>exact tokenizer導入はmodel/runtime costと精度改善を測定してから決める。</li>
+  </ol>
+  <h4 id="acceptance-6">Acceptance</h4>
+  <ul>
+    <li>estimator差が意図とalgorithm versionで説明できる。</li>
+    <li>既定Mission Pilotはhard超過前にcompactionを試みる。</li>
+    <li>設定不正でhard-before-softになる構成を開始できない。</li>
+  </ul>
+  <h3 id="phase-c7-abort-safe-retry">Phase C7: Abort-safe retry</h3>
+  <h4 id="implementation-7">Implementation</h4>
+  <ul>
+    <li>backoff関数を<code>completed | aborted</code> resultまたはAbortErrorにする。</li>
+    <li>backoff直後、attempt event発行前、provider call直前にsignalを再確認する。</li>
+    <li>abort後はroute fallbackにも進まない。</li>
+    <li>cancelled resultとprovider failureを区別し、retryableへ正規化しない。</li>
+  </ul>
+  <h4 id="acceptance-7">Acceptance</h4>
+  <ul>
+    <li>backoff中abort後のprovider call countが増えない。</li>
+    <li><code>model_response_started</code> eventも追加発行されない。</li>
+  </ul>
+  <h2 id="section-7-terra実行チケット台帳">7. Terra実行チケット台帳</h2>
+  <p>
+    Area Cはsecurity実測、port境界、provider codecを別change
+    setにする。特に<code>C-T0</code>の測定結果がない状態で Codex laneをNative
+    laneと同等と記録してはならない。
+  </p>
+  <h3 id="c-t0-codex-sdk-01444-security-capabilityを実測する">
+    C-T0: Codex SDK 0.144.4 security capabilityを実測する
+  </h3>
+  <ul>
+    <li>Findings: <code>M1</code></li>
+    <li>
+      Write set: 新規<code>tests/codex-runtime-security-capability.integration.test.ts</code>、新規
+      <code>tests/fixtures/codex-runtime-security-capabilities/README.md</code>、実測結果JSON
+    </li>
+    <li>
+      Read-only参照:
+      <code>package.json</code>、<code>node_modules/@openai/codex-sdk/dist/index.d.ts</code>、
+      <code>api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config.ts</code>、
+      <code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code>、Area Aのsecret/confinement
+      contract
+    </li>
+    <li>
+      Fixed fact:
+      現在の<code>@openai/codex-sdk</code>は<code>0.144.4</code>で、<code>ThreadOptions</code>は<code>sandboxMode</code>、working
+      directory、 network flag、approval、additional directoriesを持つが、project secret deny
+      pathのfieldを持たない。
+    </li>
+    <li>
+      Harness: tempではなく登録済みfixture repositoryをworking
+      directoryにし、通常file、<code>.env</code>、<code>.env.local</code>、
+      PEM/key、symlink外部、absolute外部、workspace内write、workspace外write、network、child
+      processを各1 turnで測る。 fixture secretはランダム生成し、結果JSONには値ではなく<code
+        >allowed/denied/error code/digest</code
+      >だけを保存する。
+    </li>
+    <li>
+      Matrix key: SDK version、bundled Codex version、OS/arch、sandboxMode、approvalPolicy、network
+      flag、 additionalDirectories、実行日時を必須にする。
+    </li>
+    <li>
+      Stop: provider credential、対象OS、実CLIがなく未実行の場合はunit
+      mockでpassへ置換しない。<code>M1</code>を
+      <code>measurement_blocked</code>として残し、C-T1へ進まない。
+    </li>
+    <li>Done: NativeとCodexの同一fixture表が得られ、差分ごとにenforcement層が説明される。</li>
+  </ul>
+  <h3 id="c-t1-runtime-security-preflightをarea-a-contractへ接続する">
+    C-T1: Runtime security preflightをArea A contractへ接続する
+  </h3>
+  <ul>
+    <li>Findings: <code>M1</code></li>
+    <li>Depends on: <code>A-T2</code>, <code>A-T3</code>, <code>C-T0</code></li>
+    <li>
+      Write set: 新規<code>api/modules/codingAgent/runtime/runtime-security-contract.ts</code>、
+      新規<code>api/modules/codingAgent/runtime/codex-sdk/codex-confinement-wrapper.ts</code>、
+      <code>api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config.ts</code>、
+      <code>api/modules/codingAgent/runtime/codex-sdk/codex-sdk-client.ts</code>、
+      <code>tests/native-agent-runtime-coverage.test.ts</code>、C-T0 suite
+    </li>
+    <li>
+      Contract fields: canonical repo root、read/write roots、existing project secret deny
+      paths、network policy、 confinement required、capability snapshot
+      ID。Native/Codexの両laneが開始前に同じcontractを受け取る。
+    </li>
+    <li>
+      Codex enforcement: C-T0で外側OS
+      confinementとCodex自身のsandbox併用が実証できたOSだけ、そのwrapperを
+      <code>Codex</code
+      >の<code>codexPathOverride</code>/起動adapterへ接続する。wrapperは実repositoryをcwdに維持し、Area
+      Aのsecret denyと network denyを外側で強制する。一時directoryを作業workspaceにしない。
+    </li>
+    <li>
+      Fail closed: SDK fieldやpromptだけでsecret denyを実現したことにしない。該当platformでouter
+      confinementを 構成・実証できない場合、Codex
+      lane開始を<code>CODEX_RUNTIME_SECURITY_CAPABILITY_MISSING</code>で停止する。
+    </li>
+    <li>
+      Approval: <code>approvalPolicy: never</code>はheadless動作設定として維持し、security
+      boundaryの根拠に数えない。 MCP mutating toolのserver-side
+      authorization/revision/idempotencyは変更しない。
+    </li>
+    <li>
+      Done: 同じfixtureがNative/Codexで一致し、preflight failure後にprovider processが0回起動する。
+    </li>
+  </ul>
+  <h3 id="c-t2-coding-agent所有のhost-port-contractを定義する">
+    C-T2: Coding Agent所有のhost port contractを定義する
+  </h3>
+  <ul>
+    <li>Findings: <code>M2</code></li>
+    <li>
+      Write set: 新規<code>api/modules/codingAgent/ports/coding-agent-host.port.ts</code>、
+      新規<code>api/modules/codingAgent/ports/coding-agent-host.types.ts</code>、<code>api/modules/codingAgent/index.ts</code>、新規port
+      unit test
+    </li>
+    <li>
+      Port groups:
+      <code>taskReader</code
+      >、<code>runReader</code>、<code>runLifecycle</code>、<code>runJournal</code>、<code>verificationReader</code>の5
+      interfaceに分ける。 必要operationはTask/Repository/Runのbounded projection取得、Run
+      Todo取得、start/resume、Run/Task event append、 Task message append、Run context CAS、Run
+      publish、verification snapshot/readiness取得に限定する。
+    </li>
+    <li>
+      Types: <code>typeof nightworkersRepo.*</code>をport public typeに使わず、Coding
+      Agentが実際に読むfieldだけを <code>CodingAgentTaskSnapshot</code>等へ定義する。Date、status
+      enum、revision、context snapshotの意味は既存shared schemaを再利用する。
+    </li>
+    <li>
+      Injection: module globalのmutable
+      defaultを置かず、<code>createCodingAgentRunHandlers(host)</code>とruntime
+      constructorへ明示注入する。
+    </li>
+    <li>
+      Stop: 1 interfaceが20 operationを超える、またはNightWorkers DB
+      rowを丸ごと返す必要が出たら、caller inventoryを 再分割してから進む。
+    </li>
+    <li>
+      Done: fake hostだけでstart/resume/context/finalizeのunit
+      testを型検査でき、まだcaller移行は行わない。
+    </li>
+  </ul>
+  <h3 id="c-t3-apicompositioncoding-agent-adapterとregistration-rootを新設する">
+    C-T3: <code>api/composition/coding-agent</code> adapterとregistration rootを新設する
+  </h3>
+  <ul>
+    <li>Findings: <code>M2</code></li>
+    <li>Depends on: <code>C-T2</code></li>
+    <li>
+      Write set: 新規<code>api/composition/coding-agent/coding-agent-host-adapter.ts</code>、新規
+      <code>api/composition/coding-agent/index.ts</code
+      >、<code>api/app.ts</code>、<code>api/server.ts</code>、composition test
+    </li>
+    <li>
+      Fixed fact: 現HEADには<code>api/composition/mission-pilot</code>だけがあり、Coding Agent
+      composition rootは存在しない。
+    </li>
+    <li>
+      Adapter: このdirectoryだけがNightWorkers repository、start/resume orchestration、verification
+      repositoryをimportし、 C-T2 projectionへmapする。domain meaningを再判定せず既存application
+      commandを呼ぶ。
+    </li>
+    <li>
+      Registration: <code>app.ts</code>/<code>server.ts</code>はCoding Agent moduleのzero-arg
+      initializerではなくcomposition factoryを呼ぶ。 unregister/idempotent
+      initializationの現行挙動を維持する。
+    </li>
+    <li>
+      Done: server start二重初期化、unregister/re-register、fake host
+      registrationが既存HTTP/WebSocket testで通る。
+    </li>
+  </ul>
+  <h3 id="c-t4-applicationcontextmcp-importerをportへ移す">
+    C-T4: application/context/MCP importerをportへ移す
+  </h3>
+  <ul>
+    <li>Findings: <code>M2</code></li>
+    <li>Depends on: <code>C-T3</code></li>
+    <li>
+      Write set: 次の9 fileだけ。
+      <ul>
+        <li><code>application/coding-agent-run.handler.ts</code></li>
+        <li><code>application/codex-verification-closeout.service.ts</code></li>
+        <li><code>application/completion-readiness.service.ts</code></li>
+        <li><code>application/interrupted-run-activation.service.ts</code></li>
+        <li><code>application/interrupted-run-launch-recovery.service.ts</code></li>
+        <li><code>application/run-finalize-controller.ts</code></li>
+        <li><code>application/runtime-execution-interruption.service.ts</code></li>
+        <li><code>context/context-packet.ts</code></li>
+        <li><code>mcp/nightworkers-codex-mcp-support.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Method: 既にdependency
+      objectを持つcontrollerはtypeをportへ置換し、直接importだけを削除する。event/messageの
+      payload、Task revision、Run ownership checkは現行値をgolden testで固定する。
+    </li>
+    <li>
+      Tests:
+      <code>tests/coding-agent-command-http.test.ts</code
+      >、<code>tests/task-operator-regressions.test.ts</code>、
+      <code>tests/coding-agent-runtime-reliability-integration.test.ts</code>と各近接coverage
+      suite。
+    </li>
+    <li>
+      Stop: DB transactionをCoding Agent側へ移す必要が生じたら行わず、composition
+      adapterに新しいatomic host commandを追加する。
+    </li>
+    <li>
+      Done: 上記9 fileから<code>modules/nightworkers</code> importが0件で、fake host testが通る。
+    </li>
+  </ul>
+  <h3 id="c-t5-runtime-importerをportへ移しarchitecture-guardを有効化する">
+    C-T5: runtime importerをportへ移しarchitecture guardを有効化する
+  </h3>
+  <ul>
+    <li>Findings: <code>M2</code></li>
+    <li>Depends on: <code>C-T4</code></li>
+    <li>
+      Write set: 次の7 file、C-T2 port、C-T3
+      adapter、<code>.agent-ontology/boundary-policy.json</code>、
+      <code>scripts/check-module-boundaries.mjs</code
+      >、<code>tests/role-module-boundary.test.ts</code>。
+      <ul>
+        <li><code>runtime/codex-repository-preflight.ts</code></li>
+        <li><code>runtime/e2e-fixture-runtime.ts</code></li>
+        <li><code>runtime/ledger-sink.ts</code></li>
+        <li><code>runtime/native-api-runner/native-api-runner-context-events.ts</code></li>
+        <li><code>runtime/native-api-runner/native-api-runner-history-cards.ts</code></li>
+        <li><code>runtime/native-api-runner/native-api-runner.ts</code></li>
+        <li><code>runtime/NativeAgentRuntime.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Note: inventoryはimportを持つ16 production fileを正本にし、上記は7 fileである。C-T4の9
+      fileと重複する
+      <code>runtime-execution-interruption.service.ts</code>等を二重計上しない。実装開始時に<code
+        >rg -l</code
+      >を再実行し、合計が変われば台帳を更新する。
+    </li>
+    <li>
+      Architecture rule:
+      <code>api/modules/codingAgent/**</code
+      >から<code>api/modules/nightworkers/**</code>へのvalue/type import、dynamic import、 public
+      index経由re-exportを禁止し、許可rootを<code>api/composition/coding-agent/**</code>だけにする。policyにsource/target
+      edgeを 追加し、scriptがTypeScript preprocessorで静的import/exportを検査する。
+    </li>
+    <li>
+      Done: repository-wide検索0件、architecture test pass、Native/Codex/e2e fixtureの現行behavior
+      test pass。
+    </li>
+  </ul>
+  <h3 id="c-t6-mission-pilot-persistenceの3つのtask-operator-value-importをhost-inputへ移す">
+    C-T6: Mission Pilot persistenceの3つのTask Operator value importをhost inputへ移す
+  </h3>
+  <ul>
+    <li>Findings: <code>M3</code></li>
+    <li>
+      Write set: <code>api/modules/missionPilot/persistence/authorization.ts</code>、
+      <code>api/modules/missionPilot/persistence/agent/agent-session.repository.ts</code>、
+      <code>api/modules/missionPilot/persistence/agent/conversation.repository.ts</code>、
+      <code>api/composition/mission-pilot/mission-pilot-host-ports.ts</code>、runtime
+      bindings/dependencies、 <code>scripts/check-mission-pilot-package-boundary.mjs</code>、
+      <code>tests/mission-pilot-repository.test.ts</code
+      >、<code>tests/mission-pilot-provider-port.test.ts</code>、architecture test
+    </li>
+    <li>
+      Authorization: <code>readCurrentTaskOperatorUserCapabilities</code>とdigest生成をcomposition
+      host portへ移し、persistenceは
+      <code>{capabilities, capabilityDigest}</code>を入力としてauthorization
+      rowを構築するだけにする。
+    </li>
+    <li>
+      Backfill/play:
+      <code>humanTaskOperatorPrincipal</code>と<code>readTaskOperatorProjection</code>をhost port
+      callの結果として受け、 persistence repositoryからTask Operator commandを呼ばない。
+    </li>
+    <li>
+      Conversation: <code>getTaskOperatorActionDefinition</code>で解決した<code>actionId</code>
+      projectionをclaim/append command inputへ渡し、 DB transaction中に別role runtimeを呼ばない。
+    </li>
+    <li>
+      Type-only exception: <code>shared/modules/taskOperator</code>の純粋schema
+      typeは両roleで同義なら維持できる。
+    </li>
+    <li>
+      Done: 上記3 fileから<code>api/modules/taskOperator</code> value importが0件で、capability
+      digest/action ID/backfill結果が移行前fixtureと一致する。
+    </li>
+  </ul>
+  <h3 id="c-t7-malformed-tool-argumentをdispatch前のtyped-failureにする">
+    C-T7: malformed tool argumentをdispatch前のtyped failureにする
+  </h3>
+  <ul>
+    <li>Findings: <code>M14</code></li>
+    <li>
+      Write set: 新規<code>api/services/structured-llm/tool-argument-codec.ts</code>、
+      <code>api/services/structured-llm/tool-calls.ts</code
+      >、<code>codex-tool-turn.ts</code>、<code>openai-tool-call-codec.ts</code>、
+      <code>providers.ts</code
+      >、<code>bedrock-provider.ts</code>、<code>provider-failure.ts</code>、<code>codex-provider.ts</code>、
+      <code>tests/structured-llm/codex-tool-turn.test.ts</code>と新規codec test
+    </li>
+    <li>
+      Codec result:
+      <code
+        >{ok:true,value,raw} |
+        {ok:false,raw,failure:&#39;invalid_json&#39;|&#39;non_object&#39;}</code
+      >。空文字はschemaが
+      propertyなしを許す場合の<code>{}</code>として扱う。array/null/number/stringを<code>{value}</code>へ正規化しない。
+    </li>
+    <li>
+      Failure: invalid
+      callが1件でもあれば<code>ProviderToolCall</code>を生成せず、<code>StructuredProviderError</code>の
+      <code>kind:&#39;invalid_response&#39;</code>,
+      <code>code:&#39;INVALID_TOOL_ARGUMENTS&#39;</code>,
+      <code>retryable:false</code>をthrowする。outer response/contentと raw argumentsは8
+      KiB上限+digestの<code>providerBody</code>へ保持する。<code>{_raw}</code>を実行可能argumentsにしない。
+    </li>
+    <li>
+      Schema: JSON object化後のtool input schema検証は既存dispatch
+      validatorを通し、required/type/additionalProperties failureでもtool本体を呼ばない。provider
+      codecにTask意味判断を追加しない。
+    </li>
+    <li>
+      Done: Codex/OpenAI/Bedrockのinvalid JSON/non-object/unknown tool/schema mismatchでdispatch
+      count 0、raw診断あり。
+    </li>
+  </ul>
+  <h3 id="c-t8-malformed-openai-sse-recordをinvalid_responseにする">
+    C-T8: malformed OpenAI SSE recordを<code>invalid_response</code>にする
+  </h3>
+  <ul>
+    <li>Findings: <code>m8</code></li>
+    <li>
+      Write set:
+      <code>api/services/structured-llm/openai.ts</code>、<code>provider-failure.ts</code>、
+      <code>tests/structured-llm/services-structured-llm-02/schema-parsing.cases.ts</code
+      >、近接stream suite
+    </li>
+    <li>
+      Contract: 空dataと<code>[DONE]</code>だけをskipする。JSON.parse失敗時はlogger
+      warn+continueを廃止し、bounded payloadを
+      <code>providerInvalidResponseError</code
+      >へ渡して直ちにthrowする。既にemitしたdeltaがあってもfinal successを返さない。
+    </li>
+    <li>
+      Retry: kindは<code>invalid_response</code>、retryable false。local-compatible endpoint
+      fallbackを増やさない。
+    </li>
+    <li>
+      Done: 先頭/中間/末尾の破損record、multi-line SSE、UTF-8分割でpartial
+      contentがsuccessにならない。
+    </li>
+  </ul>
+  <h3 id="c-t9-estimatorを用途別に命名しbudget不変条件だけを固定する">
+    C-T9: estimatorを用途別に命名しbudget不変条件だけを固定する
+  </h3>
+  <ul>
+    <li>Findings: <code>M10</code></li>
+    <li>
+      Write set: <code>api/services/conversation-context/token-budget.ts</code>、
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-context-budget.ts</code>、
+      <code>packages/mission-pilot/src/services/conversation-context/token-budget.ts</code
+      >、各近接test
+    </li>
+    <li>
+      First step: ASCII、日本語、emoji、tool schema/history fixtureで3
+      estimatorの出力、soft/compact/hard境界をsnapshotする。
+    </li>
+    <li>
+      Decision: current <code>/4</code>、conservative <code>/3</code>、UTF-8 byte
+      <code>/4+buffer</code>は用途を示す関数名とalgorithm versionを付ける。
+      <code>soft &lt;= hard</code>、<code>autoCompact &lt;= safePrompt &lt;= context-reserved</code
+      >が全fixtureで成立するなら式を変更しない。
+    </li>
+    <li>
+      Stop: model
+      tokenizerを追加する場合はdependency/lockfile変更を別ticketにし、精度測定なしに除数を統一しない。
+    </li>
+    <li>Done: no-change判断を含め、各式のconsumerとboundary testが一対一で説明できる。</li>
+  </ul>
+  <h3 id="c-t10-abort中backoffからprovider-retryへ進ませない">
+    C-T10: abort中backoffからprovider retryへ進ませない
+  </h3>
+  <ul>
+    <li>Findings: <code>m10</code></li>
+    <li>
+      Write set:
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-provider-attempts.ts</code
+      >、 既存native provider attempt suite
+    </li>
+    <li>
+      Contract: <code>waitForProviderRetryBackoff</code>は<code
+        >&#39;elapsed&#39; | &#39;aborted&#39;</code
+      >を返す。callerは<code>aborted</code>または
+      <code>signal.aborted</code>ならloopを終了し、attempt event、route fallback、provider
+      callを追加しない。
+    </li>
+    <li>
+      Done: fake timerでbackoff中abortした時のprovider call count=1、後続attempt event=0、cancelled
+      resultのkind維持を検証する。
+    </li>
+  </ul>
+  <h2 id="section-8-architecture-checks">8. Architecture checks</h2>
+  <p>次をstatic checkへ追加する。</p>
+  <ol>
+    <li>
+      <code>api/modules/codingAgent</code>からNightWorkers private
+      repository/orchestration/serviceへのimport禁止。
+    </li>
+    <li><code>api/modules/missionPilot/persistence</code>からTask Operator runtime import禁止。</li>
+    <li>Coding Agent/Mission Pilot host adapterの許可root限定。</li>
+    <li>role module間のpublic index経由re-exportによる迂回禁止。</li>
+    <li>provider codecからTask/Queue repositoryへのimport禁止。</li>
+  </ol>
+  <h2 id="section-9-verification-commands">9. Verification commands</h2>
+  <pre><code class="language-bash"># Existing characterization suites
+node scripts/run-vitest.mjs run \
+  tests/structured-llm/codex-tool-turn.test.ts \
+  tests/structured-llm/services-structured-llm-02.test.ts
+
+# Suites added by this implementation plan
+node scripts/run-vitest.mjs run \
+  tests/codex-agent-runtime/llm-owned-contract.test.ts \
+  tests/native-api-provider-attempts.test.ts
+bun run check:architecture
+bun run typecheck
+bun run lint
+</code></pre>
+  <p>
+    後半2件は本計画で新設するtest fileであり、現状ではまだ存在しない。実装完了時には上記4件を
+    すべて実行し、globで無関係なsuiteを成功根拠にしない。
+  </p>
+  <h2 id="section-10-risks-and-mitigations">10. Risks and mitigations</h2>
+  <table>
+    <caption>
+      10. Risks and mitigations
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Risk</th>
+        <th scope="col">Mitigation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Codex security enforcementがSDK version依存</td>
+        <td>capability snapshotをversion固定し、upgrade時に再実測する</td>
+      </tr>
+      <tr>
+        <td>port抽出が巨大interfaceになる</td>
+        <td>use case単位のbounded command/projectionに分ける</td>
+      </tr>
+      <tr>
+        <td>raw argument保持がsecret persistenceを増やす</td>
+        <td>既存redaction/firewallとbounded digestを使用する</td>
+      </tr>
+      <tr>
+        <td>malformed streamをretryしてprovider callが増える</td>
+        <td>retryable kindと回数上限を維持する</td>
+      </tr>
+      <tr>
+        <td>estimator統一でcontextを早く捨てる</td>
+        <td>一律除数化せず、boundary dataで比較する</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-11-completion-criteria">11. Completion criteria</h2>
+  <ol>
+    <li>Native/Codex runtimeが同じsecurity fixture matrixを満たす。</li>
+    <li>Coding AgentからNightWorkers private importがなくなる。</li>
+    <li>Mission Pilot persistenceからTask Operator runtime importがなくなる。</li>
+    <li>malformed tool argumentがdispatchされず、raw diagnosticは保持される。</li>
+    <li>malformed OpenAI SSE recordがsuccessへ混入しない。</li>
+    <li>soft/hard budget不変条件と多言語boundary testがある。</li>
+    <li>abort後にprovider call/eventが増えない。</li>
+    <li>architecture、限定test、typecheck、lintが成功する。</li>
+  </ol>
+</article>

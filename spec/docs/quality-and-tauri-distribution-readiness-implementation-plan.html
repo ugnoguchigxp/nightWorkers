@@ -1,0 +1,1271 @@
+<article lang="ja">
+  <h1 id="nightworkers-品質改善--tauri-配布準備-実装計画">
+    NightWorkers 品質改善 / Tauri 配布準備 実装計画
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Plan status: <code>in_progress</code></li>
+    <li>Document created: 2026-07-14</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Baseline HEAD: <code>b0dae7098740e1eba834556e38033fca46865ed7</code></li>
+    <li>Primary release target: macOS ARM64 signed limited beta</li>
+    <li>Secondary targets: Windows x64 / Linux x64 after native package verification</li>
+    <li>Implementation authorization: started</li>
+  </ul>
+  <p>実装進捗（2026-07-14）:</p>
+  <ul>
+    <li>
+      Phase 1 gate は <code>bun run verify</code>、full Vitest、deterministic E2E
+      coverage（45/45）、 Accessibility を通過した。
+    </li>
+    <li>Phase 2 の現行 desktop gate は <code>bun run verify:desktop</code> を通過した。</li>
+    <li>
+      release metadata、documentation consistency、dependency audit、desktop build / smokeを含む
+      <code>bun run verify:release</code> を通過した。
+    </li>
+    <li>
+      Phase 3 / 6 / 8 のproduction CSP、DevTools無効化、migration前backup、bundle budget、
+      third-party notice、SBOM、updater設定とrelease attestationは実装済みで、release regression
+      testでも検証した。
+    </li>
+    <li>
+      旧coverage実行はbackend workerが完走結果を返さず停止していたが、Phase 7で独立runtimeの
+      shard実行とreport統合へ置き換え、global / critical coverage budgetを再確立した。
+    </li>
+    <li>
+      macOS signing / notarization / staple と Windows / Linux のnative installer実行は、対応する
+      GitHub Actions runner と release secrets を必要とするため、実release workflowでの証明を残す。
+    </li>
+  </ul>
+  <p>Phase 7実装進捗（2026-08-16）:</p>
+  <ul>
+    <li>
+      Q7-01を完了した。<code>scripts/run-project-exploration-paired-pilot.ts</code>は980行から576行へ、
+      <code>src/modules/settings/SettingsLlmPanel.tsx</code>は629行から402行へ削減した。固定pilot
+      task、CLI contract、report集計、LLM settings controllerを独立moduleへ分離し、large-source
+      baselineの 例外を増やさず<code>bun run check:architecture</code>を通過した。
+    </li>
+    <li>
+      Q7-02を完了した。backend / frontend coverageをそれぞれ3つの独立runtime / SQLite shardで
+      実行し、全shard終了後にGit worktree / branch leakを一括検査してIstanbul coverage mapを
+      統合する。各shardには10分の停止上限があり、失敗やtimeoutを成功結果へ変換しない。
+    </li>
+    <li>
+      最新のglobal coverageはStatements 82.59%、Branches 76.57%、Functions 81.27%、 Lines
+      84.22%で、80 / 75 / 80 / 80% budgetを満たす。queue mutation、Run status、Todo
+      closeout、Review、Git closeout、secret persistence、desktop bootstrap、tool policyのcritical
+      branch gateも各80%以上を満たす。
+    </li>
+  </ul>
+  <p>
+    この文書を、NightWorkers の現行機能を広げず、品質 gate、Tauri sidecar、
+    security、署名、cross-platform packaging、保守性を配布可能な状態へ収束させるための
+    実装正本とする。
+  </p>
+  <p>
+    本計画は、既存の <code>scripts/verify.mjs</code>、Tauri shell、Node backend sidecar、 SQLite
+    runtime、GitHub Actions、release attestation を置き換える計画ではない。
+    現行境界を維持し、確認済みの失敗と配布上の不足を修復する。
+  </p>
+  <h2 id="section-1-目的">1. 目的</h2>
+  <p>次の状態を達成する。</p>
+  <ol>
+    <li>
+      fast gate、full test、E2E、Accessibility、Desktop、release gate がそれぞれ
+      何を証明するか明確で、成功していない gate を release-ready と扱わない。
+    </li>
+    <li>
+      macOS / Windows / Linux の sidecar が、build host に偶然存在する Node dynamic library や
+      <code>sqlite3</code> CLI に依存せず起動する。
+    </li>
+    <li>
+      macOS ARM64 の <code>.app</code> / DMG を署名・notarize・stapleし、同一SHAの検証済み
+      artifactとして限定β配布できる。
+    </li>
+    <li>Tauri production build で CSP が有効になり、DevTools が無効になる。</li>
+    <li>
+      Windows x64 と Linux x64 は、installerのnative build、install、launch、shutdownを
+      実runner上で確認してからsupport matrixへ追加する。
+    </li>
+    <li>
+      bundle size、coverage、oversized source、第三者license、support導線に測定可能な quality
+      budgetを持たせる。
+    </li>
+  </ol>
+  <h2 id="section-2-現状ベースライン">2. 現状ベースライン</h2>
+  <h3 id="section-21-repository-state">2.1 Repository state</h3>
+  <p>
+    評価時点のworktreeには、Mission Pilot plan reviewに関する既存の未コミット変更がある。
+    品質改善実装では、これらを暗黙に取り込んだり破棄したりしない。
+  </p>
+  <pre><code class="language-text">M api/modules/missionPilot/mission-pilot-plan-review.service.ts
+M shared/schemas/mission-pilot-plan-review.schema.ts
+M tests/mission-pilot-plan-coordinator.test.ts
+M tests/mission-pilot-plan-pipeline.test.ts
+</code></pre>
+  <p>
+    実装開始時には、accepted baseline SHAまたは専用worktreeを確定し、以下の診断結果を
+    artifactまたはPR本文へ保存する。
+  </p>
+  <pre><code class="language-bash">git rev-parse HEAD
+git status --short --branch
+node scripts/verify.mjs base --list
+node scripts/verify.mjs desktop --list
+node scripts/verify.mjs release --list
+</code></pre>
+  <h3 id="section-22-verification-baseline">2.2 Verification baseline</h3>
+  <p>2026-07-14の診断結果:</p>
+  <table>
+    <caption>
+      2.2 Verification baseline
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Gate</th>
+        <th scope="col">Result</th>
+        <th scope="col">Evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>bun run verify</code></td>
+        <td>pass</td>
+        <td>tracked artifact、architecture、typecheck、Biome、Supervisor regression</td>
+      </tr>
+      <tr>
+        <td><code>bun run verify:audit</code></td>
+        <td>pass</td>
+        <td>High / Critical finding なし</td>
+      </tr>
+      <tr>
+        <td><code>bun run verify:desktop</code></td>
+        <td>local pass</td>
+        <td>runtime test、Rust lint、build、sidecar smoke、packaged smoke</td>
+      </tr>
+      <tr>
+        <td><code>bun run release:check</code></td>
+        <td>pass</td>
+        <td>version / changelog / release note metadata</td>
+      </tr>
+      <tr>
+        <td><code>bun run check:docs</code></td>
+        <td>pass</td>
+        <td>12 documents</td>
+      </tr>
+      <tr>
+        <td><code>bun run demo:smoke</code></td>
+        <td>pass</td>
+        <td>deterministic demo lifecycle</td>
+      </tr>
+      <tr>
+        <td>full Vitest</td>
+        <td>fail</td>
+        <td>304 files pass / 8 fail、2133 tests pass / 10 fail</td>
+      </tr>
+      <tr>
+        <td>deterministic E2E</td>
+        <td>fail</td>
+        <td>43 tests中5 pass / 18 fail / 20 not run</td>
+      </tr>
+      <tr>
+        <td>Accessibility</td>
+        <td>fail</td>
+        <td>4 tests中1 pass / 1 fail / 2 not run</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    既存のcoverage summaryは次の値だが、full testが失敗しているため、最新成功値としては 扱わない。
+  </p>
+  <table>
+    <caption>
+      2.2 Verification baseline（2）
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Metric</th>
+        <th scope="col">Existing summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Statements</td>
+        <td>75.31%</td>
+      </tr>
+      <tr>
+        <td>Branches</td>
+        <td>63.12%</td>
+      </tr>
+      <tr>
+        <td>Functions</td>
+        <td>77.17%</td>
+      </tr>
+      <tr>
+        <td>Lines</td>
+        <td>78.02%</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-23-desktop-baseline">2.3 Desktop baseline</h3>
+  <table>
+    <caption>
+      2.3 Desktop baseline
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Item</th>
+        <th scope="col">Current observation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>local macOS <code>.app</code></td>
+        <td>build / packaged smoke成功</td>
+      </tr>
+      <tr>
+        <td>app size</td>
+        <td>約508 MiB</td>
+      </tr>
+      <tr>
+        <td>staged Node</td>
+        <td>約124 MiB</td>
+      </tr>
+      <tr>
+        <td>staged <code>node_modules</code></td>
+        <td>約306 MiB</td>
+      </tr>
+      <tr>
+        <td>generated DMG</td>
+        <td>約194 MiB</td>
+      </tr>
+      <tr>
+        <td>local signature</td>
+        <td>ad-hoc、TeamIdentifierなし</td>
+      </tr>
+      <tr>
+        <td>Gatekeeper assessment</td>
+        <td>fail</td>
+      </tr>
+      <tr>
+        <td>latest macOS CI</td>
+        <td>staged Nodeが<code>libnode.127.dylib</code>を解決できずsidecar smoke失敗</td>
+      </tr>
+      <tr>
+        <td>latest Windows CI</td>
+        <td>production bootstrapが外部<code>sqlite3</code> CLIを要求して失敗</td>
+      </tr>
+      <tr>
+        <td>Linux / Windows package</td>
+        <td>configは存在するがinstaller build / launch smoke未実施</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-3-問題">3. 問題</h2>
+  <h3 id="section-31-fast-gateとrelease-truthが分離している">
+    3.1 Fast gateとrelease truthが分離している
+  </h3>
+  <p>
+    <code>bun run verify</code>は高速で有用だが、full Vitest、E2E、Accessibility、Desktop packageを
+    含まない。現在はmainのfast gateが成功する一方、releaseに必要なworkflowが失敗している。
+  </p>
+  <h3 id="section-32-e2e-fixtureとscenario-catalogが現行contractに追従していない">
+    3.2 E2E fixtureとscenario catalogが現行contractに追従していない
+  </h3>
+  <ul>
+    <li>
+      isolated
+      repositoryが環境依存で<code>master</code>を作り、fixtureは<code>main</code>を要求する。
+    </li>
+    <li>
+      Project登録が<code>GIT_INTEGRATION_TARGET_INVALID</code>となり、後続scenarioが連鎖停止する。
+    </li>
+    <li>Mission Pilot scenarioがcatalog未登録である。</li>
+    <li>1 testに複数scenario tagがあり、scenario未指定testもある。</li>
+    <li>required scenarioが1件unmappedである。</li>
+    <li>
+      Accessibility testが現行navigation / localeと一致しない<code>Settings</code> linkを要求する。
+    </li>
+  </ul>
+  <h3 id="section-33-sidecar-stagingがbuild-host依存である">
+    3.3 Sidecar stagingがbuild host依存である
+  </h3>
+  <p>
+    <code>scripts/desktop/prepare-sidecar.mjs</code
+    >は、現在の<code>process.execPath</code>を単体copyする。 Node distributionのversion、dynamic
+    library、license、target tripleを固定していない。
+  </p>
+  <p>
+    また、production bootstrap pathの
+    <code>api/services/settings/application-settings-store.ts</code>は<code>sqlite3</code>
+    CLIを同期実行する。 macOS開発機では偶然動作するが、Windows packaged runtimeでは成立しない。
+  </p>
+  <h3 id="section-34-tauri-production-hardeningが未完了である">
+    3.4 Tauri production hardeningが未完了である
+  </h3>
+  <ul>
+    <li><code>app.security.csp</code>が<code>null</code>。</li>
+    <li>production windowでも<code>devtools: true</code>。</li>
+    <li>Tauri crateが常時<code>devtools</code> featureを含む。</li>
+    <li>
+      release workflowはsigning /
+      notarizationを<code>not_requested</code>としてartifactを作成できる。
+    </li>
+  </ul>
+  <h3 id="section-35-cross-platform-supportの表明と検証深度が一致しない">
+    3.5 Cross-platform supportの表明と検証深度が一致しない
+  </h3>
+  <p>
+    Linux / Windows configとbuild commandは存在するが、CI matrixはsidecar readinessまでで、
+    installerをbuild、install、launchしていない。release workflowが公開するcandidateも macOS
+    ARM64のみである。
+  </p>
+  <h3 id="section-36-quality-debtを止めるbudgetが弱い">3.6 Quality debtを止めるbudgetが弱い</h3>
+  <ul>
+    <li>production sourceに600行上限直前のfileが多数ある。</li>
+    <li>bundleが508 MiBあり、target外native prebuildもstagingされる。</li>
+    <li>Node binaryを配布するが、Node distributionのlicense / notice同梱を検証していない。</li>
+    <li>
+      <code>SUPPORT.md</code>がGitHub Discussionsを案内する一方、repositoryではDiscussionsが無効。
+    </li>
+    <li>security reportのprivate contactが具体化されていない。</li>
+    <li>
+      desktop runtime directoryのdocument記述とTauriの<code>app_data_dir</code>実装が一致しない。
+    </li>
+  </ul>
+  <h2 id="section-4-目標状態">4. 目標状態</h2>
+  <figure>
+    <pre class="mermaid" data-spec-html-source="markdown">flowchart LR
+    S[&quot;Accepted clean SHA&quot;]
+    B[&quot;Base / Full Vitest&quot;]
+    E[&quot;Deterministic E2E&quot;]
+    A[&quot;Accessibility&quot;]
+    D[&quot;Self-contained sidecar&quot;]
+    H[&quot;Tauri security hardening&quot;]
+    P[&quot;Signed macOS package&quot;]
+    N[&quot;Notarization / staple&quot;]
+    T[&quot;Same-SHA attestation&quot;]
+    R[&quot;Limited beta release&quot;]
+
+    S --&gt; B
+    B --&gt; E
+    E --&gt; A
+    A --&gt; D
+    D --&gt; H
+    H --&gt; P
+    P --&gt; N
+    N --&gt; T
+    T --&gt; R
+</pre>
+    <figcaption>4. 目標状態の図</figcaption>
+  </figure>
+  <p>
+    Windows / Linuxは上記macOS限定βの完成後、各OSのnative package gateを独立して通し、
+    同一releaseへ段階追加する。
+  </p>
+  <h2 id="section-5-locked-decisions">5. Locked Decisions</h2>
+  <ol>
+    <li>最初の外部配布対象はmacOS ARM64限定βとする。</li>
+    <li>
+      Windows x64 / Linux x64は、native installer smokeが成功するまで「設定済み」以上の
+      supportを表明しない。
+    </li>
+    <li>Node backend sidecar境界は維持し、本計画でRust backendへ全面移植しない。</li>
+    <li>
+      application settingsから外部<code>sqlite3</code> CLI依存を除去する。<code>sqlite3</code>
+      executableの 同梱で延命しない。
+    </li>
+    <li>
+      sidecar Nodeはbuild hostの<code>process.execPath</code>をそのままcopyせず、versionとtargetを
+      固定した再配布可能なruntimeを使用する。
+    </li>
+    <li>
+      test failureは、runtime contractを確認してから実装修正またはtest修正へ分類する。
+      assertion削除、snapshot一括更新、retry増加だけでgreenにしない。
+    </li>
+    <li>
+      E2E repositoryのdefault branchはfixture側で明示し、開発機のglobal Git configに 依存させない。
+    </li>
+    <li>production Tauri packageではCSPを必須化し、DevToolsを無効化する。</li>
+    <li>
+      公式release artifactはsigning / notarizationが<code>verified</code>でなければpublishしない。
+    </li>
+    <li><code>verify:live</code>はcredential不要のrelease gateへ追加しない。</li>
+    <li>
+      migration rollbackはdown migrationを暗黙実行せず、runtime backupと旧version復元を 基本とする。
+    </li>
+    <li>実装作業中にproduct feature、Mission Pilot workflow、Queue semanticsを変更しない。</li>
+    <li>
+      version bump、tag作成、GitHub Release公開は、別途ユーザーが明示的に許可するまで
+      dry-runに留める。
+    </li>
+  </ol>
+  <h2 id="section-6-scope">6. Scope</h2>
+  <h3 id="section-61-含む">6.1 含む</h3>
+  <ul>
+    <li>full Vitest failureの修復。</li>
+    <li>E2E repository fixture、scenario catalog、Accessibility fixtureの修復。</li>
+    <li>verify / release gateの契約testとCI required check整合。</li>
+    <li>application settingsのin-process SQLite access。</li>
+    <li>pinned Node sidecar runtimeとtarget manifest。</li>
+    <li>Tauri CSP / production DevTools hardening。</li>
+    <li>macOS nested binary signing、notarization、stapling、Gatekeeper verification。</li>
+    <li>Windows / Linux native package build・install・launch smoke。</li>
+    <li>bundle size budgetとtarget外dependency pruning。</li>
+    <li>automatic pre-migration backupとrollback verification。</li>
+    <li>third-party notice、SBOM、support / security / runtime directory文書の整合。</li>
+    <li>oversized production sourceの限定的な分割。</li>
+  </ul>
+  <h3 id="section-62-含まない">6.2 含まない</h3>
+  <ul>
+    <li>新しいMission Pilot機能。</li>
+    <li>UI全体のredesign。</li>
+    <li>hosted multi-user service化。</li>
+    <li>Node sidecarのRust全面置換。</li>
+    <li>Queueのmulti-process化。</li>
+    <li>provider credentialを使用するrelease必須test。</li>
+    <li>automatic PR / merge / deploy。</li>
+    <li>App Store / Microsoft Storeへのsubmission。</li>
+    <li>telemetryやcloud crash reportingの強制導入。</li>
+    <li>既存未コミット変更の暗黙commit、破棄、取り込み。</li>
+  </ul>
+  <h2 id="section-7-plan-view-decisions">7. Plan View Decisions</h2>
+  <p>本計画の主artifactはこのFeature Planだけとする。</p>
+  <table>
+    <caption>
+      7. Plan View Decisions
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">View</th>
+        <th scope="col">Decision</th>
+        <th scope="col">Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>questionnaire</td>
+        <td>omit</td>
+        <td>実装開始を止めるproduct choiceはなく、配布対象をmacOS ARM64限定βとして固定したため</td>
+      </tr>
+      <tr>
+        <td>feature_plan</td>
+        <td>include / required</td>
+        <td>本書を実装正本とするため</td>
+      </tr>
+      <tr>
+        <td>blueprint</td>
+        <td>omit</td>
+        <td>UI redesignを行わず、設定・診断表示の局所変更だけを扱うため</td>
+      </tr>
+      <tr>
+        <td>data_model</td>
+        <td>omit</td>
+        <td>新table / columnを前提にせず、既存SQLite accessとbackupを扱うため</td>
+      </tr>
+      <tr>
+        <td>user_flow</td>
+        <td>omit</td>
+        <td>新しいproduct journeyを追加しないため</td>
+      </tr>
+      <tr>
+        <td>api_io_contract</td>
+        <td>omit</td>
+        <td>新しいpublic HTTP endpointを前提にしないため</td>
+      </tr>
+      <tr>
+        <td>activity_flow</td>
+        <td>omit</td>
+        <td>release gate順序は本書のphaseとverification matrixで十分なため</td>
+      </tr>
+      <tr>
+        <td>sequence_flow</td>
+        <td>omit</td>
+        <td>service間runtime sequenceの新規contractを追加しないため</td>
+      </tr>
+      <tr>
+        <td>zod_schema_design</td>
+        <td>omit</td>
+        <td>provider / MCP / worker toolの新規JSON contractを追加しないため</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-8-実装phase">8. 実装Phase</h2>
+  <h2 id="phase-0-baseline固定と作業分離">Phase 0: Baseline固定と作業分離</h2>
+  <h3 id="q0-01-accepted-baselineを固定する">Q0-01 Accepted baselineを固定する</h3>
+  <h4 id="implementation">Implementation</h4>
+  <ol>
+    <li>既存Mission Pilot変更のownerと状態を確認する。</li>
+    <li>品質改善を専用branch / worktreeで開始する。</li>
+    <li><code>git rev-parse HEAD</code>と<code>git status --short</code>を記録する。</li>
+    <li>
+      gateは共有<code>test-results</code>やbuild stagingの干渉を避け、baselineでは直列実行する。
+    </li>
+    <li>latest GitHub Actions run URLとfailure logを保存する。</li>
+  </ol>
+  <h4 id="acceptance">Acceptance</h4>
+  <ul>
+    <li>品質改善のdiffに既存4ファイルが意図せず混入しない。</li>
+    <li>比較元SHA、worktree状態、CI run IDが追跡できる。</li>
+  </ul>
+  <h4 id="verification">Verification</h4>
+  <pre><code class="language-bash">git status --short --branch
+git diff --name-only
+gh run list --limit 10
+</code></pre>
+  <h3 id="q0-02-gate-ownership表を固定する">Q0-02 Gate ownership表を固定する</h3>
+  <h4 id="implementation-1">Implementation</h4>
+  <p><code>scripts/verify.mjs</code>のtask setとCI workflowを照合し、次を文書・testで固定する。</p>
+  <table>
+    <caption>
+      Implementation
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Gate</th>
+        <th scope="col">Must prove</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>verify</code></td>
+        <td>fast static / architecture / Supervisor regression</td>
+      </tr>
+      <tr>
+        <td><code>verify:full</code></td>
+        <td>credential-free full local regression</td>
+      </tr>
+      <tr>
+        <td><code>verify:e2e</code></td>
+        <td>required deterministic scenario success</td>
+      </tr>
+      <tr>
+        <td>Accessibility workflow</td>
+        <td>required accessibility scenario success</td>
+      </tr>
+      <tr>
+        <td><code>verify:desktop</code></td>
+        <td>current hostのbuild / sidecar / packaged smoke</td>
+      </tr>
+      <tr>
+        <td>Desktop matrix</td>
+        <td>target別sidecar / package integrity</td>
+      </tr>
+      <tr>
+        <td><code>verify:release</code></td>
+        <td>metadataを含む全release prerequisite</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4 id="acceptance-1">Acceptance</h4>
+  <ul>
+    <li>fast gateをfull / release passと誤表示しない。</li>
+    <li>testがtask追加・削除による契約driftを検出する。</li>
+  </ul>
+  <h4 id="verification-1">Verification</h4>
+  <pre><code class="language-bash">node scripts/verify.mjs base --list
+node scripts/verify.mjs full --list
+node scripts/verify.mjs release --list
+bun run test run tests/verify-script.test.ts
+</code></pre>
+  <h2 id="phase-1-test-truthとrelease-gateの復旧">Phase 1: Test truthとrelease gateの復旧</h2>
+  <p>依存: Phase 0</p>
+  <h3 id="q1-01-full-vitest-failureを分類修復する">Q1-01 Full Vitest failureを分類・修復する</h3>
+  <h4 id="implementation-2">Implementation</h4>
+  <p>10件のfailureを次の単位で再実行し、runtime contractと比較する。</p>
+  <ol>
+    <li>Artifact export / Artifact Pane component移動後のtest importとstyle contract。</li>
+    <li>Project Detail SSR表示expectation。</li>
+    <li>Quality coverage parse errorのpublic message contract。</li>
+    <li>Codex warning catalogと実際のemission contract。</li>
+    <li>verify task setのarchitecture task追加。</li>
+    <li>Workbench general-answer route event contract。</li>
+  </ol>
+  <p>
+    実装が正しくtestが古い場合は、現行component / service boundaryを参照するtestへ更新する。
+    runtime回帰である場合は、test expectationを弱めず実装を修正する。
+  </p>
+  <h4 id="candidate-files">Candidate Files</h4>
+  <ul>
+    <li><code>tests/artifact-export-menu.test.tsx</code></li>
+    <li><code>tests/artifact-pane-smoke.test.tsx</code></li>
+    <li><code>tests/frontend-utility-components.test.tsx</code></li>
+    <li><code>tests/quality-backend.test.ts</code></li>
+    <li><code>tests/services.codex-agent-runtime.test.ts</code></li>
+    <li><code>tests/verify-script.test.ts</code></li>
+    <li><code>tests/nightworkers-workbench-routes/routes-workbench-01.test.ts</code></li>
+    <li>対応するproduction module</li>
+  </ul>
+  <h4 id="acceptance-2">Acceptance</h4>
+  <ul>
+    <li>focused failure 10件が全成功する。</li>
+    <li>full Vitestが0 failureで完了する。</li>
+    <li>test削除やskip増加で成功させていない。</li>
+  </ul>
+  <h4 id="verification-2">Verification</h4>
+  <pre><code class="language-bash">bun run test run &lt;focused test files&gt;
+bun run test run
+</code></pre>
+  <h3 id="q1-02-e2e-git-branch-fixtureを決定論化する">
+    Q1-02 E2E Git branch fixtureを決定論化する
+  </h3>
+  <h4 id="implementation-3">Implementation</h4>
+  <ol>
+    <li>全E2E fixture repositoryを<code>git init --initial-branch=main</code>相当で作成する。</li>
+    <li>Git version差を吸収する共通fixture helperへ集約する。</li>
+    <li>branch名を固定できない環境では、作成直後に<code>git branch -M main</code>を実行する。</li>
+    <li>global <code>init.defaultBranch</code>変更は行わない。</li>
+    <li>Project登録前にfixture branchをassertし、失敗理由を局所化する。</li>
+  </ol>
+  <h4 id="acceptance-3">Acceptance</h4>
+  <ul>
+    <li>clean HOME / isolated Git configでもProject登録が201になる。</li>
+    <li><code>GIT_INTEGRATION_TARGET_INVALID</code>がfixture branch差で発生しない。</li>
+    <li>macOS / Linux CIで同じbranch contractになる。</li>
+  </ul>
+  <h4 id="verification-3">Verification</h4>
+  <pre><code class="language-bash">bun run test:e2e:smoke
+bun run verify:e2e
+</code></pre>
+  <h3 id="q1-03-scenario-catalogを現行suiteへ同期する">
+    Q1-03 Scenario catalogを現行suiteへ同期する
+  </h3>
+  <h4 id="implementation-4">Implementation</h4>
+  <ol>
+    <li>Mission Pilot 3 scenarioをcatalogへ登録する。</li>
+    <li>
+      Git closeout testの複数scenario tagを1 test / 1 primary scenarioへ分割するか、
+      catalogが明示的に許すmappingへ変更する。
+    </li>
+    <li>Mermaid testsへobservational scenarioを割り当てるか、catalog対象外を明示する。</li>
+    <li><code>NW-E2E-SETTINGS-001</code>へ実testをmappingする。</li>
+    <li>unknown、missing、duplicate、unmappedを0にする。</li>
+    <li>required coverage率ではなくrequired execution passをrelease条件にする。</li>
+  </ol>
+  <h4 id="acceptance-4">Acceptance</h4>
+  <ul>
+    <li>catalog validation errorが0。</li>
+    <li>required scenarioがすべて実行され成功する。</li>
+    <li><code>executed pass rate=100%</code>。</li>
+    <li>retry後のみ成功するP0 scenarioが0。</li>
+  </ul>
+  <h4 id="verification-4">Verification</h4>
+  <pre><code class="language-bash">bun run test run tests/e2e-scenario-coverage.test.ts
+bun run verify:e2e
+</code></pre>
+  <h3 id="q1-04-accessibility-gateを現行navigationへ同期する">
+    Q1-04 Accessibility gateを現行navigationへ同期する
+  </h3>
+  <h4 id="implementation-5">Implementation</h4>
+  <ol>
+    <li><code>Settings</code>英語固定locatorを現行locale / accessible name contractへ合わせる。</li>
+    <li>日本語・英語それぞれのnavigationを独立assertする。</li>
+    <li>最初のfailureで後続3件の欠陥を隠さないよう、fixture依存を分離する。</li>
+    <li>focus visibility、reduced motion、localized names、modal focus returnを全件実行する。</li>
+  </ol>
+  <h4 id="acceptance-5">Acceptance</h4>
+  <ul>
+    <li>required 4件がすべて実行され成功する。</li>
+    <li>serious / critical Axe violationが0。</li>
+    <li>retryなしで成功する。</li>
+  </ul>
+  <h4 id="verification-5">Verification</h4>
+  <pre><code class="language-bash">node scripts/verify.mjs accessibility
+</code></pre>
+  <h3 id="phase-1-gate">Phase 1 Gate</h3>
+  <pre><code class="language-bash">bun run verify
+bun run test run
+bun run verify:e2e
+node scripts/verify.mjs accessibility
+</code></pre>
+  <p>Phase 1 Gateが成功しない限り、Desktop packaging修正をrelease-readyと報告しない。</p>
+  <h2 id="phase-2-self-contained-desktop-sidecar">Phase 2: Self-contained Desktop sidecar</h2>
+  <p>依存: Phase 1</p>
+  <h3 id="q2-01-production-pathからsqlite3-cli依存を除去する">
+    Q2-01 Production pathから<code>sqlite3</code> CLI依存を除去する
+  </h3>
+  <h4 id="implementation-6">Implementation</h4>
+  <ol>
+    <li>
+      <code>application-settings-store.ts</code>のtable作成、read、write、bundle write、migration
+      recordを 既存のSQLite client / write gate経由へ移す。
+    </li>
+    <li>production service import時にchild processを起動しない。</li>
+    <li>transaction、busy timeout、revision increment、public / secret atomic writeを維持する。</li>
+    <li>
+      CLI用maintenance scriptの<code>sqlite3</code>利用はproduction sidecar import graphと分離する。
+    </li>
+    <li>Windows上でPATHに<code>sqlite3</code>がなくてもbootstrapできるtestを追加する。</li>
+  </ol>
+  <h4 id="acceptance-6">Acceptance</h4>
+  <ul>
+    <li>packaged backend startupが<code>sqlite3</code> executableを要求しない。</li>
+    <li>public / secret setting bundleが同一transactionで更新される。</li>
+    <li>existing settings migrationとmaskingに回帰がない。</li>
+  </ul>
+  <h4 id="verification-6">Verification</h4>
+  <pre><code class="language-bash">bun run test run tests/services.application-settings-store.test.ts
+bun run test:desktop-runtime
+bun run build:backend:desktop
+bun run desktop:smoke-sidecar
+</code></pre>
+  <h3 id="q2-02-node-runtimeをversion--target固定する">
+    Q2-02 Node runtimeをversion / target固定する
+  </h3>
+  <h4 id="implementation-7">Implementation</h4>
+  <ol>
+    <li>desktop sidecarが使用するNode major / exact versionを設定の正本へ置く。</li>
+    <li>CIでNode runtime sourceを取得・checksum検証する。</li>
+    <li>macOS / Windows / Linuxのtarget別runtimeをstageする。</li>
+    <li><code>process.execPath</code>単体copyを削除する。</li>
+    <li>Nodeに必要なdynamic library、license、noticeをruntime単位で同梱する。</li>
+    <li>manifestへNode version、target、source、SHA-256、必要library一覧を記録する。</li>
+    <li>backend <code>target=node20</code>と実runtime versionの不整合を解消する。</li>
+  </ol>
+  <h4 id="acceptance-7">Acceptance</h4>
+  <ul>
+    <li>clean CI runnerでhost Node layoutに依存せずsidecarが起動する。</li>
+    <li>macOSで<code>libnode.*.dylib</code>欠落がない。</li>
+    <li>manifest targetとrunner targetが一致する。</li>
+    <li>runtime checksum差分をgateが拒否する。</li>
+  </ul>
+  <h4 id="verification-7">Verification</h4>
+  <pre><code class="language-bash">bun run desktop:prepare-sidecar
+bun run desktop:verify-target
+bun run desktop:smoke-sidecar
+otool -L scripts/desktop/staged/node/bin/node
+</code></pre>
+  <p>
+    Windows / Linuxでは<code>dumpbin</code>または<code>ldd</code>相当のtarget別dependency
+    checkを使用する。
+  </p>
+  <h3 id="q2-03-native-package-stagingをtarget限定する">
+    Q2-03 Native package stagingをtarget限定する
+  </h3>
+  <h4 id="implementation-8">Implementation</h4>
+  <ol>
+    <li>libSQL、Codex、argon2のruntime必要fileをtarget別に列挙する。</li>
+    <li>target外prebuild、source、build fixture、不要CLIをstageしない。</li>
+    <li>package export / license fileを保持する。</li>
+    <li>stage後にrequired module import smokeを行う。</li>
+  </ol>
+  <h4 id="acceptance-8">Acceptance</h4>
+  <ul>
+    <li>対象target以外のnative <code>.node</code> / executableがpackageへ入らない。</li>
+    <li>libSQL、argon2、Codex runtime importがpackaged sidecarで成功する。</li>
+    <li>pruning前後でdesktop smokeに回帰がない。</li>
+  </ul>
+  <h4 id="verification-8">Verification</h4>
+  <pre><code class="language-bash">bun run desktop:prepare-sidecar
+node scripts/desktop/verify-target-manifest.mjs
+bun run desktop:smoke-sidecar
+du -sh scripts/desktop/staged
+</code></pre>
+  <h3 id="phase-2-gate">Phase 2 Gate</h3>
+  <pre><code class="language-bash">bun run verify:desktop
+</code></pre>
+  <p>加えて、macOS / Windows / Linux runner上のsidecar readinessが全成功する。</p>
+  <h2 id="phase-3-tauri-production-security-hardening">
+    Phase 3: Tauri production security hardening
+  </h2>
+  <p>依存: Phase 2</p>
+  <h3 id="q3-01-production--development-configを分離する">
+    Q3-01 Production / development configを分離する
+  </h3>
+  <h4 id="implementation-9">Implementation</h4>
+  <ol>
+    <li>production <code>tauri.conf.json</code>でDevToolsを無効にする。</li>
+    <li>development専用configまたはdebug build条件でのみDevToolsを許可する。</li>
+    <li>production buildがTauri <code>devtools</code> featureを含まない構成を検討・適用する。</li>
+    <li>production artifactのconfig inspection testを追加する。</li>
+  </ol>
+  <h4 id="acceptance-9">Acceptance</h4>
+  <ul>
+    <li>production packageでDevToolsを開けない。</li>
+    <li><code>desktop:dev</code>では必要なdebug手段を維持する。</li>
+    <li>production config driftをtestが検出する。</li>
+  </ul>
+  <h4 id="verification-9">Verification</h4>
+  <pre><code class="language-bash">bun run desktop:lint
+bun run desktop:build
+bun run desktop:smoke
+</code></pre>
+  <h3 id="q3-02-cspを有効化する">Q3-02 CSPを有効化する</h3>
+  <h4 id="implementation-10">Implementation</h4>
+  <ol>
+    <li>
+      bundled asset、Tauri IPC、dynamic loopback API / WebSocket、font、image exportに必要な
+      sourceだけを許可するCSPを定義する。
+    </li>
+    <li>remote script / remote styleを許可しない。</li>
+    <li>markdown、Mermaid、image export、WebSocket reconnectをpackaged appで確認する。</li>
+    <li>CSP violationをdesktop logまたはtest failureで観測できるようにする。</li>
+  </ol>
+  <h4 id="acceptance-10">Acceptance</h4>
+  <ul>
+    <li>production <code>app.security.csp</code>が<code>null</code>ではない。</li>
+    <li>inline / eval許可は必要性を説明できる最小値である。</li>
+    <li>主要画面、artifact preview、API / WebSocketがCSP下で動作する。</li>
+  </ul>
+  <h4 id="verification-10">Verification</h4>
+  <pre><code class="language-bash">bun run test:desktop-runtime
+bun run desktop:build
+bun run desktop:smoke
+</code></pre>
+  <h3 id="q3-03-loopback-api-boundaryを回帰検証する">Q3-03 Loopback API boundaryを回帰検証する</h3>
+  <h4 id="implementation-11">Implementation</h4>
+  <ol>
+    <li>packaged productionで<code>127.0.0.1</code>以外へbindしないことを維持する。</li>
+    <li>wildcard CORS、Vite development origin、non-loopback unauthenticated bindを拒否する。</li>
+    <li>CSRF / Origin / WebSocket origin testをrelease gateへ残す。</li>
+    <li>local process threatはOS userと同等権限としてtrust modelへ明記する。</li>
+  </ol>
+  <h4 id="acceptance-11">Acceptance</h4>
+  <ul>
+    <li>production packageのAPI auth無効化がloopback限定contractから逸脱しない。</li>
+    <li>browser cross-origin mutationが拒否される。</li>
+  </ul>
+  <h4 id="verification-11">Verification</h4>
+  <pre><code class="language-bash">bun run test run tests/listen-security.test.ts tests/config-listen-security.test.ts tests/routes.security-hardening.test.ts tests/hono-security-regressions.test.ts
+</code></pre>
+  <h2 id="phase-4-signed-macos-arm64-limited-beta">Phase 4: Signed macOS ARM64 limited beta</h2>
+  <p>依存: Phase 1、Phase 2、Phase 3</p>
+  <h3 id="q4-01-tauri-native-signing--notarizationをrelease-workflowへ接続する">
+    Q4-01 Tauri native signing / notarizationをrelease workflowへ接続する
+  </h3>
+  <h4 id="implementation-12">Implementation</h4>
+  <ol>
+    <li><code>APPLE_SIGNING_IDENTITY</code>またはTauriがサポートする署名設定をCIへ接続する。</li>
+    <li>
+      App Store Connect APIまたはnotarytool credentialをrelease environment secretとして管理する。
+    </li>
+    <li>
+      <code>.app</code>内部のTauri executable、Node、Codex、native addonを正しい順序で署名する。
+    </li>
+    <li>hardened runtimeと必要entitlementを最小化する。</li>
+    <li>notarization、stapling、validationを自動化する。</li>
+    <li><code>--deep</code>だけに依存する後付け署名scriptを正本にしない。</li>
+  </ol>
+  <h4 id="acceptance-12">Acceptance</h4>
+  <ul>
+    <li><code>codesign --verify --deep --strict</code>が成功する。</li>
+    <li><code>spctl --assess --type execute</code>が成功する。</li>
+    <li><code>xcrun stapler validate</code>が成功する。</li>
+    <li>manifestのsigning / notarizationが<code>verified</code>である。</li>
+  </ul>
+  <h4 id="verification-12">Verification</h4>
+  <pre><code class="language-bash">codesign --verify --deep --strict --verbose=4 &lt;NightWorkers.app&gt;
+spctl --assess --type execute --verbose=4 &lt;NightWorkers.app&gt;
+xcrun stapler validate &lt;NightWorkers.app-or-dmg&gt;
+</code></pre>
+  <h3 id="q4-02-release-workflowをfail-closeにする">Q4-02 Release workflowをfail-closeにする</h3>
+  <h4 id="implementation-13">Implementation</h4>
+  <ol>
+    <li>official tag releaseでは<code>not_requested</code>を許可しない。</li>
+    <li>candidate / dry-runとofficial artifactのmanifest policyを分ける。</li>
+    <li>
+      Base、Full、E2E、Accessibility、Desktop、package、signing、notarizationの same-SHA
+      evidenceをattestationへ含める。
+    </li>
+    <li>required check欠落、SHA不一致、artifact再buildを拒否する。</li>
+    <li>release environment approval後は既存artifactをpublishし、再buildしない。</li>
+  </ol>
+  <h4 id="acceptance-13">Acceptance</h4>
+  <ul>
+    <li>いずれかのrequired gate失敗時にpublish jobが実行されない。</li>
+    <li>unsigned / unnotarized artifactがofficial releaseへ入らない。</li>
+    <li>manifest、attestation、artifact digestが一致する。</li>
+  </ul>
+  <h4 id="verification-13">Verification</h4>
+  <pre><code class="language-bash">bun run verify:release
+bun run release:create
+</code></pre>
+  <p>
+    <code>release:create</code>はこのPhaseでもdry-runとし、明示的な公開許可なしにtagを作成しない。
+  </p>
+  <h3 id="q4-03-clean-install-smokeを追加する">Q4-03 Clean-install smokeを追加する</h3>
+  <h4 id="implementation-14">Implementation</h4>
+  <ol>
+    <li>build workspace外のclean macOS user contextでinstallする。</li>
+    <li>quarantine属性を持つdownload相当artifactから起動する。</li>
+    <li>
+      first-run DB、JWT secret、settings、logsが<code>app_data_dir</code>へ作られることを確認する。
+    </li>
+    <li>Project登録、Overview、Queue endpoint、WebSocket、shutdown、relaunchを確認する。</li>
+    <li>uninstall時のapp bundleとruntime dataの扱いを文書化する。</li>
+  </ol>
+  <h4 id="acceptance-14">Acceptance</h4>
+  <ul>
+    <li>開発checkout、system Node、system <code>sqlite3</code>なしで起動する。</li>
+    <li>初回起動と2回目起動が成功する。</li>
+    <li>runtime dataがbundle resource directoryへ書かれない。</li>
+  </ul>
+  <h2 id="milestone-a-completion">Milestone A Completion</h2>
+  <p>
+    Phase 0〜4の完了で「macOS ARM64 signed limited beta ready」とする。 単なるlocal
+    <code>desktop:smoke</code>成功ではこの表現を使用しない。
+  </p>
+  <h2 id="phase-5-windows-x64--linux-x64-package-readiness">
+    Phase 5: Windows x64 / Linux x64 package readiness
+  </h2>
+  <p>依存: Milestone A</p>
+  <h3 id="q5-01-windows-installer-gate">Q5-01 Windows installer gate</h3>
+  <h4 id="implementation-15">Implementation</h4>
+  <ol>
+    <li>Windows runnerでNSIS / MSIを実buildする。</li>
+    <li>clean Windows VMまたはrunnerでsilent install、launch、readiness、shutdownを確認する。</li>
+    <li>WebView2 bootstrap behaviorを確認する。</li>
+    <li>Authenticode signingとSmartScreen向けpublisher identityを設定する。</li>
+    <li>uninstall後のprogram fileとruntime data policyを確認する。</li>
+  </ol>
+  <h4 id="acceptance-15">Acceptance</h4>
+  <ul>
+    <li>NSIS / MSIが両方build成功するか、正式support対象を一方に絞り理由を記録する。</li>
+    <li>system Node / <code>sqlite3</code>なしで起動する。</li>
+    <li>signed installerの検証が成功する。</li>
+  </ul>
+  <h3 id="q5-02-linux-installer-gate">Q5-02 Linux installer gate</h3>
+  <h4 id="implementation-16">Implementation</h4>
+  <ol>
+    <li>Linux runnerでdeb / rpm / AppImageを実buildする。</li>
+    <li>対応distribution matrixを固定する。</li>
+    <li>Xvfb等のGUI環境でinstall / launch / readiness / shutdownを確認する。</li>
+    <li>WebKitGTK、system library、desktop entry、icon、uninstallを確認する。</li>
+    <li>AppImage以外のpackage manager dependencyをmetadataへ反映する。</li>
+  </ol>
+  <h4 id="acceptance-16">Acceptance</h4>
+  <ul>
+    <li>support対象artifactがclean環境で起動する。</li>
+    <li>missing shared libraryをCIが検出する。</li>
+    <li>未検証distributionをsupport表へ追加しない。</li>
+  </ul>
+  <h3 id="q5-03-support-matrixをruntime-truthへ同期する">
+    Q5-03 Support matrixをruntime truthへ同期する
+  </h3>
+  <h4 id="acceptance-17">Acceptance</h4>
+  <ul>
+    <li>README、release note、artifact manifest、CI matrixが同じtargetを表す。</li>
+    <li>platform別known limitationとrollbackが記載される。</li>
+  </ul>
+  <h2 id="phase-6-bundlemigrationsupply-chain-quality">
+    Phase 6: Bundle、migration、supply-chain quality
+  </h2>
+  <p>依存: Phase 2。Milestone Aと並行可能だが、signing前に最終artifact内容を固定する。</p>
+  <h3 id="q6-01-bundle-size-budget">Q6-01 Bundle size budget</h3>
+  <h4 id="implementation-17">Implementation</h4>
+  <ol>
+    <li>
+      Tauri binary、Node、Codex、native modules、backend bundle、frontend assetsを個別計測する。
+    </li>
+    <li>target外native prebuildと不要sourceを除去する。</li>
+    <li>frontendのMermaid / chart chunkをlazy-load境界で確認する。</li>
+    <li>artifact sizeをmanifestとCI summaryへ記録する。</li>
+    <li>
+      baseline比20%以上の削減を目標とする。達成できない場合は、component別budgetと理由を plan
+      reviewへ戻し、未測定のまま完了扱いにしない。
+    </li>
+  </ol>
+  <h4 id="acceptance-18">Acceptance</h4>
+  <ul>
+    <li>size内訳が再現可能である。</li>
+    <li>pruningによるruntime欠落がない。</li>
+    <li>app / compressed artifactがbaselineより縮小するか、承認済みbudget内に収まる。</li>
+  </ul>
+  <h3 id="q6-02-migration-backup--rollback">Q6-02 Migration backup / rollback</h3>
+  <h4 id="implementation-18">Implementation</h4>
+  <ol>
+    <li>schema migration前にSQLite、settings、secrets metadataのconsistent backupを作成する。</li>
+    <li>backup rotation上限を設定する。</li>
+    <li>migration failure時に元DBを壊さず起動を停止する。</li>
+    <li>old app + backup restoreのrollback smokeを用意する。</li>
+  </ol>
+  <h4 id="acceptance-19">Acceptance</h4>
+  <ul>
+    <li>migration途中失敗fixtureから元runtimeを復元できる。</li>
+    <li>backup pathとrestore手順がrelease noteから確認できる。</li>
+  </ul>
+  <h3 id="q6-03-third-party-notice--sbom">Q6-03 Third-party notice / SBOM</h3>
+  <h4 id="implementation-19">Implementation</h4>
+  <ol>
+    <li>Node、Codex、libSQL、argon2とbundled frontend dependencyのlicenseを収集する。</li>
+    <li>application bundleへTHIRD_PARTY_NOTICESを同梱する。</li>
+    <li>SBOMをartifact manifestと同じrelease bundleへ含める。</li>
+    <li>notice欠落をCIで検出する。</li>
+  </ol>
+  <h4 id="acceptance-20">Acceptance</h4>
+  <ul>
+    <li>Node runtimeを含む全直接bundled componentにlicense evidenceがある。</li>
+    <li>SBOMとartifact SHAが同一release provenanceへ紐づく。</li>
+  </ul>
+  <h2 id="phase-7-maintainability--adoption-quality">
+    Phase 7: Maintainability / adoption quality
+  </h2>
+  <p>依存: Milestone A。release blocker修正より先に実施しない。</p>
+  <h3 id="q7-01-oversized-sourceの限定分割">Q7-01 Oversized sourceの限定分割</h3>
+  <h4 id="implementation-20">Implementation</h4>
+  <ol>
+    <li>production sourceのうち、変更頻度と責務数が高い上位5fileだけを対象にする。</li>
+    <li>hook / service / view / repository責務を既存module境界へ抽出する。</li>
+    <li>behavior changeを混ぜず、before / after focused testを維持する。</li>
+    <li>large-source baselineを縮小し、新規600行直前fileの増加を可視化する。</li>
+  </ol>
+  <h4 id="acceptance-21">Acceptance</h4>
+  <ul>
+    <li>対象fileの責務数とline countが減る。</li>
+    <li>public import contractとruntime behaviorに回帰がない。</li>
+    <li>baseline exceptionを増やさない。</li>
+  </ul>
+  <h3 id="q7-02-coverage-budgetを再確立する">Q7-02 Coverage budgetを再確立する</h3>
+  <h4 id="implementation-21">Implementation</h4>
+  <ol>
+    <li>全test green後にcoverageを再計測する。</li>
+    <li>
+      global値だけでなく、queue、closeout、security、desktop bootstrap等のcritical branchを
+      個別budgetで管理する。
+    </li>
+    <li>coverageのためだけの実装到達不能testを追加しない。</li>
+  </ol>
+  <h4 id="initial-target">Initial Target</h4>
+  <table>
+    <caption>
+      Initial Target
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Metric</th>
+        <th scope="col">Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Statements</td>
+        <td>80%以上</td>
+      </tr>
+      <tr>
+        <td>Branches</td>
+        <td>75%以上</td>
+      </tr>
+      <tr>
+        <td>Functions</td>
+        <td>80%以上</td>
+      </tr>
+      <tr>
+        <td>Lines</td>
+        <td>80%以上</td>
+      </tr>
+      <tr>
+        <td>Critical branch gates</td>
+        <td>既存thresholdをすべてpass</td>
+      </tr>
+    </tbody>
+  </table>
+  <h4 id="verification-14">Verification</h4>
+  <pre><code class="language-bash">bun run test:coverage
+</code></pre>
+  <h3 id="q7-03-support--security--docs整合">Q7-03 Support / security / docs整合</h3>
+  <h4 id="implementation-22">Implementation</h4>
+  <ol>
+    <li>Discussionsを有効化するか、<code>SUPPORT.md</code>を実際の導線へ変更する。</li>
+    <li>security reportのprivate contactを具体化する。</li>
+    <li>desktop runtime defaultをTauri <code>app_data_dir</code>と一致させる。</li>
+    <li>macOS ARM64限定βとWindows / Linuxの検証済み範囲を文書へ反映する。</li>
+    <li>
+      <code>README.md</code>、<code>README.ja.md</code>、configuration、trust model、adoption
+      checklist、 release note、GitHub Pagesを同時更新する。
+    </li>
+  </ol>
+  <h4 id="acceptance-22">Acceptance</h4>
+  <ul>
+    <li>文書化されたsupport channelが実際に利用可能である。</li>
+    <li>code pathとruntime directory説明が一致する。</li>
+    <li>未検証platformをsupportedと表現しない。</li>
+  </ul>
+  <h4 id="verification-15">Verification</h4>
+  <pre><code class="language-bash">bun run check:docs
+</code></pre>
+  <h2 id="phase-8-signed-updater">Phase 8: Signed updater</h2>
+  <p>依存: Milestone A、Phase 6</p>
+  <p>初回限定βの必須条件にはしないが、継続配布前に実装する。</p>
+  <h3 id="q8-01-tauri-updater">Q8-01 Tauri updater</h3>
+  <h4 id="implementation-23">Implementation</h4>
+  <ol>
+    <li>Tauri updater pluginと最小capabilityを追加する。</li>
+    <li>HTTPS endpoint、public key、signed updater artifactを設定する。</li>
+    <li>update checkは明示的なuser actionまたは設定済みpolicyで行う。</li>
+    <li>download、signature verification、install、restart、failure recoveryを確認する。</li>
+    <li>DB migration backupとupdate install順を固定する。</li>
+  </ol>
+  <h4 id="acceptance-23">Acceptance</h4>
+  <ul>
+    <li>unsigned / altered updater artifactを拒否する。</li>
+    <li>current version以下へのdowngradeを既定で拒否する。</li>
+    <li>update failure後も現行appを起動できる。</li>
+    <li>update前backupからrollbackできる。</li>
+  </ul>
+  <h2 id="section-9-verification-matrix">9. Verification Matrix</h2>
+  <table>
+    <caption>
+      9. Verification Matrix
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Milestone</th>
+        <th scope="col">Required commands / evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Phase 1</td>
+        <td><code>bun run verify</code>、full Vitest、<code>verify:e2e</code>、Accessibility</td>
+      </tr>
+      <tr>
+        <td>Phase 2</td>
+        <td>3 OS sidecar readiness、target manifest、native dependency inspection</td>
+      </tr>
+      <tr>
+        <td>Phase 3</td>
+        <td>desktop runtime tests、production config inspection、packaged smoke</td>
+      </tr>
+      <tr>
+        <td>Milestone A</td>
+        <td><code>verify:release</code>、codesign、spctl、notary、stapler、clean-install smoke</td>
+      </tr>
+      <tr>
+        <td>Phase 5</td>
+        <td>Windows / Linux native package build、install、launch、shutdown</td>
+      </tr>
+      <tr>
+        <td>Phase 6</td>
+        <td>size report、migration rollback、license notice、SBOM</td>
+      </tr>
+      <tr>
+        <td>Phase 7</td>
+        <td>architecture check、coverage、docs consistency</td>
+      </tr>
+      <tr>
+        <td>Phase 8</td>
+        <td>signed update / tamper / rollback E2E</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    最終release candidateでは、共有build outputやPlaywright artifactの衝突を避け、
+    repository標準のordered release gateを使用する。
+  </p>
+  <pre><code class="language-bash">bun run verify:release
+</code></pre>
+  <p>
+    <code>release-ready</code>表示だけで完了とせず、同一SHAに対するAccessibility、Desktop matrix、
+    signing、notarization、clean-install evidenceを照合する。
+  </p>
+  <h2 id="section-10-risk-notes">10. Risk Notes</h2>
+  <h3 id="section-101-node-redistribution">10.1 Node redistribution</h3>
+  <p>
+    Node runtime取得元、license、dynamic library layout、native addon ABIがplatformごとに異なる。
+    host runtime copyを修正する際は、sidecar起動だけでなく再配布条件とtarget integrityを確認する。
+  </p>
+  <h3 id="section-102-native-module-pruning">10.2 Native module pruning</h3>
+  <p>
+    size削減で必要な<code>.node</code> fileやCodex
+    resourceを落とすと、buildは成功してもruntimeで失敗する。 target別import
+    smokeをpruningと同じchangeに含める。
+  </p>
+  <h3 id="section-103-signing-nested-binaries">10.3 Signing nested binaries</h3>
+  <p>
+    Node、Codex、native addonを含むため、outer <code>.app</code>だけの署名では不十分になり得る。
+    notarization後の実artifactをGatekeeperで確認する。
+  </p>
+  <h3 id="section-104-test-only-green">10.4 Test-only green</h3>
+  <p>
+    E2Eのbranch fixtureはtest infrastructure問題だが、実runtimeのProject branch validationを
+    弱めて解決してはならない。fixtureを現行contractへ合わせる。
+  </p>
+  <h3 id="section-105-scope-expansion">10.5 Scope expansion</h3>
+  <p>
+    quality stabilization中にMission Pilot、Queue、Review semanticsを変更すると、baselineと release
+    candidateの比較が無効になる。新機能は別計画へ分離する。
+  </p>
+  <h2 id="section-11-rollback-conditions">11. Rollback Conditions</h2>
+  <ol>
+    <li>
+      in-process SQLite移行でpublic / secret atomic writeを維持できない場合、CLI同梱へ逃げず、
+      shared DB wrapperとtransaction境界を再設計してPhase 2を未完了のまま止める。
+    </li>
+    <li>
+      pinned Node distributionでnative addon compatibilityが成立しない場合、Node versionを
+      任意に動かさず、Node / addon target matrixを固定して再buildする。
+    </li>
+    <li>
+      CSPにより主要artifact / API /
+      WebSocketが壊れる場合、CSPを<code>null</code>へ戻して完了扱いにせず、 violation
+      sourceを特定して最小allowlistを追加する。
+    </li>
+    <li>
+      signing / notarizationが失敗した場合、<code>not_requested</code> artifactをofficial
+      releaseへ昇格しない。
+    </li>
+    <li>
+      Windows / Linux package smokeが不安定な場合、そのplatformをsupport matrixから外したまま
+      原因を修正し、macOSの成功で隠さない。
+    </li>
+    <li>coverage目標が未達の場合、数値を削除せずcurrent resultと不足moduleを記録する。</li>
+  </ol>
+  <h2 id="section-12-completion-criteria">12. Completion Criteria</h2>
+  <h3 id="milestone-a-macos-arm64-signed-limited-beta">
+    Milestone A: macOS ARM64 signed limited beta
+  </h3>
+  <p>次をすべて満たす。</p>
+  <ul>
+    <li>full Vitest、E2E、Accessibility、Desktop、dependency auditが成功する。</li>
+    <li>production sidecarがsystem Node / <code>sqlite3</code>に依存しない。</li>
+    <li>production CSPが有効でDevToolsが無効である。</li>
+    <li><code>.app</code> / DMGが署名・notarize・staple済みである。</li>
+    <li>clean-install / first-run / relaunch / shutdown smokeが成功する。</li>
+    <li>same-SHA attestation、manifest、SBOM、third-party noticeが揃う。</li>
+    <li>docsがmacOS ARM64限定βの実際のsupport範囲を表す。</li>
+  </ul>
+  <h3 id="milestone-b-windows--linux-distribution-ready">
+    Milestone B: Windows / Linux distribution ready
+  </h3>
+  <p>次を追加で満たす。</p>
+  <ul>
+    <li>Windows installerとLinux packageがnative runnerでbuildされる。</li>
+    <li>clean environmentのinstall / launch / shutdownが成功する。</li>
+    <li>platform signing / dependency policyを満たす。</li>
+    <li>support matrixとartifact manifestが検証済みtargetだけを表す。</li>
+  </ul>
+  <h3 id="milestone-c-sustainable-release-quality">Milestone C: Sustainable release quality</h3>
+  <p>次を追加で満たす。</p>
+  <ul>
+    <li>coverage budgetを満たす。</li>
+    <li>selected oversized sourceが分割され、baseline exceptionが増えていない。</li>
+    <li>bundle sizeが承認済みbudget内である。</li>
+    <li>migration rollbackが検証済みである。</li>
+    <li>signed updaterがtamperとrollback testを通る。</li>
+    <li>support / security contactが実際に利用可能である。</li>
+  </ul>
+  <h2 id="section-13-first-implementation-handoff">13. First Implementation Handoff</h2>
+  <p>
+    最初のimplementation stepはPhase 0ではなく、accepted worktreeを固定した直後の
+    <code>Q1-01 Full Vitest failure分類</code>とする。
+  </p>
+  <p>理由:</p>
+  <ol>
+    <li>release gateが壊れたままsidecarやsigningを変更しても、回帰判定できない。</li>
+    <li>focused failureは実装回帰とtest driftを分けやすい。</li>
+    <li>Phase 1完了後、Desktop self-contained化の変更をfull regressionで評価できる。</li>
+  </ol>
+  <p>Implementation Roleへ渡す必須参照:</p>
+  <ul>
+    <li>本書 <code>Phase 0</code>、<code>Phase 1</code>、<code>Locked Decisions</code></li>
+    <li><code>scripts/verify.mjs</code></li>
+    <li><code>tests/verify-script.test.ts</code></li>
+    <li><code>tests/e2e/scenario-catalog.json</code></li>
+    <li><code>scripts/e2e-environment.mjs</code></li>
+    <li><code>scripts/run-playwright.mjs</code></li>
+    <li>latest failing GitHub Actions logs</li>
+  </ul>
+  <p>
+    Blocking questionnaire itemはない。配布対象をmacOS ARM64限定βから変更する場合だけ、 Phase
+    4開始前に本書のLocked Decisionsとsupport matrixを更新する。
+  </p>
+</article>

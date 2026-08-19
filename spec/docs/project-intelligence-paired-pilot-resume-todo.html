@@ -1,0 +1,215 @@
+<article lang="ja">
+  <h1 id="project-intelligence-paired-pilot-再開-todo">
+    Project Intelligence paired pilot 再開 TODO
+  </h1>
+  <ul>
+    <li>Status: paused by user on 2026-08-10</li>
+    <li>Owner: NightWorkers（評価実行・計測・provider routing）</li>
+    <li>Producer: vulnWorkbench（Project Exploration Catalog V2）</li>
+    <li>Default activation: OFF のまま</li>
+    <li>Namespace cleanup: rollout が <code>GO</code> になるまで実施しない</li>
+  </ul>
+  <h2 id="再開時の重要ルール">再開時の重要ルール</h2>
+  <ol>
+    <li>ローカルマシン上で Ollama、LocalLLM、LLM 中継proxyを起動しない。</li>
+    <li>
+      Codex
+      routingを利用できる時期に再開する。LocalLLMを使う場合は、LAN内のリモートOpenAI互換endpointだけを使う。
+    </li>
+    <li>
+      API keyをrepository、TODO、evidenceへ保存しない。LLM
+      settingsは実行時だけ0600の一時ファイルとして作り、終了時に削除する。
+    </li>
+    <li>
+      baseline/catalogの全pairでprovider、model、reasoning depth、base revision、task
+      promptを固定する。
+    </li>
+    <li>
+      providerまたはmodelを変更した場合、過去のpartial runへ継ぎ足さず、formal 10
+      pairを最初から取り直す。
+    </li>
+    <li>
+      pilot専用SQLite DBを所有するNightWorkers
+      processは一つだけにする。実行中DBをsqlite3等で直接読まない。
+    </li>
+  </ol>
+  <h2 id="section-2026-08-10-時点の到達点">2026-08-10 時点の到達点</h2>
+  <p>Project Exploration用のnative API互換化は実装・コミット済みである。</p>
+  <ul>
+    <li><code>dedf41cd</code> — Project ExplorationのGit revision pinning修正</li>
+    <li><code>bb70606d</code> — Project catalog tool引数のflat化</li>
+    <li><code>b26c949e</code> — flat Todo tool profileの追加</li>
+    <li><code>0e500d56</code> — multiline edit引数のJSON文字列化</li>
+    <li><code>7a97a17b</code> — compatible route向け<code>run_check</code> schemaの安定化</li>
+  </ul>
+  <p>
+    LAN内OpenAI互換endpointに対する実接続smokeでは、catalog、Todo、multiline
+    edit、<code>run_check</code>のtool parser互換性を確認した。関連focused test
+    43件、typecheck、対象Biome checkは完了済みである。
+  </p>
+  <p>中断したformal pilot v2は次のpartial状態だった。</p>
+  <ul>
+    <li>p01: baseline <code>completed</code>、catalog <code>failed</code></li>
+    <li>p02: baseline <code>completed</code>、catalog <code>completed</code></li>
+    <li>p03: baseline <code>needs_human</code>（30分上限）、catalog実行中にユーザー指示で中断</li>
+    <li>p04-p10: 未実行</li>
+  </ul>
+  <p>
+    このpartial結果は最低10
+    pairを満たさず、rollout判定には使わない。正式reportも発行しない。特にCodex
+    routingへ変更して再開する場合は比較条件が変わるため、10 pairを新規pilot IDで取り直す。
+  </p>
+  <p>
+    停止時点でpilot process、今回生成した6個のtodolist worktree/branch、evaluation consumer
+    worktree、isolated runtime/DB、一時LLM
+    settings、secretを含む複製settingsは削除済みである。既存ユーザーworktreeは保持した。再開は残存runtimeからではなく、cleanな評価環境の新規作成から始める。
+  </p>
+  <h2 id="再開-todo">再開 TODO</h2>
+  <h3 id="p0-実行前確認">P0: 実行前確認</h3>
+  <ul>
+    <li>
+      <input disabled="" type="checkbox" />
+      NightWorkersの現在HEADに上記5コミット相当が含まれることを確認する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> mainの未コミット作業を混ぜず、cleanなdetached
+      worktreeまたは専用branchをevaluation consumerとして作る。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" />
+      vulnWorkbenchのproducer変更とfixture/testがgreenであることを確認する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> todolistのbase
+      revisionを固定し、pilot開始後に変更しない。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> provider/model routingを決める。Codexを使う場合は全20
+      runをCodexへ固定する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> 一時LLM
+      settingsを0600で作成し、secret値をログへ出さない。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> pilot専用runtime/databaseを使い、常駐NightWorkers
+      APIと共有しない。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> endpointが単一slotの場合はpair
+      member間・pair間のcooldownを維持する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> 1 pairのsmokeでcatalog toolがbroad
+      exploration前に呼ばれ、edit/check tool callがparser errorにならないことを確認する。
+    </li>
+  </ul>
+  <h3 id="p1-formal-paired-pilot">P1: Formal paired pilot</h3>
+  <ul>
+    <li><input disabled="" type="checkbox" /> 新しいpilot IDで最低10 pairを実行する。</li>
+    <li>
+      <input disabled="" type="checkbox" /> baseline/catalogを同じtask、base
+      commit、provider、model、reasoning depthで比較する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" />
+      failed、timed-out、<code>needs_human</code>を母数から除外しない。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> 実行中はrunnerの標準出力だけを監視し、SQLite
+      DBを外部processから読まない。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" />
+      最終reportをvulnWorkbenchの<code>spec/evidence/</code>へ保存する。
+    </li>
+  </ul>
+  <p>
+    実行形は次を基準とする。パス、日付、routing名は再開時に確定し、secretをコマンド履歴や文書へ埋め込まない。
+  </p>
+  <pre><code class="language-sh">node scripts/run-project-exploration-paired-pilot.mjs \
+  --llm-settings-path /absolute/path/to/temporary-0600-settings.json \
+  --preserve-isolated-runtime \
+  --repository-root /Users/y.noguchi/Code/todolist \
+  --producer-root /Users/y.noguchi/Code/vulnWorkbench \
+  --pilot-id project-intelligence-foundation-YYYY-MM-DD-codex \
+  --pair-count 10 \
+  --timeout-seconds 1800 \
+  --thinking-depth low \
+  --cooldown-seconds 120 \
+  --output /Users/y.noguchi/Code/vulnWorkbench/spec/evidence/project-intelligence-paired-pilot-YYYY-MM-DD.json
+</code></pre>
+  <h3 id="p2-判定と文書化">P2: 判定と文書化</h3>
+  <ul>
+    <li>
+      <input disabled="" type="checkbox" /> median pre-mutation exploratory
+      callsが20%以上減ったか、同等のtool round-trip削減があるか判定する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> median pre-mutation input
+      tokensが15%以上減ったか判定する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> completion率とverification
+      pass率がbaselineより悪化していないことを確認する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> wrong revision、wrong project、unsafe path
+      incidentが0件であることを確認する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> catalog由来のrework増加と、catalog failureからrun
+      failureへの波及がないことを確認する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>GO</code> / <code>NO-GO</code> /
+      <code>INSUFFICIENT_EVIDENCE</code>をmetric付きで記録する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> vulnWorkbenchのhardening implementation plan、rollout
+      decision、roadmapをformal reportへ合わせて更新する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>GO</code>以外ではfeature
+      flagをOFFのままにし、namespace cleanupを行わない。
+    </li>
+  </ul>
+  <h3 id="p3-最終検証とcleanup">P3: 最終検証とcleanup</h3>
+  <ul>
+    <li>
+      <input disabled="" type="checkbox" /> NightWorkersのfocused test、typecheck、generated catalog
+      check、対象formatter/linterを実行する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> vulnWorkbenchのfocused test、typecheck、ontology
+      validation、smokeを実行する。
+    </li>
+    <li><input disabled="" type="checkbox" /> pilot用processが0件であることを確認する。</li>
+    <li>
+      <input disabled="" type="checkbox" /> pilotが作成したtodolist
+      worktree/branchだけを削除する。既存ユーザーworktreeは保持する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" /> isolated runtime、pilot DB、temporary LLM
+      settings、secretを含む複製settingsを削除する。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" />
+      smoke用の中間evidenceを整理し、正式reportだけを正本として残す。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" />
+      両repositoryの差分を確認し、ユーザーの無関係な変更を混ぜていないことを確認する。
+    </li>
+  </ul>
+  <h2 id="完了条件">完了条件</h2>
+  <p>
+    残タスク0とは、単に10 pair
+    runnerが終了した状態ではない。正式evidence、metric付きrollout判定、関連文書、全検証、temporary
+    resource/secret cleanupまで完了し、feature flagとnamespaceの状態が判定に一致していることを指す。
+  </p>
+  <p>
+    想定所要時間は、Codex routing時の実測に依存する。LAN内の単一slotモデルを再利用する場合はformal
+    pilotだけで約4〜8時間、判定・文書・検証・cleanupに追加で30〜60分を見込む。
+  </p>
+</article>

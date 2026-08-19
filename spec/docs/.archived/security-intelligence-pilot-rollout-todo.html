@@ -1,0 +1,174 @@
+<article lang="ja">
+  <h1 id="security-intelligence-integrity-smoke--rollout-todo">
+    Security Intelligence Integrity Smoke / Rollout TODO
+  </h1>
+  <h2 id="status">Status</h2>
+  <ul>
+    <li>Status: completed and archived</li>
+    <li>Completed: 2026-08-17</li>
+    <li>Code implementation: complete as of 2026-08-16</li>
+    <li>Default activation: OFF</li>
+    <li>Applies to: NightWorkers、vulnWorkbench、contextStill</li>
+    <li>
+      Completion authority: capability別のdated <code>GO | ITERATE | STOP</code> decision backed by
+      the evidence below
+    </li>
+    <li>
+      Completion evidence:
+      <code>vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-2026-08-17.json</code>
+    </li>
+  </ul>
+  <p>
+    実装計画は<a href="./security-intelligence-executable-integration-implementation-plan.html"
+      >履歴</a
+    >へ 移した。この文書だけで未完了のpilotとrollout判断を実行できるよう、
+    残作業、停止条件、完了条件を記録する。検証は1つのauthoritative implementation Runを
+    使用し、baseline Runとの二重実行や10-pair sampleを要求しない。integrity smoke証跡が
+    揃うまでStage 2 / Stage 3 complete、default ON、production rolloutを宣言しない。
+  </p>
+  <p>
+    証跡はvulnWorkbenchの
+    <code>spec/evidence/security-intelligence-integrity-smoke-template.json</code>（v2）へ記録する。
+    旧paired pilot evidence v1は履歴互換専用であり、新しい判断には使用しない。
+  </p>
+  <h2 id="p0-実行前固定--preflight">P0: 実行前固定 / preflight</h2>
+  <ul>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> 3 repositoryの対象commit、working
+      tree、provider project、allowlistを固定する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> vulnWorkbenchで<code
+        >bun run verify:security-intelligence-cross-repo-fixtures</code
+      >を実行し、 5 fixture groupすべてのsemantic digest一致を確認してv2証跡へ記録する。
+      不一致またはdigest未記録の場合はここで停止する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> Project
+      declarationをrevision/digest付きで検証できない場合、証跡の
+      <code>declarationScope</code>を<code>transport_integrity_only</code>とし、Project
+      Loop完成を主張しない。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> Security Intelligence endpoint、workspace
+      grant、assessment consumerだけを 1 projectで有効化する。candidate / feedback /
+      shadowはこの時点ではOFFのままにする。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> rollback順と各flagの初期OFF状態を記録する。
+    </li>
+  </ul>
+  <h2 id="p1-stage-2-single-run-integrity-smoke">P1: Stage 2 single-Run integrity smoke</h2>
+  <ul>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> 1 Task Revision SnapshotのID / digest、1
+      implementation Run、 1 canonical Evidence Subjectを固定する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> 同じRunでpre assessment → Security Contract →
+      実装 → post assessment → structured final
+      judgmentを完了する。pre/postは別assessmentだが、実装Runを複製しない。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> wrong project、wrong revision、wrong target
+      digest、wrong subjectを拒否する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> cross-Run evidenceを拒否し、required
+      failureとtyped unavailableをsuccess表示しない。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> primary lane 1つでend-to-end
+      smokeを行い、もう一方のlaneはadapter / tool contractの deterministic smokeで同じstructured
+      judgment contractを確認する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> 1回のrollback
+      drillを行い、通常Runと既存Security Scan v1が継続することを確認する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> pre-only、post-only、typed unavailableはlive
+      sample数へ数えず、既存のfocused unit / contract scenarioでfail-closedを確認する。
+    </li>
+  </ul>
+  <p>
+    Stage 2 integrity PASSは、fixture一致、同一Run traceability、4つのidentity拒否、privacy、
+    rollbackの全条件が通った状態を指す。これは最終rollout <code>GO</code>ではない。
+  </p>
+  <h2 id="p2-stage-3-shadow-smoke">P2: Stage 3 shadow smoke</h2>
+  <ul>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> Stage 2 integrity PASS後だけcandidate
+      tokenとfeedback tokenを別scopeで発行し、 candidate / feedback ingress、dispatcher、shadow
+      retrievalを1 project / 1 batchで有効化する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> token
+      secretをrepository、evidence、report、logへ残さない。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> same key / same digest replay、same key /
+      different digest conflict、contextStill停止を検証する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" />
+      retrieved、selected、actually-used、verification outcomeを1 batch送信する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> feedback duplicate replay、candidate
+      tokenとのscope rejectionを検証する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" />
+      feedbackによってKnowledge本文、status、promotion stateが変わらないことを確認する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> shadow itemがCoding
+      Agentのconstraintやverification省略へ影響しないことを確認する。
+    </li>
+  </ul>
+  <h2 id="p3-decision--cleanup">P3: Decision / Cleanup</h2>
+  <ul>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> identity mismatch、path /
+      secret漏洩、unavailableのsuccess化、cross-Run evidence採用が0件である。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> retry、dead-letter、restart dedupe、outbox
+      receiptはfocused testを主証拠とし、 cross-process smokeではoutage / retry /
+      receiptを1経路確認する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> assessment consumer、post-assessment
+      grant、candidate export、feedback export、 shadow
+      retrievalごとに、evidence、cost、coverage、failureを含むdated
+      <code>GO | ITERATE | STOP</code> decisionを保存する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" />
+      decisionにかかわらず全flagとallowlistをOFFへ戻す。default activationは
+      このsmokeでは認可せず、別のactivation decision / changeを必要とする。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> temporary
+      token、settings、database、workspace、processを削除する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> 3 repositoryのfocused
+      test、typecheck、contract fixture検証を再実行する。
+    </li>
+    <li>
+      <input checked="" disabled="" type="checkbox" /> 完成した証跡をvulnWorkbenchの
+      <code
+        >bun run verify:security-intelligence-integrity-evidence -- --evidence
+        &lt;artifact&gt;</code
+      >で検証する。
+    </li>
+  </ul>
+  <h2 id="completion">Completion</h2>
+  <p>
+    このTODOは、single-Run integrity smoke、secondary lane contract smoke、1回のrollback drill、
+    Stage 3 shadow smoke、capability別dated decision、cleanup、最終検証がすべて完了したときだけ
+    完了とする。完了後はこの文書も<code>spec/docs/.archived</code>へ移す。
+  </p>
+</article>

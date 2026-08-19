@@ -493,7 +493,7 @@ live-provider testは通常のdeterministic gateに含まれません。`verify:
 - contextStill procedureには設定済みcontextStill MCP serverが必要です。deterministicなproduct／demo baselineには必須ではありません。
 - pricing、usage、FX dataが利用できない場合、推定costは不完全です。
 - 成功したfinal report、model response、既存Queue rowのいずれも、それだけでは完了を証明しません。
-- `spec/.archived/`のdocument planはhistorical evidenceであり、現在のuser contractではありません。この隠しdirectoryは通常のLLM file探索から除外し、明示的に履歴調査を依頼された場合だけ読みます。
+- `spec/docs/.archived/`のdocument planはhistorical evidenceであり、現在のuser contractではありません。この隠しdirectoryは通常のLLM file探索から除外し、明示的に履歴調査を依頼された場合だけ読みます。
 
 ## Documentation
 
@@ -509,7 +509,7 @@ live-provider testは通常のdeterministic gateに含まれません。`verify:
 - [Security Policy](./SECURITY.md)
 - [Contributing](./CONTRIBUTING.md)
 
-active specificationは、作業中であれば`spec/docs/`または`spec/`直下に置かれます。完了したimplementation planは`spec/.archived/`へ移動します。どちらの場所も、そのdocumentが自動的に現在のproduct guaranteeになることを意味しません。
+作業中の設計書はHTML fragmentとして`spec/docs/`に置き、永続的なproduct referenceは引き続き`spec/`直下のMarkdownに置けます。完了したimplementation planは`spec/docs/.archived/`へ移動します。`bun run docs`で両方を閲覧し、`bun run docs:check`で検証できます。どちらの場所も、そのdocumentが自動的に現在のproduct guaranteeになることを意味しません。
 
 ## Source-of-Truth Map
 

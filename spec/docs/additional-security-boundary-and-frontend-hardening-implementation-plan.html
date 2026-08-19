@@ -1,0 +1,2260 @@
+<article lang="ja">
+  <h1 id="追加レビュー指摘-security--boundary--frontend-hardening-実装計画">
+    追加レビュー指摘 Security / Boundary / Frontend Hardening 実装計画
+  </h1>
+  <h2 id="section-0-文書情報">0. 文書情報</h2>
+  <ul>
+    <li>Plan status: <code>proposed</code></li>
+    <li>Document created: 2026-08-16</li>
+    <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
+    <li>Planning baseline branch: <code>main</code></li>
+    <li>Planning baseline HEAD: <code>38cbc411078613b1062302e493beaf2db17281d1</code></li>
+    <li>Planning baseline worktree: dirty</li>
+    <li>Implementation authorization: not started</li>
+    <li>
+      Related program:
+      <code>spec/docs/.archived/codebase-review-remediation-program-index.html</code>
+    </li>
+  </ul>
+  <p>
+    この文書は、追加レビュー33件を現行コードで再検証した結果から、実装根拠が成立した15件を
+    Terraが一件ずつ実装できるchange setへ落とした計画である。既存programの5計画は別レビューの
+    28件を対象としており、本書はそれらを上書きせず、依存関係だけを明示する。
+  </p>
+  <p>
+    計画作成時点のworktreeにはユーザー所有の未コミット変更がある。特に
+    <code>api/modules/nightworkers/run-orchestration/stop-task-run.ts</code>と
+    <code>tests/worker-tools/services-worker-tools-06.test.ts</code>は本書の後続ticketとwrite
+    setが重なる。 Terraは<code>ADD-T0</code>でaccepted
+    baselineを確定するまで、これらを変更してはならない。
+  </p>
+  <h2 id="section-1-結論と対象範囲">1. 結論と対象範囲</h2>
+  <h3 id="section-11-実装対象">1.1 実装対象</h3>
+  <table>
+    <caption>
+      1.1 実装対象
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Finding</th>
+        <th scope="col">判定</th>
+        <th scope="col">優先度</th>
+        <th scope="col">実装ticket</th>
+        <th scope="col">採用する修正核</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>SEC-1</code></td>
+        <td>条件付き妥当</td>
+        <td>P1</td>
+        <td><code>SEC-T4</code></td>
+        <td>clone sourceをprotocol/source policyで検証し、許可されていないlocal pathを拒否する</td>
+      </tr>
+      <tr>
+        <td><code>SEC-2</code></td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td><code>SEC-T1</code></td>
+        <td>API、Supervisor、LLM、Pinoの全log sinkでsecretを保存前にredactする</td>
+      </tr>
+      <tr>
+        <td><code>SEC-6</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>SEC-T2</code></td>
+        <td><code>/api/*</code>へroute共通body上限を追加する</td>
+      </tr>
+      <tr>
+        <td><code>SEC-8</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>SEC-T3</code></td>
+        <td>WebSocket接続後の受信message rateを接続単位で制限する</td>
+      </tr>
+      <tr>
+        <td><code>MOD-1</code></td>
+        <td>条件付き妥当</td>
+        <td>P1</td>
+        <td><code>ARC-T1</code>〜<code>ARC-T5</code></td>
+        <td>確認済みrole逆依存を解消し、再発をarchitecture guardで止める</td>
+      </tr>
+      <tr>
+        <td><code>MOD-5</code></td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td><code>ARC-T1</code>〜<code>ARC-T5</code></td>
+        <td>
+          <code>api/services</code>からCoding Agent role moduleへのtype/value/dynamic
+          importを0件にする
+        </td>
+      </tr>
+      <tr>
+        <td><code>FE-1</code></td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td><code>FE-T1</code></td>
+        <td>chat送信失敗時に、その送信で追加したoptimistic messageだけをrollbackする</td>
+      </tr>
+      <tr>
+        <td><code>FE-5</code></td>
+        <td>妥当</td>
+        <td>P1</td>
+        <td><code>FE-T2</code>, <code>FE-T3</code></td>
+        <td>realtime buffer/streamをboundedにし、activity初期取得をpage化する</td>
+      </tr>
+      <tr>
+        <td><code>FE-6</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>FE-T4</code></td>
+        <td>routeに不要なsession queryとWebSocket接続を起動しない</td>
+      </tr>
+      <tr>
+        <td><code>FE-7</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>FE-T5</code></td>
+        <td>Run/Task lifecycle predicateを意味別の共通contractへ集約する</td>
+      </tr>
+      <tr>
+        <td><code>FE-9</code></td>
+        <td>妥当</td>
+        <td>P3</td>
+        <td><code>FE-T6</code></td>
+        <td>Composer draft保存をdebounceし、成功時の古いtimer再書込を防ぐ</td>
+      </tr>
+      <tr>
+        <td><code>FE-10</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>FE-T7</code></td>
+        <td>ThreadTimelineの全件結合・全件sort後sliceをwindow-firstへ変更する</td>
+      </tr>
+      <tr>
+        <td><code>FE-11</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>FE-T8</code></td>
+        <td>realtime delta dedupeの全clearをbounded LRUへ置換する</td>
+      </tr>
+      <tr>
+        <td><code>FE-12</code></td>
+        <td>妥当</td>
+        <td>P3</td>
+        <td><code>FE-T9</code></td>
+        <td><code>resolveNextActiveSessionId</code>の重複定義を1箇所へ統合する</td>
+      </tr>
+      <tr>
+        <td><code>FE-13</code></td>
+        <td>妥当</td>
+        <td>P2</td>
+        <td><code>FE-T10</code></td>
+        <td>Mission Pilot command失敗時に競合安全なoptimistic rollbackを行う</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Criticalとして扱う項目はない。P1は通常releaseより先に解消するが、既存programのP0 ticketを
+    追い越してはならない。
+  </p>
+  <h3 id="section-12-指摘文をそのまま採用しない補正">1.2 指摘文をそのまま採用しない補正</h3>
+  <ol>
+    <li>
+      <code>SEC-1</code
+      >の<code>ext::</code>即時RCEという説明は現行Git既定値では再現しなかった。一方、
+      <code>clone_git_repo</code>がsource種別を検証せず、許可外のlocal repository
+      pathをcloneできること、 および専用のbounded Git
+      runnerを使っていないことは実在する。したがってsource policyだけを採用する。
+    </li>
+    <li>
+      <code>MOD-1</code>のcycle path件数は診断値であり、0件化を完了条件にしない。現行依存に存在する
+      <code>api/services -&gt; api/modules/codingAgent</code
+      >の逆向きedgeを0件にし、そのedgeを再作成できないことを architecture testで保証する。
+    </li>
+    <li>
+      <code>FE-7</code
+      >はstatusの意味を一つの<code>isActive</code>へ潰さない。実行中、停止可能、terminal、Task処理中を
+      別predicateとして定義し、現行挙動を維持する。
+    </li>
+    <li>
+      <code>FE-5</code>のactivity
+      historyは「全履歴を自動取得し続ける」状態を解消する。利用者が明示的に
+      「さらに読み込む」を実行した履歴まで無条件に捨てることは目的にしない。
+    </li>
+  </ol>
+  <p>
+    <code>MOD-5</code>のplanning baseline inventoryは次の8
+    fileである。Terraは<code>ADD-T0</code>で再検索し、増減があれば
+    <code>ARC-T1</code>〜<code>ARC-T4</code>のwrite setを実装前に更新する。
+  </p>
+  <table>
+    <caption>
+      1.2 指摘文をそのまま採用しない補正
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">現行source</th>
+        <th scope="col">Import種別</th>
+        <th scope="col">解消ticket</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>api/services/conversation-context/state-card-projection.ts</code></td>
+        <td>type import</td>
+        <td><code>ARC-T1</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/runner/types.ts</code></td>
+        <td>type import</td>
+        <td><code>ARC-T1</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/tool-policy/types.ts</code></td>
+        <td>type import</td>
+        <td><code>ARC-T1</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/dispatcher.ts</code></td>
+        <td>type + dynamic value import</td>
+        <td><code>ARC-T1</code>, <code>ARC-T2</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/run-check.ts</code></td>
+        <td>value import</td>
+        <td><code>ARC-T2</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/worker-tools/completion-check.ts</code></td>
+        <td>value import</td>
+        <td><code>ARC-T2</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/execution/worker-process-manager.ts</code></td>
+        <td>dynamic value import</td>
+        <td><code>ARC-T3</code></td>
+      </tr>
+      <tr>
+        <td><code>api/services/supervisor/prompt-tool-registry.ts</code></td>
+        <td>value import</td>
+        <td><code>ARC-T4</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="section-13-対象外と禁止する便乗変更">1.3 対象外と禁止する便乗変更</h3>
+  <p>以下は今回の実装根拠にしない。</p>
+  <table>
+    <caption>
+      1.3 対象外と禁止する便乗変更
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Finding群</th>
+        <th scope="col">扱い</th>
+        <th scope="col">禁止する便乗変更</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>SEC-3</code></td>
+        <td>容易なOpenAI key流出chainは不成立。hook <code>allowedEnv</code>の強化は別計画</td>
+        <td>loopback endpointやlocal providerを一律禁止しない</td>
+      </tr>
+      <tr>
+        <td><code>SEC-4</code>, <code>SEC-5</code>, <code>SEC-9</code></td>
+        <td>exploit chain不成立</td>
+        <td>
+          MCP CSRF対策、external write path全面変更、任意MCP serverへの一律egress
+          denyを本書へ追加しない
+        </td>
+      </tr>
+      <tr>
+        <td><code>SEC-7</code></td>
+        <td>non-production E2E bypassとして限定済み</td>
+        <td>production挙動を変える根拠にしない</td>
+      </tr>
+      <tr>
+        <td>
+          <code>MOD-2</code>, <code>MOD-3</code>, <code>MOD-4</code>, <code>MOD-7</code>,
+          <code>MOD-9</code>, <code>MOD-10</code>
+        </td>
+        <td>一部tech debtはあるが本指摘の一括修正は過大</td>
+        <td>DB全面repository化、shared移動、命名一括変更、barrel一括削除を行わない</td>
+      </tr>
+      <tr>
+        <td><code>MOD-6</code>, <code>MOD-8</code></td>
+        <td>現行ownershipで不成立</td>
+        <td>pure domain logicや<code>agentsShare</code>を指摘だけで移動しない</td>
+      </tr>
+      <tr>
+        <td><code>FE-2</code></td>
+        <td><code>verifying</code>はschema上存在するがproduction writer未確認</td>
+        <td>producerなしでstatus遷移やUI lockへ<code>verifying</code>を追加しない</td>
+      </tr>
+      <tr>
+        <td><code>FE-3</code></td>
+        <td>eventごとのinvalidateは実在するが原因・修正案が不十分</td>
+        <td><code>staleTime</code>追加だけで完了扱いしない</td>
+      </tr>
+      <tr>
+        <td><code>FE-4</code></td>
+        <td>route-level error handlingが存在する</td>
+        <td>緊急のErrorBoundary追加を本計画へ混ぜない</td>
+      </tr>
+      <tr>
+        <td><code>FE-8</code></td>
+        <td>typed router改善余地はある</td>
+        <td>全route loader化や不要なloader新設を行わない</td>
+      </tr>
+    </tbody>
+  </table>
+  <h2 id="section-2-既存計画との依存関係">2. 既存計画との依存関係</h2>
+  <table>
+    <caption>
+      2. 既存計画との依存関係
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">本書ticket</th>
+        <th scope="col">先行または調整対象</th>
+        <th scope="col">固定ルール</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>SEC-T2</code></td>
+        <td>既存<code>E-T1</code>の一般REST error envelope</td>
+        <td>
+          <code>E-T1</code
+          >完了済みならそのfactoryを使う。未完なら<code>E-T1</code>を先に実行し、別形式の413
+          payloadを作らない
+        </td>
+      </tr>
+      <tr>
+        <td><code>SEC-T4</code></td>
+        <td>既存<code>A-T5</code>のbounded Git runner</td>
+        <td>
+          runnerを二重実装しない。どちらを先に行う場合も最終ownerを<code>api/services/execution</code>にする
+        </td>
+      </tr>
+      <tr>
+        <td><code>ARC-T2</code>〜<code>ARC-T4</code></td>
+        <td>既存<code>C-T2</code>, <code>C-T3</code>のCoding Agent host port/composition</td>
+        <td>
+          <code>api/composition/coding-agent</code>が未作成なら<code>C-T2</code>,
+          <code>C-T3</code>を先に完了する
+        </td>
+      </tr>
+      <tr>
+        <td><code>FE-T4</code></td>
+        <td>既存<code>D-T0</code>, <code>D-T1</code>のrepository/settings Query化</td>
+        <td>
+          canonical query keyとsettings query optionsを再定義しない。<code>enabled</code>
+          optionだけを公開contractへ追加する
+        </td>
+      </tr>
+      <tr>
+        <td><code>FE-T5</code></td>
+        <td>既存Area BのRun transition変更</td>
+        <td>transition semanticsは変更せず、公開status集合の参照へ置換するだけにする</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    先行ticketの実装が本書の前提と異なる場合は、adapterや互換層を推測で追加しない。本書を更新して
+    write setとownershipを再確定する。
+  </p>
+  <h2 id="section-3-共通不変条件">3. 共通不変条件</h2>
+  <ol>
+    <li>
+      ユーザー文言やerror messageをregex/keywordで意味分類しない。URL scheme、path
+      containment、status、 schema、byte数などの構造的不変条件だけをhostで判定する。
+    </li>
+    <li>Git、log、WebSocket、RESTの失敗はtyped codeを持ち、成功payloadへ偽装しない。</li>
+    <li>
+      Logging
+      redactionは保存・console出力・truncationより前に行う。redaction前の本文を別fieldへ残さない。
+    </li>
+    <li>
+      clone targetは常に登録Project root内に置く。local sourceだけが明示的な
+      <code>externalAllowedPaths</code>を利用でき、target許可へ転用しない。
+    </li>
+    <li>
+      <code>api/services</code>はrole非依存であり、Coding
+      Agentのroute、service、repository、runtime、public indexを static/type/dynamic importしない。
+    </li>
+    <li>
+      Coding Agent固有tool
+      orchestrationは<code>api/modules/codingAgent</code>が所有し、agent非依存の実行primitiveだけを
+      <code>api/services</code>から利用する。
+    </li>
+    <li>
+      optimistic rollbackは自分が書いたcache object/idだけを戻す。後着のserver/realtime
+      stateを巻き戻さない。
+    </li>
+    <li>realtime処理は、利用者操作なしに時間経過だけで増え続けるmemoryを持たない。</li>
+    <li>
+      route URLにsession idがない画面で、暗黙に最初のTaskを選択してsession detailを取得しない。
+    </li>
+    <li>
+      status predicateの集約は挙動維持refactorである。producer、transition、Composer
+      lock条件を追加しない。
+    </li>
+    <li>各ticketはred test、production変更、限定test、typecheck/architectureの順に実施する。</li>
+    <li>ticketのwrite setと既存dirty fileが重なる場合、accepted baseline確定まで停止する。</li>
+  </ol>
+  <h2 id="section-4-推奨実装順">4. 推奨実装順</h2>
+  <table>
+    <caption>
+      4. 推奨実装順
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">順序</th>
+        <th scope="col">Ticket</th>
+        <th scope="col">理由</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0</td>
+        <td><code>ADD-T0</code></td>
+        <td>dirty worktree、先行計画、対象symbolの現状を固定する</td>
+      </tr>
+      <tr>
+        <td>1</td>
+        <td><code>SEC-T1</code></td>
+        <td>全後続ticketの診断logへsecretを残さない</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><code>SEC-T2</code>, <code>SEC-T3</code></td>
+        <td>独立したrequest resource境界を小さい差分で閉じる</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><code>SEC-T4</code></td>
+        <td>既存<code>A-T5</code>のGit runner contract確定後にsource policyを実装する</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code>ARC-T1</code></td>
+        <td>role非依存type/schemaを先に提供する</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><code>ARC-T2</code>, <code>ARC-T3</code>, <code>ARC-T4</code></td>
+        <td>role固有tool、worker exit、tool schemaの順に逆依存を除去する</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td><code>ARC-T5</code></td>
+        <td>全移行後にexemptionを削除し、再発guardを有効化する</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td><code>FE-T1</code>, <code>FE-T10</code></td>
+        <td>cache rollback規約を先に固定する</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td><code>FE-T8</code>, <code>FE-T2</code></td>
+        <td>dedupeとlocal realtime memoryをboundedにする</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td><code>FE-T3</code></td>
+        <td>API page contractとFrontend cacheを同じchange setで移行する</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td><code>FE-T4</code>, <code>FE-T5</code>, <code>FE-T9</code></td>
+        <td>route/query、status、helper重複を挙動維持で整理する</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td><code>FE-T6</code>, <code>FE-T7</code></td>
+        <td>Composer IOとTimeline計算量を個別に最適化する</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td><code>ADD-T99</code></td>
+        <td>全限定test成功後に統合gateを直列実行する</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <code>SEC-T2</code>と<code>SEC-T3</code>、<code>FE-T1</code>と<code>FE-T10</code>はwrite
+    setが重ならない場合だけ並行可能である。 それ以外は表の順で行う。
+  </p>
+  <h2 id="section-5-terra共通実行プロトコル">5. Terra共通実行プロトコル</h2>
+  <p>各ticketを一件ずつTerraへ渡し、次を省略しない。</p>
+  <ol>
+    <li><code>git rev-parse HEAD</code>と<code>git status --short</code>を保存する。</li>
+    <li>
+      ticketのwrite setに未コミット差分があれば、そのfileを変更せず停止し、重複fileを報告する。
+    </li>
+    <li>
+      ticketに記載したproduction
+      symbolと近接testを読み、既に解消済みなら実装せず、根拠とtest結果を報告する。
+    </li>
+    <li>最初にred testを追加し、production変更前に想定理由で失敗することを確認する。</li>
+    <li>write set外が必要になった場合、現在ticketを拡張せずplan amendmentを作る。</li>
+    <li>
+      production変更後、ticket限定test、<code>bun run typecheck</code>、必要なarchitecture
+      checkを実行する。
+    </li>
+    <li>
+      <code>git diff --check</code>、<code>git diff --stat</code
+      >、対象findingの<code>rg</code>監査を行う。
+    </li>
+    <li>変更file、red/green結果、未検証事項、既存差分との関係を報告する。</li>
+    <li>acceptanceを一つでも満たせない場合は<code>完了</code>と報告しない。</li>
+  </ol>
+  <h2 id="section-6-実装ticket台帳">6. 実装ticket台帳</h2>
+  <h3 id="add-t0-accepted-baselineと競合を固定する">ADD-T0: accepted baselineと競合を固定する</h3>
+  <ul>
+    <li>Findings: 全件</li>
+    <li>Priority: P0 preparation</li>
+    <li>Write set: production codeなし。実装branchの作業記録だけ</li>
+    <li>Read set: 本書の全write set、関連既存計画、<code>package.json</code></li>
+  </ul>
+  <h4 id="実行">実行</h4>
+  <ol>
+    <li>
+      <p>次を記録する。</p>
+      <pre><code class="language-bash">git rev-parse HEAD
+git status --short --branch
+git diff --name-only
+bun run check:architecture
+bun run typecheck
+</code></pre>
+    </li>
+    <li>
+      <p>
+        <code>stop-task-run.ts</code
+        >、<code>services-worker-tools-06.test.ts</code>、既存5計画書の未コミット差分について、
+        本実装へ含めるaccepted baselineか、別作業の未完了差分かを区別する。
+      </p>
+    </li>
+    <li>
+      <p>
+        <code>node_modules/.bin/madge</code>は計画時点で存在しない。network
+        installをbaseline条件にせず、 cycle件数はレビュー時診断値としてだけ保存する。
+      </p>
+    </li>
+    <li><p>後述する各<code>rg</code>監査を実行し、現行件数をticket報告へ添付する。</p></li>
+  </ol>
+  <h4 id="done">Done</h4>
+  <ul>
+    <li>各ticketの競合fileと先行ticket状態が分かる。</li>
+    <li>baseline failureを本実装のregressionとして誤認しない。</li>
+  </ul>
+  <h4 id="stop-condition">Stop condition</h4>
+  <ul>
+    <li>write setに未確定のユーザー差分がある。</li>
+    <li>先行ticketが同じcontractを別ownerへ実装している。</li>
+  </ul>
+  <hr />
+  <h3 id="sec-t1-全runtime-log-sinkのsecret-redaction">
+    SEC-T1: 全runtime log sinkのsecret redaction
+  </h3>
+  <ul>
+    <li>Finding: <code>SEC-2</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>api/services/security/secret-redaction.ts</code></li>
+        <li><code>api/lib/logger.ts</code></li>
+        <li><code>api/routes/settings-runtime.ts</code></li>
+        <li><code>api/modules/securityScan/security-scan-settings.service.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/middleware.logger.test.ts</code></li>
+        <li>新規<code>tests/logger-secret-redaction.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test">Red test</h4>
+  <p>
+    fixture secretをprocess env、LLM top-level key、provider endpoint <code>apiKey</code>、Security
+    Scan tokenへ設定し、 以下の出力にraw値、URL
+    encode値、base64値が残ることをproduction変更前に確認する。
+  </p>
+  <ul>
+    <li><code>logHttpEvent</code>の<code>message</code>とnested <code>meta</code></li>
+    <li><code>logEvent</code>の<code>message</code>とnested <code>meta</code></li>
+    <li><code>appendSupervisorTrace</code>のevent/payload</li>
+    <li>
+      <code>appendLlmTrace</code
+      >の<code>systemPrompt</code>、<code>userPrompt</code>、<code>rawContent</code>、<code
+        >providerDebug</code
+      >
+    </li>
+    <li><code>llmLogger.info()</code>/<code>logger.error()</code>へ渡すstring/object/Error</li>
+  </ul>
+  <p>testは実在credentialを使わず、<code>nw_test_secret_...</code>形式のfixtureだけを使う。</p>
+  <h4 id="contract">Contract</h4>
+  <ol>
+    <li>
+      <code>secret-redaction.ts</code>へsource別runtime secret registryを追加する。
+      <ul>
+        <li>
+          <code>replaceRuntimeSecretValues(sourceId, values)</code
+          >は当該sourceのsnapshotを置換する。
+        </li>
+        <li>空値と6文字未満は保持しない。</li>
+        <li>
+          getterは値そのものを外部へ公開せず、<code>redactRuntimeSecretText</code>と
+          <code>redactRuntimeSecretRecord</code>だけを公開する。
+        </li>
+      </ul>
+    </li>
+    <li>
+      runtime redactionは次をsecret value集合へ含める。
+      <ul>
+        <li>
+          <code>isSecretEnvironmentKey</code
+          >または<code>isRegistryCredentialEnvironmentKey</code>に一致するprocess env値
+        </li>
+        <li><code>SECRET_SETTING_KEYS</code>の値</li>
+        <li><code>providerEndpoints[*].apiKey</code></li>
+        <li>Security Scan provider token</li>
+      </ul>
+    </li>
+    <li>
+      <code>settings-runtime.ts</code>はsettings読込・保存・process env反映時に<code
+        >llm-settings</code
+      >
+      sourceを置換する。
+    </li>
+    <li>
+      Security Scan settings serviceは読込・保存時に<code>security-scan</code> sourceを置換する。
+    </li>
+    <li>
+      registryはlog出力、error、diagnosticへsecret件数以外を公開しない。test reset APIは
+      <code>NODE_ENV=test</code
+      >でもproductionと同じ処理を通せるよう、source置換で空配列を渡して行う。
+    </li>
+  </ol>
+  <h4 id="production実装">Production実装</h4>
+  <ol>
+    <li>
+      <code>logHttpEvent</code
+      >/<code>logEvent</code>はchannel、method、path、message、metaをredactしてから<code>inlineMeta</code>へ渡す。
+    </li>
+    <li><code>appendSupervisorTrace</code>はeventとpayloadをredactしてからJSON化する。</li>
+    <li>
+      <code>appendLlmTrace</code>はevent/payloadをredactしてからbyte計測・field
+      truncation・全体上限を適用する。
+    </li>
+    <li>
+      Pinoは<code>hooks.logMethod</code>または同等の一つの入口でstring/object/Errorをsanitiseし、
+      direct callerを迂回させない。<code>logger</code> aliasも同じinstanceを参照する。
+    </li>
+    <li>
+      Errorは非enumerableな<code>name</code>、<code>message</code>、<code>stack</code>、<code>cause</code>を明示的なrecordへ写してからredactする。
+    </li>
+    <li>
+      cyclic objectは例外にせず<code>[REDACTED]</code>または明示的なcircular markerへ変換する。
+    </li>
+    <li>
+      secret valueをredaction前の<code>original*</code>
+      fieldへ保持しない。byte数だけは保持してよい。
+    </li>
+  </ol>
+  <h4 id="acceptance">Acceptance</h4>
+  <ul>
+    <li>全sinkでraw/URL encoded/base64 fixture secretが0件。</li>
+    <li>
+      <code>authorization</code
+      >、<code>cookie</code>、<code>apiKey</code>等のkey値が<code>[REDACTED]</code>になる。
+    </li>
+    <li>ordinary message、timestamp、level、request id、provider名は保持される。</li>
+    <li>redaction後のLLM traceが既存2 MiB上限を超えない。</li>
+    <li>
+      <code>rg -n &quot;console\.(log|warn|error)&quot; api</code
+      >の既存直接出力はinventoryだけ行い、本ticketで無関係な console呼び出しを全面移行しない。
+    </li>
+  </ul>
+  <h4 id="verification">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/middleware.logger.test.ts tests/logger-secret-redaction.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="sec-t2-api共通request-body-limit">SEC-T2: <code>/api/*</code>共通request body limit</h3>
+  <ul>
+    <li>Finding: <code>SEC-6</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>ADD-T0</code>, 既存<code>E-T1</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>新規<code>api/security/nightworkers-request-policy.ts</code></li>
+        <li><code>api/app.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/hono-security-regressions.test.ts</code></li>
+        <li><code>tests/routes.security-hardening.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-1">Red test</h4>
+  <ol>
+    <li>
+      <code>Content-Length</code>付き33 MiB JSONがroute handlerへ到達する現行failureを固定する。
+    </li>
+    <li>
+      Content-Lengthなしのchunked bodyが32 MiBを超えた場合もhandlerへ到達する現行failureを固定する。
+    </li>
+    <li>5画像の最大request相当payloadが上限未満で受理されるpositive caseを追加する。</li>
+  </ol>
+  <h4 id="contract-1">Contract</h4>
+  <ul>
+    <li><code>NIGHTWORKERS_API_MAX_BODY_BYTES = 32 * 1024 * 1024</code>を共通定数とする。</li>
+    <li>
+      根拠は<code>PROMPT_IMAGE_MAX_COUNT=5</code>、各<code>dataUrl</code>最大5,100,000文字にJSON
+      overheadを加えても 32 MiB未満であること。route個別のより小さい上限は維持する。
+    </li>
+    <li>
+      超過responseはHTTP 413、code <code>REQUEST_BODY_TOO_LARGE</code>。一般REST error
+      envelopeは既存<code>E-T1</code>の factoryだけを使う。
+    </li>
+  </ul>
+  <h4 id="production実装-1">Production実装</h4>
+  <ol>
+    <li>
+      Hono <code>bodyLimit</code>を<code>/api/*</code>へ、API rate
+      limiterの後、CSRFとroute登録の前に適用する。
+    </li>
+    <li><code>/mcp/nightworkers</code>とWebSocket upgradeは対象外にする。</li>
+    <li>Content-Lengthとstreamed byte countの双方で上限を強制する。</li>
+    <li>Security Scanの64 KiB個別limitを削除・緩和しない。</li>
+    <li>bodyを読まないGET/HEADの挙動とresponse streamingへ影響させない。</li>
+  </ol>
+  <h4 id="acceptance-1">Acceptance</h4>
+  <ul>
+    <li>32 MiB以下はrouteへ到達し、超過はroute handler実行前に413になる。</li>
+    <li>Content-Length偽装または欠落でもstream上限を超えられない。</li>
+    <li>WebSocket upgrade、MCP endpoint、Security Scan個別上限の既存testが成功する。</li>
+  </ul>
+  <h4 id="verification-1">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/hono-security-regressions.test.ts tests/routes.security-hardening.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="sec-t3-websocket接続単位の受信rate-limit">SEC-T3: WebSocket接続単位の受信rate limit</h3>
+  <ul>
+    <li>Finding: <code>SEC-8</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>api/security/nightworkers-websocket-policy.ts</code></li>
+        <li><code>api/app.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/websocket-security.test.ts</code></li>
+        <li><code>tests/rate-limiter.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-2">Red test</h4>
+  <ul>
+    <li>
+      同一connectionから60秒内に121
+      messageを送り、全messageがparse/dispatchされる現行failureを固定する。
+    </li>
+    <li>2 connectionが相互のquotaを消費しないpositive caseを追加する。</li>
+    <li>
+      malformed JSONとbinary/oversize messageでもrate counterの順序が一定であることをtest化する。
+    </li>
+  </ul>
+  <h4 id="contract-2">Contract</h4>
+  <ul>
+    <li><code>NIGHTWORKERS_WS_MESSAGE_RATE_WINDOW_MS = 60_000</code></li>
+    <li><code>NIGHTWORKERS_WS_MESSAGE_RATE_LIMIT = 120</code></li>
+    <li>error code: <code>WEBSOCKET_RATE_LIMIT_EXCEEDED</code></li>
+    <li>close code: <code>1008</code></li>
+    <li>counter単位: WebSocket connection。upgrade時IP limiterとは別物とする。</li>
+    <li>
+      counter時点: text/binaryを問わず<code>onMessage</code>到着直後。byte上限検査、JSON
+      parse、command実行より前。
+    </li>
+  </ul>
+  <h4 id="production実装-2">Production実装</h4>
+  <ol>
+    <li>
+      <code>nightworkers-websocket-policy.ts</code>へclock注入可能なfixed-window limiter
+      factoryを追加する。
+    </li>
+    <li><code>upgradeWebSocket</code> callbackごとにlimiter instanceを一つ作る。</li>
+    <li>
+      quota超過時は可能なら一度だけtyped error
+      frameを送り、<code>1008</code>でcloseし、そのmessageを parse、subscribe、command
+      dispatchへ渡さない。
+    </li>
+    <li>
+      close/error時にtimerやlistenerを残さない。limiterがlazy timestampだけならtimerを作らない。
+    </li>
+    <li>
+      non-production <code>x-nightworkers-e2e</code> headerは接続後message quotaをbypassしない。
+    </li>
+  </ol>
+  <h4 id="acceptance-2">Acceptance</h4>
+  <ul>
+    <li>120件までは受理、121件目はdispatchされずcloseされる。</li>
+    <li>connection Aの121件目がconnection Bをcloseしない。</li>
+    <li>fake clockでwindow境界の直前/直後を決定的に検証できる。</li>
+    <li>既存128 KiB上限、origin、upgrade rate limitが維持される。</li>
+  </ul>
+  <h4 id="verification-2">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/websocket-security.test.ts tests/rate-limiter.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="sec-t4-clone-source-policyと共通bounded-git-runner">
+    SEC-T4: clone source policyと共通bounded Git runner
+  </h3>
+  <ul>
+    <li>Finding: <code>SEC-1</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ADD-T0</code>, 既存<code>A-T5</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>
+          <code>api/services/execution/git-command-runner.ts</code
+          >（<code>A-T5</code>で既に作成済みなら再作成しない）
+        </li>
+        <li>新規<code>api/services/worker-tools/git-source-policy.ts</code></li>
+        <li><code>api/services/worker-tools/clone-git-repo.ts</code></li>
+        <li><code>api/services/worker-tools/import-project.ts</code></li>
+        <li><code>api/services/worker-tools/dispatcher.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/worker-tools/services-worker-tools-01.test.ts</code></li>
+        <li><code>tests/worker-tool-dispatcher-extra-coverage.test.ts</code></li>
+        <li>新規<code>tests/worker-tools/git-source-policy.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-3">Red test</h4>
+  <p>production変更前に次を固定する。</p>
+  <ul>
+    <li>許可外のabsolute local repository pathがcloneできてしまう。</li>
+    <li><code>file://</code> sourceが外部path許可なしでcloneできる。</li>
+    <li>
+      <code>http://</code>、<code>git://</code>、<code>ext::</code>、unknown scheme、URL
+      userinfoがpolicyで拒否されずGitへ渡る。
+    </li>
+    <li>Git subprocessが共通runnerを通らない。</li>
+  </ul>
+  <h4 id="source-contract">Source contract</h4>
+  <p><code>parseGitSource(input, context)</code>は次のdiscriminated resultだけを返す。</p>
+  <pre><code class="language-ts">type AuthorizedGitSource =
+  | { kind: &quot;remote_https&quot;; normalized: string; allowedProtocols: [&quot;https&quot;] }
+  | { kind: &quot;remote_ssh&quot;; normalized: string; allowedProtocols: [&quot;ssh&quot;] }
+  | { kind: &quot;local&quot;; canonicalPath: string; allowedProtocols: [&quot;file&quot;] };
+</code></pre>
+  <ol>
+    <li>
+      remoteで許可するのは<code>https://</code>、<code>ssh://</code>、scp-like
+      <code>user@host:path</code>のみ。
+    </li>
+    <li>
+      <code>http://</code>、<code>git://</code>、<code>file://</code>以外のunknown scheme、Git
+      remote helper形式、<code>ext::</code>を拒否する。
+    </li>
+    <li>
+      HTTPS URLはuserinfoを拒否する。SSH
+      URLは通常のusername（例:<code>ssh://git@host/path</code>）を許可するが、
+      password部分を拒否する。scp-likeの<code>git@host:path</code>も許可する。
+    </li>
+    <li>
+      local sourceはabsolute
+      path、<code>./</code>、<code>../</code>、<code>file://</code>だけをlocalとして扱う。曖昧なbare
+      pathを remote/localへ推測しない。
+    </li>
+    <li>
+      local sourceをrealpathでcanonicalizeし、Project root内は既存path policy、Project root外は
+      <code>externalAllowedPaths</code>で明示許可された場合だけ許可する。
+    </li>
+    <li>
+      clone targetは従来どおりProject
+      root内限定とし、<code>externalAllowedPaths</code>をtarget判定へ渡さない。
+    </li>
+    <li>
+      <code>ref</code
+      >はtrim後1〜1024文字、NUL/controlなし、先頭<code>-</code>なしを構造検証する。clone後に
+      <code>git rev-parse --verify &lt;ref&gt;^{commit}</code
+      >でcommitへ解決し、解決済みhashをdetached checkoutする。
+    </li>
+  </ol>
+  <h4 id="runner-contract">Runner contract</h4>
+  <ol>
+    <li>
+      <code>api/services/execution/git-command-runner.ts</code>をGit
+      subprocessの唯一のagent非依存ownerにする。
+    </li>
+    <li>
+      shellを使わず<code>spawn</code>/<code>execFile</code>のargvで実行し、timeout、stdout/stderr各上限、AbortSignal、
+      exit code/signalをtyped resultへする。
+    </li>
+    <li>
+      全実行で<code>GIT_TERMINAL_PROMPT=0</code>、<code>GCM_INTERACTIVE=Never</code>を設定する。
+    </li>
+    <li>
+      HTTPS sourceでは<code>GIT_ALLOW_PROTOCOL=https</code>、SSH
+      sourceでは<code>GIT_ALLOW_PROTOCOL=ssh</code>、 authorized local
+      sourceでは<code>GIT_ALLOW_PROTOCOL=file</code>を設定する。一回の呼出しで複数protocolを許可しない。
+    </li>
+    <li>timeout/overflow後にchild processを残さない。</li>
+    <li>command logはcredentialを含むsourceを受け入れず、<code>SEC-T1</code>のredactionを通す。</li>
+  </ol>
+  <h4 id="production実装-3">Production実装</h4>
+  <ol>
+    <li>
+      <code>CloneGitRepoInput</code>と<code>ImportProjectInput</code>へ<code
+        >externalAllowedPaths?: string[]</code
+      >を追加する。
+    </li>
+    <li>dispatcherは<code>safetyPolicy.externalAllowedPaths</code>をsource policyへ渡す。</li>
+    <li><code>import_project</code>から<code>cloneGitRepoTool</code>へ同値を透過する。</li>
+    <li>
+      現在の<code>execFileAsync</code>/<code>runGit</code>を削除し、共通runnerをdependency
+      injection可能にしてtestする。
+    </li>
+    <li>source policy成功後にだけtemp dir作成、target clear、Git spawnを行う。</li>
+    <li>
+      policy failure codeを<code>UNSUPPORTED_GIT_SOURCE</code>、local
+      path拒否を<code>ACCESS_DENIED</code>、ref不正を <code>INVALID_GIT_REF</code>とする。
+    </li>
+  </ol>
+  <h4 id="acceptance-3">Acceptance</h4>
+  <ul>
+    <li><code>ext::</code>等はGit process起動前に拒否される。</li>
+    <li>HTTPS/SSHは正しいprotocol envでrunnerへ渡る。</li>
+    <li>local sourceは外部path許可なしで拒否、明示許可ありで成功する。</li>
+    <li>overwrite時もsource policy failureではtarget内容を消さない。</li>
+    <li>existing template registryのHTTPS importと許可済みlocal fixtureが成功する。</li>
+    <li>
+      <code
+        >rg -n &quot;execFileAsync\(\&quot;git\&quot;|spawn\(\&quot;git\&quot;&quot;
+        api/services/worker-tools/clone-git-repo.ts</code
+      >が0件。
+    </li>
+  </ul>
+  <h4 id="verification-3">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/worker-tools/services-worker-tools-01.test.ts tests/worker-tool-dispatcher-extra-coverage.test.ts tests/worker-tools/git-source-policy.test.ts
+bun run typecheck
+bun run check:architecture
+</code></pre>
+  <hr />
+  <h3 id="arc-t1-role非依存typeschemaの正本化">ARC-T1: role非依存type/schemaの正本化</h3>
+  <ul>
+    <li>Findings: <code>MOD-1</code>, <code>MOD-5</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>新規<code>shared/schemas/nightworkers/safety-policy.schema.ts</code></li>
+        <li><code>shared/schemas/nightworkers/repository-task.schema.ts</code></li>
+        <li><code>api/modules/codingAgent/runtime/types.ts</code></li>
+        <li><code>api/services/tool-policy/types.ts</code></li>
+        <li><code>api/services/runner/types.ts</code></li>
+        <li><code>api/services/worker-tools/dispatcher.ts</code></li>
+        <li><code>api/services/conversation-context/state-card-projection.ts</code></li>
+        <li><code>api/modules/codingAgent/runtime/native-api-runner/native-api-mode.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/role-module-boundary.test.ts</code></li>
+        <li><code>tests/services.conversation-state-card-projection.test.ts</code></li>
+        <li>新規<code>tests/safety-policy-contract.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-4">Red test</h4>
+  <ul>
+    <li>
+      <code>api/services</code>のtype-only
+      importでも<code>api/modules/codingAgent</code>を参照したら失敗するfixtureを
+      <code>role-module-boundary.test.ts</code>へ追加する。
+    </li>
+    <li>
+      <code>safetyPolicySchema</code>の既存parse結果と新schemaが一致するcharacterizationを追加する。
+    </li>
+  </ul>
+  <h4 id="production実装-4">Production実装</h4>
+  <ol>
+    <li>
+      <code>safetyPolicySchema</code>を新しいshared
+      fileへ移し、<code>AgentSafetyPolicy</code>を<code>z.infer</code>から導出する。
+    </li>
+    <li><code>repository-task.schema.ts</code>は互換re-exportしてよいが、定義を複製しない。</li>
+    <li>
+      Coding Agent runtimeはshared typeをimport/re-exportし、service callerはshared
+      typeを直接importする。
+    </li>
+    <li>
+      <code>NativeApiStateCardRole</code>はagent非依存のconversation projection contract名
+      <code>StateCardProjectionRole</code>へ変更してservice側で所有する。Coding
+      Agent側は既存import互換のtype aliasをre-exportする。
+    </li>
+    <li>type-only importだから許容する例外を残さない。</li>
+  </ol>
+  <h4 id="acceptance-4">Acceptance</h4>
+  <ul>
+    <li>safety policyのruntime schemaとTypeScript typeが一つの正本から生成される。</li>
+    <li>
+      <code>api/services/{tool-policy,runner,worker-tools,conversation-context}</code>からCoding
+      Agent importが0件。
+    </li>
+    <li>API/OpenAPIのSafetyPolicy shapeに互換差分がない。</li>
+  </ul>
+  <h4 id="verification-4">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/role-module-boundary.test.ts tests/task-git-workspace-schema.test.ts tests/services.conversation-state-card-projection.test.ts tests/safety-policy-contract.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="arc-t2-coding-agent固有worker-toolをrole-moduleへ戻す">
+    ARC-T2: Coding Agent固有worker toolをrole moduleへ戻す
+  </h3>
+  <ul>
+    <li>Findings: <code>MOD-1</code>, <code>MOD-5</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ARC-T1</code>, 既存<code>C-T2</code>, <code>C-T3</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>新規<code>api/services/worker-tools/role-tool-port.ts</code></li>
+        <li><code>api/services/worker-tools/dispatcher.ts</code></li>
+        <li><code>api/services/worker-tools/index.ts</code></li>
+        <li><code>api/services/worker-tools/run-check.ts</code></li>
+        <li><code>api/services/worker-tools/run-verification.ts</code></li>
+        <li><code>api/services/worker-tools/completion-check.ts</code></li>
+        <li>新規<code>api/modules/codingAgent/tools/coding-agent-worker-tools.ts</code></li>
+        <li>新規<code>api/modules/codingAgent/tools/run-check.tool.ts</code></li>
+        <li>新規<code>api/modules/codingAgent/tools/completion-check.tool.ts</code></li>
+        <li>
+          <code
+            >api/modules/codingAgent/runtime/native-api-runner/native-api-tool-dispatcher.ts</code
+          >
+        </li>
+        <li>
+          <code>api/modules/codingAgent/runtime/native-api-runner/native-api-context-still.ts</code>
+        </li>
+        <li><code>api/modules/codingAgent/mcp/nightworkers-codex-mcp.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/worker-tool-dispatcher-extra-coverage.test.ts</code></li>
+        <li><code>tests/worker-tools/services-worker-tools-06.test.ts</code></li>
+        <li><code>tests/coding-agent-completion-check-tool.test.ts</code></li>
+        <li><code>tests/coding-agent-run-check-evidence-scope.test.ts</code></li>
+        <li><code>tests/run-check-runner.test.ts</code></li>
+        <li><code>tests/coding-agent-test-inventory-snapshot.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="stop-condition-1">Stop condition</h4>
+  <p>
+    <code>tests/worker-tools/services-worker-tools-06.test.ts</code
+    >には計画時点で未コミット差分がある。 <code>ADD-T0</code>でaccepted
+    baselineになっていない限り着手しない。
+  </p>
+  <h4 id="red-test-5">Red test</h4>
+  <ol>
+    <li>
+      generic dispatcherをCoding Agent handlerなしで<code>completion_check</code>等へ呼ぶと、role
+      moduleをdynamic importせず <code>ROLE_TOOL_UNAVAILABLE</code>を返すtestを追加する。
+    </li>
+    <li>Coding Agent native/MCP pathではreal handlerが呼ばれるcharacterizationを追加する。</li>
+    <li>
+      Review agentのgeneric
+      <code>search_files</code
+      >/<code>read_file</code>/<code>run_command</code>がhandlerなしで維持されることを固定する。
+    </li>
+  </ol>
+  <h4 id="port-contract">Port contract</h4>
+  <pre><code class="language-ts">interface WorkerRoleToolPort {
+  runCheck(input: RoleRunCheckInput): Promise&lt;WorkerToolResult&lt;unknown&gt;&gt;;
+  runVerification(input: RoleRunVerificationInput): Promise&lt;WorkerToolResult&lt;unknown&gt;&gt;;
+  completionCheck(input: RoleCompletionCheckInput): Promise&lt;WorkerToolResult&lt;unknown&gt;&gt;;
+  collectTestInventory(input: RoleInventoryInput): Promise&lt;WorkerToolResult&lt;unknown&gt;&gt;;
+  recordTestConditionMapping(input: RoleMappingInput): Promise&lt;WorkerToolResult&lt;unknown&gt;&gt;;
+}
+</code></pre>
+  <ul>
+    <li>
+      portはrole名やCoding Agent repository typeを持たず、worker toolの構造input/resultだけを持つ。
+    </li>
+    <li>
+      generic dispatcherは<code>roleTools?: WorkerRoleToolPort</code
+      >を受け、対象toolで未注入ならtyped failureを返す。
+    </li>
+    <li>
+      Coding Agent role moduleがreal adapterを作り、native runnerとMCP compositionが注入する。
+    </li>
+  </ul>
+  <h4 id="production実装-5">Production実装</h4>
+  <ol>
+    <li>
+      現<code>run-check.ts</code>からcommand実行、structured reporter、output
+      parseなどのagent非依存primitiveだけを serviceに残す。
+    </li>
+    <li>
+      acceptance evidence、verification document、completion readiness、test
+      inventory/mappingの意味判断を <code>api/modules/codingAgent/tools</code>へ移す。
+    </li>
+    <li>
+      <code>completion-check.ts</code>のdefault import/default dependencyを削除し、Coding Agent
+      adapterが <code>runCompletionCheck</code>を直接呼ぶ。
+    </li>
+    <li>
+      dispatcherの<code>collect_test_inventory</code>、<code>record_test_condition_mapping</code>
+      dynamic importを削除する。
+    </li>
+    <li>
+      <code>run_verification</code>もCoding Agent adapter経由にし、generic serviceがrole-specific
+      evidenceを記録しない。
+    </li>
+    <li>
+      <code>api/services/worker-tools/index.ts</code>はagent非依存primitiveだけをexportする。role
+      wrapperをserviceから compatibility re-exportせず、既存internal test/importをCoding Agent
+      ownerへ移す。
+    </li>
+    <li>
+      external tool protocolのtool name、result shape、retryable flag、LLM summary文言を維持する。
+    </li>
+  </ol>
+  <h4 id="acceptance-5">Acceptance</h4>
+  <ul>
+    <li>
+      <code>api/services/worker-tools</code>からCoding Agent static/type/dynamic importが0件。
+    </li>
+    <li>native-api runnerとCodex MCPの5 toolが従来どおり成功する。</li>
+    <li>Review agentはrole toolを取得せず、既存allowlistのgeneric toolだけを実行できる。</li>
+    <li>role tool unavailableをgeneric command failureへ読み替えない。</li>
+  </ul>
+  <h4 id="verification-5">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/worker-tool-dispatcher-extra-coverage.test.ts tests/worker-tools/services-worker-tools-06.test.ts tests/coding-agent-completion-check-tool.test.ts tests/coding-agent-run-check-evidence-scope.test.ts tests/run-check-runner.test.ts tests/coding-agent-test-inventory-snapshot.test.ts tests/codex-nightworkers-mcp-setup.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="arc-t3-worker-exit-reconciliationをcomposition-eventへ反転する">
+    ARC-T3: worker exit reconciliationをcomposition eventへ反転する
+  </h3>
+  <ul>
+    <li>Findings: <code>MOD-1</code>, <code>MOD-5</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ARC-T1</code>, 既存<code>C-T3</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>新規<code>api/services/execution/worker-exit-events.ts</code></li>
+        <li><code>api/services/execution/worker-process-manager.ts</code></li>
+        <li><code>api/composition/coding-agent/coding-agent-host-adapter.ts</code></li>
+        <li><code>api/composition/coding-agent/index.ts</code></li>
+        <li><code>api/app.ts</code></li>
+        <li><code>api/server.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/worker-process-isolation.test.ts</code></li>
+        <li>新規<code>tests/coding-agent-worker-exit-composition.test.ts</code></li>
+        <li><code>tests/role-module-boundary.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-6">Red test</h4>
+  <ul>
+    <li>
+      <code>worker-process-manager.ts</code>がchild exit時にCoding Agent public indexをdynamic
+      importすることを architecture fixtureで失敗させる。
+    </li>
+    <li>fake child exitでlost run noticeが一回だけ発行されるcharacterizationを追加する。</li>
+  </ul>
+  <h4 id="event-contract">Event contract</h4>
+  <pre><code class="language-ts">type WorkerExitNotice = {
+  workerKind: &quot;task-run-worker&quot; | &quot;queue-worker&quot;;
+  ownerPid: number | null;
+  lostRuns: Array&lt;{ runId: string; ownerPid: number }&gt;;
+};
+</code></pre>
+  <ul>
+    <li>
+      serviceは<code>subscribeWorkerExit(listener): () =&gt; void</code>とpublishだけを所有する。
+    </li>
+    <li>
+      event busは同期snapshot配信とし、listener Promise failureを個別logして他listenerを止めない。
+    </li>
+    <li>
+      Coding Agent
+      compositionがsubscribeし、<code>interruptCodingAgentRunsAfterWorkerExit</code>を呼ぶ。
+    </li>
+    <li>
+      subscription登録はhost起動につき一回、test/host
+      shutdownでdispose可能、二重登録はidempotentにする。
+    </li>
+  </ul>
+  <h4 id="production実装-6">Production実装</h4>
+  <ol>
+    <li>
+      <code>trackWorker</code>からCoding Agent dynamic importを削除し、lost runsをgeneric
+      eventへpublishする。
+    </li>
+    <li>
+      composition adapterがCoding Agent application
+      commandへ変換する。<code>api/server.ts</code>のserver生成時に
+      subscriptionを一度登録し、<code>close()</code>でisolated worker shutdown後にdisposeする。
+    </li>
+    <li>role command failure logはcomposition側で行い、run idとcodeだけを記録する。</li>
+    <li>worker process managerはCoding Agentのstatus、repository、runtimeを知らない。</li>
+  </ol>
+  <h4 id="acceptance-6">Acceptance</h4>
+  <ul>
+    <li>worker exit後のCoding Agent interruption behaviorが維持される。</li>
+    <li>listenerが0件でもworker cleanupは例外にならない。</li>
+    <li>同一hostで二重初期化してもinterruption commandは一回だけ。</li>
+    <li><code>worker-process-manager.ts</code>に<code>codingAgent</code>文字列/importが0件。</li>
+  </ul>
+  <h4 id="verification-6">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/role-module-boundary.test.ts tests/worker-process-isolation.test.ts tests/coding-agent-worker-exit-composition.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="arc-t4-共通worker-tool-schemadescriptionの一元化">
+    ARC-T4: 共通worker tool schema/descriptionの一元化
+  </h3>
+  <ul>
+    <li>Findings: <code>MOD-1</code>, <code>MOD-5</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>ARC-T1</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>新規<code>shared/modules/workerTools/nightworkers-shared-tool-contracts.ts</code></li>
+        <li><code>shared/modules/codingAgent/todo-contract.ts</code></li>
+        <li><code>api/modules/codingAgent/tools/todo-list.ts</code></li>
+        <li><code>api/modules/codingAgent/mcp/nightworkers-tool-schemas.ts</code></li>
+        <li><code>api/modules/codingAgent/mcp/nightworkers-tool-manifest.ts</code></li>
+        <li><code>api/services/supervisor/prompt-tool-registry.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/codex-nightworkers-mcp-setup.test.ts</code></li>
+        <li>新規<code>tests/supervisor-tool-registry-contract.test.ts</code></li>
+        <li><code>tests/role-module-boundary.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-7">Red test</h4>
+  <ul>
+    <li>
+      <code>read_current_specification</code
+      >、<code>import_project</code>、<code>todo_list</code>のSupervisor/Codex schema snapshotが
+      同じshared contractから生成されていない現状を固定する。
+    </li>
+    <li>
+      <code>prompt-tool-registry.ts -&gt; codingAgent/mcp</code> importをarchitecture
+      testで失敗させる。
+    </li>
+  </ul>
+  <h4 id="production実装-7">Production実装</h4>
+  <ol>
+    <li>
+      両roleで同じ意味を持つinput Zod schema、JSON Schema変換、description定数だけを
+      <code>shared/modules/workerTools</code>へ移す。
+    </li>
+    <li>
+      <code>codingAgentTodoListCommandSchema</code>の構造定義はshared worker tool contractへ移し、
+      <code>shared/modules/codingAgent/todo-contract.ts</code>は移行期間のtype/schema
+      re-exportだけを持つ。
+    </li>
+    <li>
+      Coding Agent manifestとtodo toolはshared
+      contractをimportし、外部互換が必要なsymbolだけをre-exportする。
+    </li>
+    <li>Supervisor registryはshared contractを直接importする。</li>
+    <li>Coding Agent固有tool、route、repository、completion判断をsharedへ移さない。</li>
+    <li>
+      Supervisorだけが除外する<code>todo_list operation=list</code>等のpresentation差分はshared
+      schemaをcloneして 構造的に絞り、元objectをmutateしない。
+    </li>
+  </ol>
+  <h4 id="acceptance-7">Acceptance</h4>
+  <ul>
+    <li>3 toolのfield、required、enum、descriptionが既存互換を保つ。</li>
+    <li><code>prompt-tool-registry.ts</code>からCoding Agent importが0件。</li>
+    <li>shared moduleにrole判定、route、repository、runtime codeがない。</li>
+  </ul>
+  <h4 id="verification-7">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/codex-nightworkers-mcp-setup.test.ts tests/role-module-boundary.test.ts tests/supervisor-tool-registry-contract.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="arc-t5-role逆依存guardと例外削除">ARC-T5: role逆依存guardと例外削除</h3>
+  <ul>
+    <li>Findings: <code>MOD-1</code>, <code>MOD-5</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ARC-T1</code>〜<code>ARC-T4</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>scripts/check-module-boundaries.mjs</code></li>
+        <li><code>.agent-ontology/boundary-policy.json</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/role-module-boundary.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="production実装-8">Production実装</h4>
+  <ol>
+    <li>
+      <code>api/services/**</code>から次へのstatic、type-only、dynamic importを禁止する。
+      <ul>
+        <li><code>api/modules/codingAgent/**</code></li>
+        <li>Coding Agent public index経由のre-export</li>
+      </ul>
+    </li>
+    <li><code>prompt-tool-registry</code>の既存exemptionを削除する。</li>
+    <li>
+      import specifierをliteral文字列として解析し、source本文の単純substringだけで判定しない。
+    </li>
+    <li>
+      fixtureでrelative depth、index import、dynamic import、type-only
+      importが全てfailすることを追加する。
+    </li>
+    <li>Madgeを新規dependencyに追加しない。既存architecture checkerをCI gateの正本にする。</li>
+  </ol>
+  <h4 id="acceptance-8">Acceptance</h4>
+  <p>次の監査が0件で、architecture checkが成功する。</p>
+  <pre><code class="language-bash">rg -n &#39;modules/codingAgent|modules/coding-agent&#39; api/services -g &#39;*.ts&#39;
+</code></pre>
+  <p>
+    review時のcycle path数が減少したかは参考値として記録してよいが、無関係なFrontend
+    cycleやtype-only cycleを本ticketで一括修正しない。
+  </p>
+  <h4 id="verification-8">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/role-module-boundary.test.ts
+bun run check:architecture
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t1-chat-optimistic-messageの競合安全rollback">
+    FE-T1: chat optimistic messageの競合安全rollback
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-1</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>src/modules/nightworkers/hooks/nightWorkersChatActions.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/nightworkers-chat-actions.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-8">Red test</h4>
+  <p>
+    非2xx、network
+    throw、AbortErrorで<code>optimistic-user-*</code>がcacheに残る現行failureを固定する。
+    失敗中に同内容のserver messageまたは別optimistic messageが到着するrace caseも追加する。
+  </p>
+  <h4 id="production実装-9">Production実装</h4>
+  <ol>
+    <li>
+      <p><code>appendOptimisticUserMessage</code>の返値をbooleanから次へ変更する。</p>
+      <pre><code class="language-ts">type OptimisticChatAppend =
+  | { appended: false }
+  | { appended: true; message: TaskMessage; submitKey: string };
+</code></pre>
+    </li>
+    <li>
+      <p>
+        catchで<code>message.id</code>が一致する一件だけをfunctional
+        <code>setQueryData</code>で除去する。
+      </p>
+    </li>
+    <li><p>confirmed messageはcontentが同じでもidが異なるため除去しない。</p></li>
+    <li>
+      <p>
+        failure時、<code>lastSubmitRef.current</code>がこの<code>submitKey</code>と一致する場合だけnullに戻し、即時retryを許可する。
+      </p>
+    </li>
+    <li><p>success時はserver response/realtimeの既存optimistic置換を維持する。</p></li>
+    <li>
+      <p>
+        AbortErrorも送信失敗としてoptimistic messageを除去する。Composer
+        draftのabort挙動は本ticketで変えない。
+      </p>
+    </li>
+  </ol>
+  <h4 id="acceptance-9">Acceptance</h4>
+  <ul>
+    <li>failed/aborted messageがtimelineへghostとして残らない。</li>
+    <li>raceで到着したconfirmed messageや後続送信をrollbackしない。</li>
+    <li>同一promptの1500 ms duplicate suppressionは成功中だけ維持され、失敗後はretryできる。</li>
+  </ul>
+  <h4 id="verification-9">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/nightworkers-chat-actions.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t2-realtime-local-bufferとstream-previewをboundedにする">
+    FE-T2: realtime local bufferとstream previewをboundedにする
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-5</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>FE-T8</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersRealtime.ts</code></li>
+        <li><code>src/modules/nightworkers/realtime/nightWorkersRealtimeProjector.ts</code></li>
+        <li><code>src/modules/nightworkers/realtimeEvents.ts</code></li>
+        <li>新規<code>src/modules/nightworkers/realtime/realtime-buffer-policy.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/nightworkers-realtime-effects.test.ts</code></li>
+        <li><code>tests/nightworkers.realtime-events.test.ts</code></li>
+        <li><code>tests/nightworkers-workspace-hook-extra-coverage.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="policy-constants">Policy constants</h4>
+  <ul>
+    <li><code>MAX_BUFFERED_RUN_EVENTS_PER_RUN = 500</code></li>
+    <li><code>MAX_BUFFERED_RUNS = 2</code></li>
+    <li><code>MAX_STREAMING_PREVIEW_CHARS = 256_000</code></li>
+    <li><code>RUN_DETAILS_RECONCILE_INTERVAL_MS = 250</code></li>
+    <li>overflow marker: <code>\n…[stream preview truncated]…\n</code></li>
+  </ul>
+  <h4 id="red-test-9">Red test</h4>
+  <ul>
+    <li>3 runへ各501 eventを投影して<code>bufferedEventsByRun</code>が増え続ける。</li>
+    <li>
+      REST <code>runDetails.events</code>へ永続化済みeventが到着してもbufferから除去されない。
+    </li>
+    <li>terminal update、task切替、errorでstreaming textが残る。</li>
+    <li>assistant finalが来ないdelta列でstream textが無制限に増える。</li>
+  </ul>
+  <h4 id="production実装-10">Production実装</h4>
+  <ol>
+    <li>buffer追加時はevent id/seqでdedupeし、各runの最新500件だけを保持する。</li>
+    <li>active latest runが変わったら、新runと直前run以外のkeyを削除する。</li>
+    <li>
+      <code>latestRunDetails.events</code>更新時、そのREST
+      snapshotに含まれるid、またはsnapshot最大seq以下のbuffer eventを削除する。
+    </li>
+    <li>
+      通常eventの<code>runDetails</code> invalidateはrun単位で250 msに一回へcoalesceする。seq
+      gap、terminal、cap超過は 待たず即時invalidateし、その後のpending timerをcancelする。
+    </li>
+    <li>stream previewは末尾を優先して256,000文字へ切り詰め、markerを一度だけ付ける。</li>
+    <li>
+      assistant/system completion、<code>task_run_updated</code> terminal、WebSocket error、explicit
+      cancel、 active task変更で該当streamを削除する。
+    </li>
+    <li>active task変更時は旧taskのbuffer/streamを全削除する。reconnectだけでは削除しない。</li>
+  </ol>
+  <h4 id="acceptance-10">Acceptance</h4>
+  <ul>
+    <li>
+      利用者操作なしの長時間実行でrun bufferは最大2×500件、streamはtaskあたり256,000文字以下。
+    </li>
+    <li>REST catch-up後に同一eventがbufferとsnapshotへ二重保持されない。</li>
+    <li>terminal直前の表示eventを失わず、REST refetchで最終snapshotへ収束する。</li>
+    <li>invalidate coalescingはgap/terminal時の即時reconcileを妨げない。</li>
+  </ul>
+  <h4 id="verification-10">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/nightworkers-realtime-effects.test.ts tests/nightworkers.realtime-events.test.ts tests/nightworkers-workspace-hook-extra-coverage.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t3-activity-replayをcursor-page化する">FE-T3: activity replayをcursor page化する</h3>
+  <ul>
+    <li>Finding: <code>FE-5</code></li>
+    <li>Priority: P1</li>
+    <li>Depends on: <code>FE-T2</code>, 既存<code>D-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>shared/schemas/nightworkers/activity-message.schema.ts</code></li>
+        <li><code>api/modules/nightworkers/routes/run-route-task-definitions.ts</code></li>
+        <li>
+          <code>api/modules/nightworkers/nightworkers.activity-persistence.repository.ts</code>
+        </li>
+        <li><code>api/modules/nightworkers/nightworkers.basic.service.ts</code></li>
+        <li><code>api/modules/nightworkers/nightworkers.routes.ts</code></li>
+        <li><code>src/modules/nightworkers/nightWorkersCommands.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts</code></li>
+        <li><code>src/modules/nightworkers/realtime/nightWorkersRealtimeProjector.ts</code></li>
+        <li><code>src/modules/nightworkers/components/ThreadTimeline.tsx</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/nightworkers.activity.repository.test.ts</code></li>
+        <li><code>tests/nightworkers.activity-transcript.test.ts</code></li>
+        <li><code>tests/nightworkers-routes-extra-coverage.test.ts</code></li>
+        <li><code>tests/nightworkers-realtime-effects.test.ts</code></li>
+        <li><code>tests/thread-timeline-window.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="api-contract">API contract</h4>
+  <p>query:</p>
+  <pre><code class="language-ts">{
+  afterSeq?: number;   // realtime/catch-up用
+  beforeSeq?: number;  // 過去page用
+  limit?: number;      // default 200, min 1, max 200
+  channel?: &quot;chat&quot; | &quot;pilot_thought&quot; | &quot;artifact&quot; | &quot;internal&quot;;
+}
+</code></pre>
+  <p>
+    <code>afterSeq</code
+    >と<code>beforeSeq</code>は同時指定不可。responseは既存<code>events</code>/<code>artifacts</code>にadditiveな<code>pageInfo</code>を加える。
+  </p>
+  <pre><code class="language-ts">type ActivityReplayPageInfo = {
+  oldestSeq: number | null;
+  newestSeq: number | null;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+};
+</code></pre>
+  <h4 id="repository-semantics">Repository semantics</h4>
+  <ol>
+    <li>
+      cursorなしは最新200件をDBで<code>seq DESC</code> +
+      <code>limit + 1</code>取得し、responseだけASCへ戻す。
+    </li>
+    <li><code>beforeSeq</code>は<code>seq &lt; beforeSeq</code>の最新pageを同様に返す。</li>
+    <li><code>afterSeq</code>は<code>seq &gt; afterSeq</code>をASCで最大limit返す。</li>
+    <li><code>hasMore*</code>は追加1件または存在queryで計算し、全件count/全件loadをしない。</li>
+    <li>
+      repositoryへ<code>listActivityArtifactsByIdsForTask(taskId, artifactIds)</code
+      >を追加し、返却eventから参照される
+      artifactだけをDBで取得する。<code>listActivityArtifactsForTask</code>で全artifactを読んでからfilterしない。
+    </li>
+    <li>同一seq tieは<code>createdAt</code>, <code>id</code>を安定sort keyに加える。</li>
+  </ol>
+  <h4 id="frontend実装">Frontend実装</h4>
+  <ol>
+    <li><code>fetchTaskActivityEvents</code>へcursor/limit inputを追加する。</li>
+    <li>
+      <code>useInfiniteQuery</code
+      >で初回は最新page、<code>hasMoreBefore</code>時だけ「さらに読み込む」で<code>beforeSeq</code>を取得する。
+    </li>
+    <li>pagesはtimelineへ古い順でflattenし、event idでdedupeする。</li>
+    <li>realtime eventは最新pageだけへ追加する。過去pageを全mapしない。</li>
+    <li>
+      artifact idを持つrealtime eventでは最新pageだけinvalidate/refetchし、既読過去pageを捨てない。
+    </li>
+    <li>task切替時はquery keyが変わり、旧task pageを新taskへ混ぜない。</li>
+  </ol>
+  <h4 id="acceptance-11">Acceptance</h4>
+  <ul>
+    <li>初回requestがactivity全件をDB/JSON/React cacheへロードしない。</li>
+    <li>201件fixtureで初回200件、load-more後に残り1件を重複なく表示する。</li>
+    <li>page取得中にrealtime eventが到着しても欠落・重複しない。</li>
+    <li><code>afterSeq</code>既存consumerとOpenAPI validationが維持される。</li>
+  </ul>
+  <h4 id="verification-11">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/nightworkers.activity.repository.test.ts tests/nightworkers.activity-transcript.test.ts tests/nightworkers-routes-extra-coverage.test.ts tests/nightworkers-realtime-effects.test.ts tests/thread-timeline-window.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t4-route-aware-workspace-queryrealtime-profile">
+    FE-T4: route-aware workspace query/realtime profile
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-6</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: 既存<code>D-T0</code>, <code>D-T1</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>src/modules/nightworkers/routing/WorkbenchRoutePage.tsx</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersRealtime.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersProjectFiles.ts</code></li>
+        <li>
+          <code>src/modules/settings/llm-settings-query.ts</code>（既存<code>D-T1</code>が作成）
+        </li>
+        <li><code>src/modules/settings/useLlmSettings.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/nightworkers-workspace-hook-extra-coverage.test.ts</code></li>
+        <li><code>tests/nightworkers-active-session.test.ts</code></li>
+        <li><code>tests/nightworkers-shell-smoke.test.tsx</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="profile-contract">Profile contract</h4>
+  <pre><code class="language-ts">type WorkspaceLoadProfile =
+  | { kind: &quot;shell&quot; }
+  | { kind: &quot;settings&quot; }
+  | { kind: &quot;session&quot;; sessionId: string };
+</code></pre>
+  <ul>
+    <li>
+      <code>session</code> routeだけがsession detail query、project files、WebSocketを有効にする。
+    </li>
+    <li>
+      <code>settings</code>はsettings queryとshell
+      navigationに必要なrepository/task一覧だけを有効にする。
+    </li>
+    <li><code>shell</code>はrepository/task一覧と対象画面自身が所有するqueryだけを有効にする。</li>
+    <li>
+      repository一覧、Task一覧、implementation queueはsidebar/queue
+      badgeのshell共通snapshotとして全profileで取得する。 それ以外のsession resourceはsession
+      profileだけで取得する。
+    </li>
+  </ul>
+  <p>有効化matrixを次で固定する。</p>
+  <table>
+    <caption>
+      Profile contract
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Resource</th>
+        <th scope="col">shell</th>
+        <th scope="col">settings</th>
+        <th scope="col">session</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>repositories / tasks / implementation queue</td>
+        <td>on</td>
+        <td>on</td>
+        <td>on</td>
+      </tr>
+      <tr>
+        <td>LLM settings query</td>
+        <td>off</td>
+        <td>on</td>
+        <td>on</td>
+      </tr>
+      <tr>
+        <td>session runs / Git closeout / messages</td>
+        <td>off</td>
+        <td>off</td>
+        <td>on</td>
+      </tr>
+      <tr>
+        <td>Task Operator / Plan Mode / LLM usage</td>
+        <td>off</td>
+        <td>off</td>
+        <td>on</td>
+      </tr>
+      <tr>
+        <td>activity / review / background processes</td>
+        <td>off</td>
+        <td>off</td>
+        <td>on</td>
+      </tr>
+      <tr>
+        <td>project files / run details</td>
+        <td>off</td>
+        <td>off</td>
+        <td>on</td>
+      </tr>
+      <tr>
+        <td>NightWorkers WebSocket</td>
+        <td>off</td>
+        <td>off</td>
+        <td>on</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    overview、queue、project detail各画面が所有するqueryはこのhookへ移さず、各画面のroute
+    inputで有効化する。
+  </p>
+  <h4 id="red-test-10">Red test</h4>
+  <p>
+    route kindごとにqueryFn spyとWebSocket factory countを記録し、overview/settings/project
+    detailでも session runs、messages、activity、review、files、run
+    details、WebSocketが起動する現行failureを固定する。
+  </p>
+  <h4 id="production実装-11">Production実装</h4>
+  <ol>
+    <li><code>WorkbenchRoutePage</code>がroute stateからprofileを構築してhookへ渡す。</li>
+    <li>
+      session profileの初期active
+      idはURLの<code>sessionId</code>とする。存在確認前に最初のTaskへfallbackしない。
+    </li>
+    <li>
+      non-session profileでは既存active idを表示用に保持してもよいが、session detail
+      queryの<code>enabled</code>はfalseにする。
+    </li>
+    <li>
+      <code>resolveNextActiveSessionId</code>による先頭Task自動選択はsession
+      URLがないrouteでは実行しない。
+    </li>
+    <li>
+      <code>useNightWorkersRealtime({ enabled })</code>を追加し、false時はconnection
+      objectを作成せずstatusを <code>disconnected</code>へする。
+    </li>
+    <li>
+      project files hookも<code>enabled</code>を受け、false時にdirectory/file/diff
+      requestを行わない。
+    </li>
+    <li>
+      settings query optionsはprofileから<code>enabled</code>を受ける。D-T1のcache
+      identityを変更しない。
+    </li>
+  </ol>
+  <h4 id="acceptance-12">Acceptance</h4>
+  <ul>
+    <li>overview/settings/queue/project detail mountでWebSocket factory callが0件。</li>
+    <li>session routeはURLのTaskだけを取得・subscribeする。</li>
+    <li>settings routeでSettings UIに必要なqueryは動き、session queryは0件。</li>
+    <li>route切替で旧connectionがunsubscribe/disposeされ、新sessionだけをsubscribeする。</li>
+    <li>sidebar、Task作成、project navigationの既存behavior testが成功する。</li>
+  </ul>
+  <h4 id="verification-12">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/nightworkers-workspace-hook-extra-coverage.test.ts tests/nightworkers-active-session.test.ts tests/nightworkers-shell-smoke.test.tsx
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t5-runtask-lifecycle-predicateの意味別集約">
+    FE-T5: Run/Task lifecycle predicateの意味別集約
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-7</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>ADD-T0</code>, Area B transition baseline</li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>shared/schemas/nightworkers/run.schema.ts</code></li>
+        <li><code>shared/schemas/nightworkers/repository-task.schema.ts</code></li>
+        <li><code>src/modules/nightworkers/realtimeEvents.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersWorkspaceModel.ts</code></li>
+        <li><code>src/modules/nightworkers/workbenchSessionSelectors.ts</code></li>
+        <li><code>src/modules/nightworkers/components/NightWorkersShell.tsx</code></li>
+        <li><code>src/modules/nightworkers/components/NightWorkersShellThreadPanel.tsx</code></li>
+        <li><code>src/modules/nightworkers/components/TaskConsolePage.tsx</code></li>
+        <li><code>src/modules/nightworkers/components/ArtifactPane.tsx</code></li>
+        <li><code>api/modules/nightworkers/run-orchestration/stop-task-run.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/nightworkers-active-session.test.ts</code></li>
+        <li><code>tests/nightworkers.realtime-events.test.ts</code></li>
+        <li><code>tests/nightworkers.workbench-selectors.test.ts</code></li>
+        <li>新規<code>tests/stop-task-run-status-contract.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="stop-condition-2">Stop condition</h4>
+  <p>
+    <code>stop-task-run.ts</code>には計画時点で未コミット差分がある。accepted
+    baseline確定前は変更しない。
+  </p>
+  <h4 id="shared-contract">Shared contract</h4>
+  <p>別々の意味を次のsymbolで固定する。</p>
+  <ul>
+    <li>
+      <code>RUN_EXECUTING_STATUSES</code>: <code>running</code>, <code>context_compiling</code>,
+      <code>finalizing</code>
+    </li>
+    <li>
+      <code>LEGACY_RUN_EXECUTING_ALIASES</code>:
+      <code>compiling_context</code>。read互換のみでwriterへ追加しない
+    </li>
+    <li>
+      <code>RUN_STOPPABLE_STATUSES</code>: <code>running</code>, <code>context_compiling</code>,
+      <code>finalizing</code>
+    </li>
+    <li>
+      <code>RUN_TERMINAL_STATUSES</code>: <code>completed</code>, <code>needs_review</code>,
+      <code>needs_human</code>, <code>failed</code>, <code>blocked</code>, <code>timed_out</code>,
+      <code>cancelled</code>
+    </li>
+    <li>
+      <code>TASK_PROCESSING_STATUSES</code>: 現行UIの<code>running</code>,
+      <code>context_compiling</code>, <code>finalizing</code>
+    </li>
+    <li>
+      <code>LEGACY_PROCESSING_STATUS_ALIASES</code>: <code>compiling_context</code>。Frontend
+      read互換だけに適用する
+    </li>
+    <li>
+      predicates: <code>isRunExecutingStatus</code>, <code>isRunStoppableStatus</code>,
+      <code>isRunTerminalStatus</code>, <code>isTaskProcessingStatus</code>
+    </li>
+  </ul>
+  <p>
+    <code>verifying</code
+    >はschemaに残すが、writer未確認のためいずれの集合へも本ticketだけでは追加しない。
+  </p>
+  <h4 id="redcharacterization-test">Red/characterization test</h4>
+  <p>
+    全schema statusを行、全predicateを列にしたtable testを先に追加し、現行consumerの結果を固定する。
+    特に<code>needs_review</code>はterminalだがstoppableでないこと、<code>compiling_context</code>はlegacy
+    UI表示だけで backend stop対象でないことを明示する。
+  </p>
+  <h4 id="production実装-12">Production実装</h4>
+  <ol>
+    <li>
+      定数はschema literalと型整合する<code>as const satisfies</code
+      >で定義し、string配列を各componentに複製しない。
+    </li>
+    <li>realtime mergeはterminal/executing predicateを参照する。</li>
+    <li>UI spinner、stop button、session groupは目的に対応する別predicateを参照する。</li>
+    <li>backend stop guardは<code>isRunStoppableStatus</code>だけを参照する。</li>
+    <li>Composer入力lockは現行どおり送信pending中心とし、Run statusでlockする変更を行わない。</li>
+  </ol>
+  <h4 id="acceptance-13">Acceptance</h4>
+  <ul>
+    <li>対象fileのactive/terminal status literal集合が共通contract参照へ置換される。</li>
+    <li>各statusのUI group、spinner、stop可否、realtime terminal処理が変更前tableと一致する。</li>
+    <li>新しいstatus writer/transition/migrationを追加していない。</li>
+  </ul>
+  <h4 id="verification-13">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/nightworkers-active-session.test.ts tests/nightworkers.realtime-events.test.ts tests/nightworkers.workbench-selectors.test.ts tests/stop-task-run-status-contract.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t6-composer-draft-ioのdebounceとtimer世代管理">
+    FE-T6: Composer draft IOのdebounceとtimer世代管理
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-9</code></li>
+    <li>Priority: P3</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>src/modules/nightworkers/components/Composer.tsx</code></li>
+        <li>新規<code>src/modules/nightworkers/components/usePersistedComposerDraft.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/composer-coverage.test.tsx</code></li>
+        <li><code>tests/frontend-composer-actions.test.tsx</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="contract-3">Contract</h4>
+  <ul>
+    <li>debounce: 250 ms</li>
+    <li>promptのReact stateは即時更新し、localStorageだけをdebounceする。</li>
+    <li>flush契機: textarea blur、<code>pagehide</code>、component unmount、storage key変更前。</li>
+    <li>
+      clear契機: submit開始時の現行clear。pending timer cancelとgeneration incrementを先に行う。
+    </li>
+    <li>restore契機: non-Abort failureの現行restore。直ちに保存し、新generationを開始する。</li>
+    <li>AbortError時にdraftを復元しない現行behaviorは維持する。</li>
+  </ul>
+  <h4 id="red-test-11">Red test</h4>
+  <ul>
+    <li>10 keystrokeで10回localStorage writeされる現行挙動。</li>
+    <li>submit成功後に古いdebounce timerがdraftを復活させるrace。</li>
+    <li>storage key切替時に旧Taskのdraftが新Taskへ書かれるrace。</li>
+    <li>prompt以外のrenderで<code>resizeComposerTextArea</code>が毎回走る挙動。</li>
+  </ul>
+  <h4 id="production実装-13">Production実装</h4>
+  <ol>
+    <li>storage keyごとのgenerationとpending timerをhookに閉じ込める。</li>
+    <li>timer callbackはschedule時generation/keyがcurrentと一致する場合だけwriteする。</li>
+    <li>
+      <code>clearDraft</code>はtimer cancel → generation更新 → localStorage removeの順に行う。
+    </li>
+    <li><code>restoreDraft</code>はtimerをcancelし同期writeしてからprompt stateを戻す。</li>
+    <li>
+      <code>useLayoutEffect</code>のresize dependencyを<code>[prompt]</code>に限定し、window resize
+      listenerは維持する。
+    </li>
+    <li>localStorage例外はUI送信を失敗させない。</li>
+  </ol>
+  <h4 id="acceptance-14">Acceptance</h4>
+  <ul>
+    <li>連続入力は250 ms内1 write。</li>
+    <li>blur/unmountで最後の入力が失われない。</li>
+    <li>submit成功/Abort後に古いtimerでdraftが復活しない。</li>
+    <li>non-Abort failureではprompt、images、draftが従来どおり復元される。</li>
+  </ul>
+  <h4 id="verification-14">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/composer-coverage.test.tsx tests/frontend-composer-actions.test.tsx
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t7-threadtimelineをwindow-first-mergeへ変更する">
+    FE-T7: ThreadTimelineをwindow-first mergeへ変更する
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-10</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>FE-T3</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>src/modules/nightworkers/components/ThreadTimeline.tsx</code></li>
+        <li><code>src/modules/nightworkers/components/ThreadTimelineActivityModel.ts</code></li>
+        <li><code>src/modules/nightworkers/activityTranscript.ts</code></li>
+        <li><code>src/modules/nightworkers/realtimeEvents.ts</code></li>
+        <li>新規<code>src/modules/nightworkers/components/thread-timeline-window.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/thread-timeline-window.test.ts</code></li>
+        <li><code>tests/thread-timeline-component-extra-coverage.test.tsx</code></li>
+        <li><code>tests/thread-timeline-activity-model-coverage.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="redcharacterization-test-1">Red/characterization test</h4>
+  <ol>
+    <li>messages/events各10,000件で現在のvisible last 100 id/orderをsnapshotする。</li>
+    <li>
+      timestamp同値、unprojected user message、activity transcriptあり/なし、debug
+      on/offを固定する。
+    </li>
+    <li>
+      helperへ比較回数counterを注入し、visible100件のために20,000件を全sortする現行failureを固定する。
+      wall clock時間をassertionにしない。
+    </li>
+  </ol>
+  <h4 id="production実装-14">Production実装</h4>
+  <ol>
+    <li>
+      repository/query/realtimeが各inputを時系列ASCで供給することをtestで証明する。
+      ASCでないsourceが見つかった場合は当該source ownerで一度だけ安定順へ正規化し、combined arrayの
+      full sortへfallbackしない。
+    </li>
+    <li>
+      sorted sourceの末尾からtwo-pointerで必要window分だけmergeする
+      <code>mergeChronologicalWindow</code>をpure helperとして実装する。
+    </li>
+    <li>timestamp tieは現行のsource order/index ruleを維持する。</li>
+    <li>
+      activity transcriptが存在する場合、fallback
+      <code>timelineItems</code>を構築しない。存在しない場合だけ message/event pathを構築する。
+    </li>
+    <li>historyをさらに読む場合は<code>FE-T3</code>のpage取得後、増えたwindowだけをmergeする。</li>
+    <li>
+      <code>measureArtifactPerf</code>のlabelとcount
+      metadataを維持し、全件sort削除を観測可能にする。
+    </li>
+  </ol>
+  <h4 id="acceptance-15">Acceptance</h4>
+  <ul>
+    <li>全characterization caseでvisible item、order、id、Load more結果が一致する。</li>
+    <li>last100表示のmerge比較回数がinput全件数ではなくwindow/source数に比例する。</li>
+    <li>debug off時にdebug eventをvisible windowへ混ぜない。</li>
+    <li>activity pageが追加されたときscroll/history windowが不正に最新へ飛ばない。</li>
+  </ul>
+  <h4 id="verification-15">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/thread-timeline-window.test.ts tests/thread-timeline-component-extra-coverage.test.tsx tests/thread-timeline-activity-model-coverage.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t8-realtime-message-key-dedupeをbounded-lru化する">
+    FE-T8: realtime message key dedupeをbounded LRU化する
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-11</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li>新規<code>shared/schemas/nightworkers/realtime-limits.ts</code></li>
+        <li><code>api/services/realtime/nightworkers-ws.ts</code></li>
+        <li>新規<code>src/modules/nightworkers/realtime/bounded-message-key-cache.ts</code></li>
+        <li><code>src/modules/nightworkers/realtime/nightWorkersRealtimeProjector.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/services.realtime-broker.test.ts</code></li>
+        <li><code>tests/nightworkers-realtime-effects.test.ts</code></li>
+        <li>新規<code>tests/bounded-message-key-cache.test.ts</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="contract-4">Contract</h4>
+  <ul>
+    <li>server replay window: <code>NIGHTWORKERS_REALTIME_REPLAY_MESSAGES_PER_TASK = 240</code></li>
+    <li>client dedupe capacity: <code>NIGHTWORKERS_REALTIME_DEDUPE_CAPACITY = 480</code></li>
+    <li>server/clientはshared constantを参照し、magic numberを複製しない。</li>
+    <li>
+      client cacheはinsertion-ordered
+      <code>Map&lt;string, true&gt;</code>を使い、capacity超過時に最古1件ずつevictする。
+    </li>
+    <li>cache hit時はkeyを末尾へ移動してLRUとする。</li>
+  </ul>
+  <h4 id="red-test-12">Red test</h4>
+  <ul>
+    <li>
+      5,001件目でSet全体がclearされ、直後のserver replay deltaが再適用される現行failureを固定する。
+    </li>
+    <li>reconnect同一taskとtask切替の挙動を分けてtestする。</li>
+  </ul>
+  <h4 id="production実装-15">Production実装</h4>
+  <ol>
+    <li><code>Set</code> refをbounded cacheへ置換する。</li>
+    <li>同じTaskのreconnectではcacheを保持する。</li>
+    <li>active Task idが実際に変わった場合だけcacheをclearする。</li>
+    <li>server replay TTL/240件の挙動は維持し、client容量をserver windowの2倍にする。</li>
+    <li>dedupe keyを作れないmessageは従来どおり適用し、content文字列で推測dedupeしない。</li>
+  </ol>
+  <h4 id="acceptance-16">Acceptance</h4>
+  <ul>
+    <li>5,001件処理後も直近480 keyが残り、replay240件が二重appendされない。</li>
+    <li>memoryは480 key以下。</li>
+    <li>task Bの同じkeyをtask Aのcacheで誤って抑止しない。</li>
+  </ul>
+  <h4 id="verification-16">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/services.realtime-broker.test.ts tests/nightworkers-realtime-effects.test.ts tests/bounded-message-key-cache.test.ts
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t9-resolvenextactivesessionidの重複除去">
+    FE-T9: <code>resolveNextActiveSessionId</code>の重複除去
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-12</code></li>
+    <li>Priority: P3</li>
+    <li>Depends on: <code>FE-T4</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersWorkspaceModel.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/nightWorkersMutationHelpers.ts</code></li>
+        <li><code>src/modules/nightworkers/hooks/useNightWorkersMutations.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/nightworkers-active-session.test.ts</code></li>
+        <li><code>tests/nightworkers-mutations-hook-extra-coverage.test.ts</code></li>
+        <li><code>tests/useNightWorkersWorkspace.test.tsx</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="production実装-16">Production実装</h4>
+  <ol>
+    <li>canonical definitionは<code>useNightWorkersWorkspaceModel.ts</code>に残す。</li>
+    <li>mutation helperはcanonical functionをimportし、local definitionを削除する。</li>
+    <li>
+      mutation helperからのre-exportも残さず、<code>useNightWorkersMutations.ts</code>はcanonical
+      moduleを直接importする。 既存mock testもcanonical moduleをmockするよう更新する。
+    </li>
+    <li>
+      <code>FE-T4</code>でroute fallback
+      semanticsが変わった後の確定signatureを使う。先に実装しない。
+    </li>
+  </ol>
+  <h4 id="acceptance-17">Acceptance</h4>
+  <pre><code class="language-bash">rg -n &quot;function resolveNextActiveSessionId&quot; src/modules/nightworkers
+</code></pre>
+  <p>の定義が1件で、current id保持、missing id fallback、empty listの既存testが成功する。</p>
+  <h4 id="verification-17">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/nightworkers-active-session.test.ts tests/nightworkers-mutations-hook-extra-coverage.test.ts tests/useNightWorkersWorkspace.test.tsx
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="fe-t10-mission-pilot-optimistic-control-rollback">
+    FE-T10: Mission Pilot optimistic control rollback
+  </h3>
+  <ul>
+    <li>Finding: <code>FE-13</code></li>
+    <li>Priority: P2</li>
+    <li>Depends on: <code>ADD-T0</code></li>
+    <li>
+      Production write set:
+      <ul>
+        <li><code>packages/mission-pilot/src/frontend/useMissionPilotControls.ts</code></li>
+      </ul>
+    </li>
+    <li>
+      Test write set:
+      <ul>
+        <li><code>tests/mission-pilot-frontend-realtime.test.ts</code></li>
+        <li>新規<code>tests/mission-pilot-frontend-controls.test.tsx</code></li>
+      </ul>
+    </li>
+  </ul>
+  <h4 id="red-test-13">Red test</h4>
+  <ul>
+    <li>
+      play/stop非2xx、network throw、response JSON parse
+      failureで<code>starting</code>/<code>stopping</code>がcacheに残る。
+    </li>
+    <li>command失敗前に同versionまたはより新しいrealtime summaryが到着するrace。</li>
+    <li>rollback後のrefetchも失敗するcase。</li>
+  </ul>
+  <h4 id="production実装-17">Production実装</h4>
+  <ol>
+    <li>
+      command前に<code>previousSummary</code>、<code>commandSummary</code>、生成した<code
+        >optimisticSummary</code
+      >
+      objectを保持する。
+    </li>
+    <li>cacheへその<code>optimisticSummary</code> object参照を設定する。</li>
+    <li>
+      catchのfunctional
+      updaterは、currentが同一object参照の場合だけ<code>commandSummary</code>へ戻す。
+    </li>
+    <li>currentが別object、または同等以上versionのserver/realtime summaryなら保持する。</li>
+    <li>
+      rollback直後にcontrol queryをinvalidate/refetchする。refetch
+      failureでもrollback済みsnapshotを残す。
+    </li>
+    <li>
+      task messages invalidationとerror stateは維持する。public
+      <code>play</code>/<code>stop</code>がerrorを内部stateへ格納する現行APIも維持する。
+    </li>
+    <li>success mergeは<code>mergeMissionPilotControl</code>のversion ruleを維持する。</li>
+  </ol>
+  <h4 id="acceptance-18">Acceptance</h4>
+  <ul>
+    <li>command失敗後にUIが<code>starting</code>/<code>stopping</code>へ張り付かない。</li>
+    <li>後着realtime stateを古いsnapshotで巻き戻さない。</li>
+    <li>success、failure、realtime race、refetch failureの全testが決定的に成功する。</li>
+  </ul>
+  <h4 id="verification-18">Verification</h4>
+  <pre><code class="language-bash">node scripts/run-vitest.mjs run tests/mission-pilot-frontend-realtime.test.ts tests/mission-pilot-frontend-controls.test.tsx
+bun run typecheck
+</code></pre>
+  <hr />
+  <h3 id="add-t99-統合検証と計画closeout">ADD-T99: 統合検証と計画closeout</h3>
+  <ul>
+    <li>Findings: 全件</li>
+    <li>Depends on: 実装対象ticket全完了</li>
+    <li>
+      Write set: 必要なtest expectationと本書のstatus/evidence欄のみ。production修正を混ぜない
+    </li>
+  </ul>
+  <h4 id="preflight">Preflight</h4>
+  <ol>
+    <li>全ticketの限定testが個別にgreenである。</li>
+    <li>worktreeに別processの変更が増えていない。</li>
+    <li>coverage processが他で実行中でない。</li>
+  </ol>
+  <h4 id="static-audits">Static audits</h4>
+  <pre><code class="language-bash">rg -n &#39;modules/codingAgent|modules/coding-agent&#39; api/services -g &#39;*.ts&#39;
+rg -n &#39;execFileAsync\(&quot;git&quot;|spawn\(&quot;git&quot;&#39; api/services/worker-tools/clone-git-repo.ts
+rg -n &#39;function resolveNextActiveSessionId&#39; src/modules/nightworkers
+rg -n &#39;size &gt; 5000|\.clear\(\)&#39; src/modules/nightworkers/realtime
+</code></pre>
+  <p>
+    期待値は順に0件、0件、1件、全clear実装0件。test
+    cleanupの<code>clear()</code>は対象外なので、最後の結果は symbol contextを確認する。
+  </p>
+  <h4 id="gates">Gates</h4>
+  <pre><code class="language-bash">bun run check:docs
+bun run check:architecture
+bun run typecheck
+bun run lint
+node scripts/run-vitest.mjs run
+bun run test:coverage
+node scripts/verify.mjs full
+</code></pre>
+  <p>
+    <code>test:coverage</code>は単独で実行する。external service、OS
+    sandbox、GUI不足で実行できないgateは <code>未検証</code>と記録し、passへ読み替えない。
+  </p>
+  <h4 id="completion-criteria">Completion criteria</h4>
+  <ol>
+    <li>Finding表の15件が対応ticketとgreen testを持つ。</li>
+    <li><code>api/services -&gt; codingAgent</code> importがtype/value/dynamicを含め0件。</li>
+    <li>log fixture secretが全sinkで0件。</li>
+    <li>clone source/target/protocolがstructural policyとexternal path authorityを守る。</li>
+    <li>REST/WS resource limitが境界値testを持つ。</li>
+    <li>optimistic cacheはfailure/raceでserver stateへ収束する。</li>
+    <li>realtime memoryは利用者操作なしに設定上限を超えない。</li>
+    <li>non-session routeがsession query/WebSocketを起動しない。</li>
+    <li>lifecycle predicate集約後もtransition/UI挙動がcharacterization tableと一致する。</li>
+    <li>全gate結果と未検証事項を報告する。</li>
+    <li>
+      実装完了後、本書を<code>spec/docs/.archived</code>へ移し、<code>spec/docs</code>へ完了計画を残さない。
+    </li>
+  </ol>
+  <h2 id="section-7-terraへのticket依頼テンプレート">7. Terraへのticket依頼テンプレート</h2>
+  <p>Terraへは次の形式で一件ずつ渡す。</p>
+  <pre><code class="language-text">このticketだけを実装してください: &lt;TICKET-ID&gt;
+
+正本:
+spec/docs/additional-security-boundary-and-frontend-hardening-implementation-plan.html
+
+必須手順:
+1. ADD-T0のaccepted baselineとticketのDepends onを確認する。
+2. ticket本文のwrite set、red test、contract、acceptanceを全文読む。
+3. write setに既存差分があれば変更せず停止する。
+4. red testを先に追加し、想定理由の失敗を記録する。
+5. write set外へ広げず実装する。
+6. 限定test、typecheck、指定architecture checkを実行する。
+7. diff check、変更file、red/green結果、未検証事項を報告する。
+
+禁止:
+- 対象外findingの便乗修正
+- 未確定contractの推測実装
+- 既存dirty差分の復元・上書き
+- test削除、skip、上限緩和によるgreen化
+- acceptance未達での完了報告
+</code></pre>
+</article>

@@ -52,7 +52,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Fixed
 - Version drift between package and desktop configuration is detected before a
   release tag can be created.
-- Completed implementation plans are linked from `spec/.archived/` instead of
+- Completed implementation plans are linked from `spec/docs/.archived/` instead of
   remaining in the active plan directory.
 
 ### Removed

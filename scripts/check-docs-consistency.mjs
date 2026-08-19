@@ -17,8 +17,8 @@ const baseDocumentPaths = [
 	"demo/support-ops-crm/README.md",
 ];
 const activeSpecificationDirectory = "spec/docs";
-const archivedSpecificationDirectory = "spec/.archived";
-const legacyArchiveDirectory = "spec/archive";
+const archivedSpecificationDirectory = "spec/docs/.archived";
+const legacyArchiveDirectories = ["spec/.archived", "spec/archive"];
 
 const exists = async (filePath) => {
 	try {
@@ -50,14 +50,41 @@ function localLinks(markdown) {
 		.filter((target) => !/^(?:https?:|mailto:|app:)/.test(target));
 }
 
-function completedImplementationStatus(markdown) {
+function markdownStatusSection(markdown) {
 	const statusHeading = /^## Status\s*$/m.exec(markdown);
 	const statusStart = statusHeading
 		? statusHeading.index + statusHeading[0].length
 		: 0;
 	const remaining = markdown.slice(statusStart);
 	const nextHeading = remaining.search(/^##\s+/m);
-	const status = nextHeading >= 0 ? remaining.slice(0, nextHeading) : remaining;
+	return nextHeading >= 0 ? remaining.slice(0, nextHeading) : remaining;
+}
+
+function htmlText(fragment) {
+	return fragment
+		.replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/gi, " ")
+		.replace(/<[^>]+>/g, "\n")
+		.replace(/&nbsp;/gi, " ")
+		.replace(/&(?:amp|#38);/gi, "&")
+		.replace(/&(?:lt|#60);/gi, "<")
+		.replace(/&(?:gt|#62);/gi, ">")
+		.replace(/&(?:quot|#34);/gi, '"')
+		.replace(/&#39;|&apos;/gi, "'");
+}
+
+function htmlStatusSection(html) {
+	const headings = [...html.matchAll(/<h2\b[^>]*>[\s\S]*?<\/h2>/gi)];
+	const selected =
+		headings.find((match) => htmlText(match[0]).trim() === "Status") ?? headings[0];
+	if (!selected || selected.index === undefined) return htmlText(html);
+	const start = selected.index + selected[0].length;
+	const nextHeading = html.slice(start).search(/<h2\b/i);
+	return htmlText(nextHeading >= 0 ? html.slice(start, start + nextHeading) : html.slice(start));
+}
+
+function completedImplementationStatus(document, extension) {
+	const status =
+		extension === ".html" ? htmlStatusSection(document) : markdownStatusSection(document);
 	return [
 		/^\s*(?:-\s*)?Status:\s*`?(?:completed|complete|implemented)(?=[\s;`/(),-]|$)/im,
 		/^\s*(?:-\s*)?Plan status:\s*`?(?:completed|complete|implemented)(?=[\s;`/(),-]|$)/im,
@@ -129,9 +156,17 @@ export async function checkDocsConsistency(options = {}) {
 		for (const entry of entries.sort((left, right) =>
 			left.name.localeCompare(right.name),
 		)) {
-			if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+			if (!entry.isFile()) continue;
 			const relativePath = path.join(activeSpecificationDirectory, entry.name);
-			if (completedImplementationStatus(await read(relativePath))) {
+			const extension = path.extname(entry.name);
+			if (extension === ".md") {
+				errors.push(`${relativePath}: design document must be converted to HTML`);
+				continue;
+			}
+			if (
+				extension === ".html" &&
+				completedImplementationStatus(await read(relativePath), extension)
+			) {
 				errors.push(
 					`${relativePath}: completed implementation document must move to ${archivedSpecificationDirectory}/`,
 				);
@@ -139,10 +174,24 @@ export async function checkDocsConsistency(options = {}) {
 		}
 	}
 
-	if (await exists(path.join(root, legacyArchiveDirectory))) {
-		errors.push(
-			`${legacyArchiveDirectory}/: legacy archive directory must be renamed to ${archivedSpecificationDirectory}/`,
-		);
+	const archivedSpecificationRoot = path.join(root, archivedSpecificationDirectory);
+	if (await exists(archivedSpecificationRoot)) {
+		const entries = await readdir(archivedSpecificationRoot, { withFileTypes: true });
+		for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+			if (entry.isFile() && entry.name.endsWith(".md")) {
+				errors.push(
+					`${path.join(archivedSpecificationDirectory, entry.name)}: design document must be converted to HTML`,
+				);
+			}
+		}
+	}
+
+	for (const legacyArchiveDirectory of legacyArchiveDirectories) {
+		if (await exists(path.join(root, legacyArchiveDirectory))) {
+			errors.push(
+				`${legacyArchiveDirectory}/: legacy archive directory must be renamed to ${archivedSpecificationDirectory}/`,
+			);
+		}
 	}
 
 	return errors;

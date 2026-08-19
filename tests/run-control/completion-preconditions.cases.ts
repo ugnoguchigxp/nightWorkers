@@ -293,7 +293,7 @@ describe("Run completion preconditions", () => {
 		await db.insert(verificationDocuments).values({
 			taskId: task.id,
 			runId: run.id,
-			sourceSpecPath: "spec/docs/completion-fixture.md",
+			sourceSpecPath: "spec/docs/completion-fixture.html",
 			documentJson: {},
 			generatedAt: new Date(),
 			status: "active",
