@@ -6,7 +6,9 @@
     <li>作成日: 2026-08-16</li>
     <li>対象リポジトリ: <code>nightWorkers</code></li>
     <li>
-      対象指摘: <code>M7</code>, <code>M8</code>, <code>M9</code>, <code>m1</code>, <code>m6</code>,
+      対象指摘: <code>M7</code>,
+      <code>M8</code>, <code>M9</code>,
+      <code>m1</code>, <code>m6</code>,
       <code>m7</code>
     </li>
     <li>
@@ -24,24 +26,30 @@
   <p>この領域で解消する問題は次のとおり。</p>
   <ul>
     <li>
-      <code>M7</code>: 同じ repository resource に異なる query key が使われ、cache が分断される。
+      <code>M7</code>: 同じ repository resource に異なる query key
+      が使われ、cache が分断される。
     </li>
     <li>
-      <code>M8</code>: Settings が server state を local state だけで管理し、取得・保存失敗と cache
-      同期が弱い。
+      <code>M8</code>: Settings が server state を local state
+      だけで管理し、取得・保存失敗と cache 同期が弱い。
     </li>
     <li>
-      <code>M9</code>: <code>TaskConsolePage</code> が error を loading と同じ見た目にし、terminal
+      <code>M9</code>:
+      <code>TaskConsolePage</code> が error を loading と同じ見た目にし、terminal
       state 後も polling を継続する。
     </li>
     <li>
-      <code>m1</code>: 主要画面に手書き <code>fetch</code> と独自 loading/error 管理が残り、server
-      state の同期方法が統一されていない。
+      <code>m1</code>: 主要画面に手書き
+      <code>fetch</code> と独自 loading/error 管理が残り、server state
+      の同期方法が統一されていない。
     </li>
-    <li><code>m6</code>: 一部の利用者向け文言が辞書を通らず英語または直接記述になっている。</li>
     <li>
-      <code>m7</code>: Project Evaluation の activity event 依存で polling cursor
-      が不必要に再生成されうる。
+      <code>m6</code>:
+      一部の利用者向け文言が辞書を通らず英語または直接記述になっている。
+    </li>
+    <li>
+      <code>m7</code>: Project Evaluation の activity event 依存で
+      polling cursor が不必要に再生成されうる。
     </li>
   </ul>
   <h2 id="section-2-非目標">2. 非目標</h2>
@@ -64,10 +72,13 @@
   <h2 id="section-3-現状認識と実装前の再確認">3. 現状認識と実装前の再確認</h2>
   <p>
     前回調査時点では、repository 一覧に <code>[&#39;repositories&#39;]</code> と
-    <code>[&#39;projects&#39;]</code> が併存し、Settings では <code>Promise.all</code> と local
-    state による独自取得・保存、<code>TaskConsolePage</code> では error 時にも spinner
-    を表示する分岐と固定 polling が確認された。また、最新の再検索ではmanual controller stateが
-    Overview、Security Scan、Project Evaluation に残り、直接のraw <code>fetch</code> は API
+    <code>[&#39;projects&#39;]</code> が併存し、Settings では
+    <code>Promise.all</code> と local state による独自取得・保存、<code
+      >TaskConsolePage</code
+    >
+    では error 時にも spinner を表示する分岐と固定 polling
+    が確認された。また、最新の再検索ではmanual controller stateが Overview、Security Scan、Project
+    Evaluation に残り、直接のraw <code>fetch</code> は API
     base層を除くとTaskConsoleのReview commandが主対象だった。Quality/Git Worktreeは今回の<code
       >m1</code
     >
@@ -118,7 +129,10 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
   <h3 id="d0-characterization-と-canonical-query-key-の確立">
     D0. Characterization と canonical query key の確立
   </h3>
-  <p>対象: <code>M7</code>, <code>m1</code></p>
+  <p>
+    対象: <code>M7</code>,
+    <code>m1</code>
+  </p>
   <ol>
     <li>
       repository、settings、task/run、evaluation について、現行 key、取得関数、mutation、polling
@@ -130,9 +144,10 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     </li>
     <li>
       <code>[&#39;repositories&#39;]</code> と
-      <code>[&#39;projects&#39;]</code> のどちらかを文字列置換するのではなく、それぞれが同じ API
-      resource かを route・response schema まで追跡する。同一なら canonical key に統合し、別
-      resource なら名前で区別できる key に改名する。
+      <code>[&#39;projects&#39;]</code>
+      のどちらかを文字列置換するのではなく、それぞれが同じ API resource かを route・response schema
+      まで追跡する。同一なら canonical key に統合し、別 resource なら名前で区別できる key
+      に改名する。
     </li>
     <li>旧 key の mutation invalidation が残らないことを test で固定する。</li>
   </ol>
@@ -146,16 +161,22 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     </li>
   </ul>
   <h3 id="d1-settings-の-server-state-移行">D1. Settings の server state 移行</h3>
-  <p>対象: <code>M8</code>, <code>m1</code></p>
+  <p>
+    対象: <code>M8</code>,
+    <code>m1</code>
+  </p>
   <ol>
-    <li>provider/model 設定の取得を <code>useQuery</code> または共通 query options に移す。</li>
+    <li>
+      provider/model 設定の取得を <code>useQuery</code> または共通 query
+      options に移す。
+    </li>
     <li>
       編集開始時に remote snapshot から draft を作るが、その後の cache
       更新で編集中の未保存入力を上書きしない。
     </li>
     <li>
-      保存を <code>useMutation</code> に移し、成功 response を canonical cache へ反映する。server
-      が正規化した値を返す場合は request payload ではなく response を採用する。
+      保存を <code>useMutation</code> に移し、成功 response を canonical cache
+      へ反映する。server が正規化した値を返す場合は request payload ではなく response を採用する。
     </li>
     <li>取得失敗、保存失敗、再試行、保存中、保存完了を別 state として表示する。</li>
     <li>
@@ -175,7 +196,10 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
   <h3 id="d2-taskconsole-の表示-state-と-polling-lifecycle-修正">
     D2. TaskConsole の表示 state と polling lifecycle 修正
   </h3>
-  <p>対象: <code>M9</code>, <code>m6</code></p>
+  <p>
+    対象: <code>M9</code>,
+    <code>m6</code>
+  </p>
   <ol>
     <li>
       loading、not found/empty、recoverable error、terminal error、success
@@ -186,8 +210,8 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
       action、必要なら前画面への導線を出す。
     </li>
     <li>
-      <code>refetchInterval</code> を callback 化し、公開 terminal state contract に該当する場合は
-      <code>false</code> を返す。
+      <code>refetchInterval</code> を callback 化し、公開 terminal state contract
+      に該当する場合は <code>false</code> を返す。
     </li>
     <li>
       background/foreground、window focus、network reconnect
@@ -196,7 +220,9 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     <li>
       terminal state 到達直前の in-flight request が戻っても polling が再開しないことを test する。
     </li>
-    <li>直接記述された英語文言と <code>window.confirm</code> 文言を辞書へ移す。</li>
+    <li>
+      直接記述された英語文言と <code>window.confirm</code> 文言を辞書へ移す。
+    </li>
   </ol>
   <p>完了条件:</p>
   <ul>
@@ -214,16 +240,17 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
       effect/callback の dependency から、cursor の意味を変えない activity event object を外す。
     </li>
     <li>
-      最新値の参照だけが必要なら <code>useRef</code> または updater function
-      を使い、subscription/polling の identity を安定させる。
+      最新値の参照だけが必要なら <code>useRef</code> または updater
+      function を使い、subscription/polling の identity を安定させる。
     </li>
     <li>
       Strict Mode の mount/unmount、project 切替、run 切替で重複 polling が発生しない test
       を追加する。
     </li>
     <li>
-      古い project/run の遅延 response を捨てるため、Query の <code>signal</code>、request
-      generation、または resource identity の照合を使う。
+      古い project/run の遅延 response を捨てるため、Query の
+      <code>signal</code>、request generation、または resource identity
+      の照合を使う。
     </li>
   </ol>
   <p>完了条件:</p>
@@ -244,15 +271,15 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     <li>response schema と error decoder を API client に集約する。</li>
     <li>query key/options と mutation options を定義する。</li>
     <li>
-      component の <code>useEffect + fetch + local loading/error</code> を query/mutation
-      へ置換する。
+      component の <code>useEffect + fetch + local loading/error</code> を query/mutation へ置換する。
     </li>
     <li>cancellation と stale response 防止を確認する。</li>
     <li>behavior test を追加してから次 feature へ進む。</li>
   </ol>
   <p>
     stream、long-poll、download、one-shot command など Query 化が不適切な呼び出しは inventory
-    に理由を残して対象外とする。<code>fetch</code> の件数をゼロにすること自体を完了条件にしない。
+    に理由を残して対象外とする。<code>fetch</code>
+    の件数をゼロにすること自体を完了条件にしない。
   </p>
   <h3 id="d5-i18n-と-accessibility-の仕上げ">D5. i18n と accessibility の仕上げ</h3>
   <p>対象: <code>m6</code></p>
@@ -277,12 +304,9 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     <li>Findings: <code>M7</code></li>
     <li>
       Write set: 新規<code>src/modules/nightworkers/queries/repository-queries.ts</code>、
-      <code>src/routes/repositories.tsx</code
-      >、<code>src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts</code>、
-      <code>src/modules/nightworkers/hooks/useNightWorkersMutations.ts</code
-      >、<code>tests/nightworkers-mutations.test.tsx</code>、
-      <code>tests/nightworkers-mutations-hook-extra-coverage.test.ts</code>、新規repository query
-      behavior test
+      <code>src/routes/repositories.tsx</code>、<code>src/modules/nightworkers/hooks/useNightWorkersWorkspace.ts</code>、
+      <code>src/modules/nightworkers/hooks/useNightWorkersMutations.ts</code>、<code>tests/nightworkers-mutations.test.tsx</code>、
+      <code>tests/nightworkers-mutations-hook-extra-coverage.test.ts</code>、新規repository query behavior test
     </li>
     <li>
       Fixed fact:
@@ -291,16 +315,16 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     </li>
     <li>
       Exports:
-      <code>repositoryQueryKeys.all = [&#39;repositories&#39;] as const</code
-      >、<code>repositoryQueryKeys.detail(id)</code>、
+      <code>repositoryQueryKeys.all = [&#39;repositories&#39;] as const</code>、<code>repositoryQueryKeys.detail(id)</code>、
       <code>repositoriesQueryOptions()</code>。query
-      functionは<code>Repository[]</code>を返し、非2xxはArea Eのdecoderでthrowする。
+      functionは<code>Repository[]</code>を返し、非2xxはArea
+      Eのdecoderでthrowする。
     </li>
     <li>
       Migration: 3
       consumerのquery/cancel/invalidateをfactoryへ一括置換する。旧<code>[&#39;projects&#39;]</code>へのbridge
-      invalidationは 残さず、ticket完了時の<code>rg</code>でrepository resourceを指すliteral
-      keyを0件にする。
+      invalidationは 残さず、ticket完了時の<code>rg</code>でrepository
+      resourceを指すliteral keyを0件にする。
     </li>
     <li>
       Done:
@@ -319,28 +343,29 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     D-T1: Settings remote snapshotとdraftを分離する
   </h3>
   <ul>
-    <li>Findings: <code>M8</code>, <code>m1</code></li>
+    <li>
+      Findings: <code>M8</code>,
+      <code>m1</code>
+    </li>
     <li>Depends on: <code>E-T3a</code>のFrontend decoder</li>
     <li>
       Current conflict/stop: <code>src/modules/settings/SettingsLlmPanel.tsx</code>、新規
       <code>src/modules/settings/useSettingsLlmPanelController.ts</code
-      >、<code>tests/settings-llm-panel-coverage.test.tsx</code>にはplanning開始前の
-      user差分がある。accepted baselineまたは差分所有者の完了前はこのticketを開始しない。
+      >、<code>tests/settings-llm-panel-coverage.test.tsx</code>にはplanning開始前の user差分がある。accepted
+      baselineまたは差分所有者の完了前はこのticketを開始しない。
     </li>
     <li>
       Write set after baseline: 新規<code>src/modules/settings/llm-settings-query.ts</code>、
       <code>src/modules/settings/SettingsScreen.tsx</code
       >、<code>src/modules/settings/useLlmSettings.ts</code>、上記3 conflict file、
-      <code>tests/settings-screen-coverage.test.tsx</code>、<code
-        >tests/settings-llm-panel.test.tsx</code
-      >
+      <code>tests/settings-screen-coverage.test.tsx</code>、<code>tests/settings-llm-panel.test.tsx</code>
     </li>
     <li>
       Query contract:
       <code>llmSettingsQueryKeys</code
       >と<code>llmSettingsQueryOptions</code>を一つだけ定義し、SettingsScreenと
-      <code>useLlmSettings</code>で共有する。model options keyはproviderを含める。non-2xx/parse
-      failureは共通decoderでtyped errorにする。
+      <code>useLlmSettings</code>で共有する。model options
+      keyはproviderを含める。non-2xx/parse failureは共通decoderでtyped errorにする。
     </li>
     <li>
       Draft contract: remote
@@ -350,8 +375,9 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     </li>
     <li>
       Mutation: <code>saveLlmSettings</code>のresponse
-      bodyが正規化済み<code>LlmSettings</code>であることをroute testで確認する。返さないcontractなら
-      request payloadをcacheへ仮置きせずinvalidate+refetch完了後にdraftを同期する。
+      bodyが正規化済み<code>LlmSettings</code>であることをroute
+      testで確認する。返さないcontractなら request
+      payloadをcacheへ仮置きせずinvalidate+refetch完了後にdraftを同期する。
     </li>
     <li>
       Scope: general settings/Fxは別resourceとして独立queryにし、このticketで一つの巨大aggregate
@@ -367,14 +393,17 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
   </h3>
   <ul>
     <li>Findings: <code>M9</code></li>
-    <li>Depends on: <code>B-T3</code> status contract、<code>E-T3a</code> decoder</li>
+    <li>
+      Depends on: <code>B-T3</code> status contract、<code
+        >E-T3a</code
+      >
+      decoder
+    </li>
     <li>
       Write set: <code>src/modules/nightworkers/components/TaskConsolePage.tsx</code>、
       <code>src/modules/nightworkers/realtimeEvents.ts</code>（既存status
       helperをexport利用するだけなら変更不要）、
-      <code>tests/task-console-page-coverage.test.tsx</code>、新規<code
-        >tests/task-console-page.behavior.test.tsx</code
-      >
+      <code>tests/task-console-page-coverage.test.tsx</code>、新規<code>tests/task-console-page.behavior.test.tsx</code>
     </li>
     <li>
       State order:
@@ -384,9 +413,9 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     </li>
     <li>
       Polling: task/runs queryは公開active statusの間だけ3秒、run detailsは
-      <code>isTerminalRunStatus(query.state.data?.status)</code
-      >ならfalse、それ以外のenabled時だけ1.5秒。terminal snapshot受理後に older in-flight
-      responseが返ってもquery key/resource identityを照合しtimerを復活させない。
+      <code>isTerminalRunStatus(query.state.data?.status)</code>ならfalse、それ以外のenabled時だけ1.5秒。terminal
+      snapshot受理後に older in-flight responseが返ってもquery key/resource
+      identityを照合しtimerを復活させない。
     </li>
     <li>
       Review mutation: raw <code>fetch</code>を既存API client/command
@@ -405,18 +434,18 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     <li>Findings: <code>m7</code></li>
     <li>
       Write set:
-      <code>src/modules/project-evaluation/hooks/useProjectEvaluationController.ts</code>、
-      <code>tests/project-evaluation-controller-extra-coverage.test.ts</code>、
+      <code>src/modules/project-evaluation/hooks/useProjectEvaluationController.ts</code>、 <code>tests/project-evaluation-controller-extra-coverage.test.ts</code>、
       <code>tests/project-evaluation-controller-cache.test.ts</code>
     </li>
     <li>
       New state:
-      <code>activityCursorRef: {evaluationId:string|null; afterSeq:number}</code
-      >と<code>pollGenerationRef:number</code>。 evaluation選択/start時にdetailのmax
-      seqから初期化し、event merge時はrefだけを単調増加させる。
+      <code>activityCursorRef: {evaluationId:string|null; afterSeq:number}</code>と<code>pollGenerationRef:number</code>。
+      evaluation選択/start時にdetailのmax seqから初期化し、event merge時はrefだけを単調増加させる。
     </li>
     <li>
-      Effect dependency: <code>repositoryId</code>、<code>runningEvaluationId</code>、安定したAPI
+      Effect dependency:
+      <code>repositoryId</code
+      >、<code>runningEvaluationId</code>、安定したAPI
       callbackだけ。<code>detail?.activityEvents</code>を外す。
       cleanupでgenerationを増やし、古いresponseはrepository/evaluation/generation一致時だけapplyする。
     </li>
@@ -425,8 +454,8 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
       IDをnullにする。
     </li>
     <li>
-      Done: event追加で<code>setInterval</code>再生成なし、Strict Modeでactive timer
-      1個、run切替でcursor reset、旧run response破棄。
+      Done: event追加で<code>setInterval</code>再生成なし、Strict Modeでactive
+      timer 1個、run切替でcursor reset、旧run response破棄。
     </li>
   </ul>
   <h3 id="d-t4-overview-snapshotをtanstack-queryへ移す">
@@ -436,16 +465,16 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     <li>Findings: <code>m1</code></li>
     <li>
       Write set: 新規<code>src/modules/overview/overview-queries.ts</code>、
-      <code>src/modules/overview/useOverviewDashboard.ts</code
-      >、<code>tests/overview-coverage.test.ts</code>、
+      <code>src/modules/overview/useOverviewDashboard.ts</code>、<code>tests/overview-coverage.test.ts</code>、
       <code>tests/overview-components.test.tsx</code>
     </li>
     <li>
       Query key: <code>[&#39;overview&#39;, {range, repositoryId}]</code>をfactory化し、<code
         >overviewDashboardSchema</code
       >
-      parseとEのerror decoderを query functionへ置く。<code>refetchInterval: 15_000</code
-      >、AbortSignal、scope identityを使用する。
+      parseとEのerror decoderを query
+      functionへ置く。<code>refetchInterval: 15_000</code>、AbortSignal、scope
+      identityを使用する。
     </li>
     <li>
       UI state: startup
@@ -453,7 +482,9 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
       manual refreshの公開return shapeを維持する。
     </li>
     <li>
-      Remove: <code>mountedRef</code>、<code>requestSequenceRef</code>、manual
+      Remove:
+      <code>mountedRef</code
+      >、<code>requestSequenceRef</code>、manual
       intervalはQueryのcancellation/cacheへ置換する。
     </li>
     <li>
@@ -470,9 +501,7 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
     <li>
       Write set: 新規<code>src/modules/securityScan/security-scan-queries.ts</code>、
       <code>src/modules/securityScan/useSecurityScanController.ts</code>、
-      <code>tests/security-scan-controllers-coverage.test.ts</code>、<code
-        >tests/security-scan-components-coverage.test.tsx</code
-      >
+      <code>tests/security-scan-controllers-coverage.test.ts</code>、<code>tests/security-scan-components-coverage.test.tsx</code>
     </li>
     <li>
       Query targets: provider settings、capabilities(repository)、history(repository)、run
@@ -489,8 +518,8 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
       functionへそのまま移し、無限query化で意味を変えない。
     </li>
     <li>
-      Remove: module内<code>readResponse</code>をE decoderへ置換する。error message
-      keyword分類を追加しない。
+      Remove: module内<code>readResponse</code>をE decoderへ置換する。error
+      message keyword分類を追加しない。
     </li>
     <li>
       Done: initial partial failure、scan start/cancel、terminal polling stop、repository
@@ -502,21 +531,25 @@ rg -n &quot;window\.confirm|window\.alert|&gt;[[:space:]]*[A-Za-z][^&lt;{]*&lt;&
   </h3>
   <ul>
     <li>Findings: <code>m6</code></li>
-    <li>Depends on: <code>D-T0</code>, <code>D-T2</code></li>
     <li>
-      Write set: <code>src/routes/repositories.tsx</code>、<code>TaskConsolePage.tsx</code>、
-      <code>src/modules/nightworkers/components/NightWorkersShell.tsx</code
-      >、新規/既存の英日dictionary module、locale test
+      Depends on: <code>D-T0</code>,
+      <code>D-T2</code>
+    </li>
+    <li>
+      Write set:
+      <code>src/routes/repositories.tsx</code>、<code>TaskConsolePage.tsx</code>、
+      <code>src/modules/nightworkers/components/NightWorkersShell.tsx</code>、新規/既存の英日dictionary module、locale test
     </li>
     <li>
       Keys: repositoriesのheading/form/delete
       confirm/error/empty、TaskConsoleのloading/error/retry/status/action、
-      NightWorkersShellの既存<code>window.confirm</code>文言を英日両方へ追加する。API/terminal raw
-      contentは翻訳しない。
+      NightWorkersShellの既存<code>window.confirm</code>文言を英日両方へ追加する。API/terminal
+      raw contentは翻訳しない。
     </li>
     <li>
       Accessibility: error <code>role=alert</code>、loading container
-      <code>aria-busy=true</code>、retry/delete/review buttonにlocale別accessible nameを付ける。
+      <code>aria-busy=true</code>、retry/delete/review buttonにlocale別accessible
+      nameを付ける。
     </li>
     <li>
       Tests: translated textそのものだけをselectorにせずrole/nameでinteractionし、英日辞書key
@@ -620,8 +653,10 @@ bun run check:architecture
   <h2 id="section-12-完了条件">12. 完了条件</h2>
   <ul>
     <li>
-      <code>M7</code>, <code>M8</code>, <code>M9</code>, <code>m1</code>, <code>m6</code>,
-      <code>m7</code> の各 finding に実装 diff、test、または明示的な対象外根拠が紐づいている。
+      <code>M7</code>, <code>M8</code>,
+      <code>M9</code>, <code>m1</code>,
+      <code>m6</code>, <code>m7</code> の各
+      finding に実装 diff、test、または明示的な対象外根拠が紐づいている。
     </li>
     <li>同一 repository resource の query key が一意である。</li>
     <li>
@@ -631,7 +666,9 @@ bun run check:architecture
     <li>対象画面の利用者向け新規文言が辞書を経由する。</li>
     <li>typecheck、lint、対象 test、関連 architecture check が通る。</li>
     <li>
-      実装完了後、本書を <code>spec/docs/.archived</code> へ移し、<code>spec/docs</code>
+      実装完了後、本書を <code>spec/docs/.archived</code> へ移し、<code
+        >spec/docs</code
+      >
       に完了計画を残さない。
     </li>
   </ul>

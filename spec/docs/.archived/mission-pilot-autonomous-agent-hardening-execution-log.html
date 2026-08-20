@@ -5,17 +5,18 @@
   <h2 id="luna-handoff-2026-07-16-1158-jst">Luna Handoff 2026-07-16 11:58 JST</h2>
   <ul>
     <li>Plan: <code>spec/docs/mission-pilot-autonomous-agent-hardening-plan.html</code></li>
-    <li>Baseline commit: <code>4309d798</code> plus the pre-existing working tree listed below</li>
+    <li>
+      Baseline commit: <code>4309d798</code> plus the pre-existing working
+      tree listed below
+    </li>
     <li>
       Worktree policy: pre-existing changes are preserved; only task-owned hunks will be staged if
       commits are requested later.
     </li>
     <li>
       Baseline Mission Pilot tests:
-      <code
-        >node scripts/run-vitest.mjs run tests/mission-pilot-*.test.ts
-        tests/pilot-thought-dock.test.tsx</code
-      >
+      <code>node scripts/run-vitest.mjs run tests/mission-pilot-*.test.ts
+        tests/pilot-thought-dock.test.tsx</code>
       — 25 files, 141 tests passed.
     </li>
     <li>
@@ -44,9 +45,7 @@
     <li><code>tests/mission-pilot-agent-questionnaire.test.ts</code></li>
     <li><code>tests/nightworkers-workbench-routes/routes-workbench-04.test.ts</code></li>
     <li><code>tests/universal-task-creation.test.ts</code></li>
-    <li>
-      <code>api/modules/missionPilot/agent/mission-pilot-agent-active-registry.ts</code> (untracked)
-    </li>
+    <li><code>api/modules/missionPilot/agent/mission-pilot-agent-active-registry.ts</code> (untracked)</li>
     <li><code>api/modules/nightworkers/nightworkers.task-message-events.ts</code> (untracked)</li>
     <li><code>spec/docs/mission-pilot-autonomous-agent-hardening-plan.html</code> (untracked)</li>
   </ul>
@@ -150,8 +149,8 @@
         <td>passed</td>
         <td>working tree</td>
         <td>
-          31 files/170 tests; 9 combined Mission Pilot E2Es; <code>verify:base</code>; architecture;
-          docs
+          31 files/170 tests; 9 combined Mission Pilot E2Es;
+          <code>verify:base</code>; architecture; docs
         </td>
         <td>
           Autonomous, repeated repair, runtime reconstruction, user interruption, Questionnaire
@@ -187,8 +186,8 @@
       successful completion.
     </li>
     <li>
-      A5: Questionnaire submission failure stayed <code>playing</code> and preserved the failure
-      body in <code>questionnaire.submission_failed</code>.
+      A5: Questionnaire submission failure stayed <code>playing</code> and
+      preserved the failure body in <code>questionnaire.submission_failed</code>.
     </li>
     <li>A6: visible user question/wait/resume E2E passed.</li>
     <li>
@@ -203,8 +202,8 @@
       same conversation, and completed without legacy phase work.
     </li>
     <li>
-      A10: delayed terminal callbacks preserved explicit <code>completed</code> state and did not
-      overwrite a newer active Run.
+      A10: delayed terminal callbacks preserved explicit
+      <code>completed</code> state and did not overwrite a newer active Run.
     </li>
     <li>
       A production bootstrap ordering defect found during Questionnaire E2E was fixed:
@@ -218,13 +217,12 @@
       source-size and module-boundary limits.
     </li>
     <li>
-      <code>bun run verify:base</code> passed: tracked-artifact check, architecture, typecheck,
-      lint, and supervisor regression all passed.
+      <code>bun run verify:base</code> passed: tracked-artifact check, architecture,
+      typecheck, lint, and supervisor regression all passed.
     </li>
     <li>
-      <code>bun run check:docs</code>,
-      <code>node scripts/check-coding-agent-semantic-control.mjs</code>, and
-      <code>git diff --check</code> passed.
+      <code>bun run check:docs</code>, <code>node scripts/check-coding-agent-semantic-control.mjs</code>,
+      and <code>git diff --check</code> passed.
     </li>
     <li>
       H10 remains intentionally deferred: the plan requires an observation window after the release
@@ -238,19 +236,22 @@
   <h2 id="review-remediation-2026-07-16">Review remediation 2026-07-16</h2>
   <ul>
     <li>
-      Codex Mission Pilot tool turns now use a temporary isolated <code>CODEX_HOME</code>, copying
-      only <code>auth.json</code> with mode <code>0600</code>. This prevents user MCP/plugin
-      configuration from entering the Mission Pilot decision lane; the ineffective
+      Codex Mission Pilot tool turns now use a temporary isolated
+      <code>CODEX_HOME</code>, copying only
+      <code>auth.json</code> with mode
+      <code>0600</code>. This prevents user MCP/plugin configuration from
+      entering the Mission Pilot decision lane; the ineffective
       <code>features.mcp=false</code> assumption was removed.
     </li>
     <li>
-      <code>questionnaire.submit</code> is unavailable to the Mission Pilot agent. Draft save starts
-      the existing 20-second intervention UI, and submission remains on the timeout/user/resume
-      application path.
+      <code>questionnaire.submit</code> is unavailable to the Mission Pilot agent. Draft
+      save starts the existing 20-second intervention UI, and submission remains on the
+      timeout/user/resume application path.
     </li>
     <li>
-      Exceptions after a mutation receipt is claimed are persisted as <code>outcome_unknown</code>,
-      preventing an unverified retry from duplicating a possibly completed side effect.
+      Exceptions after a mutation receipt is claimed are persisted as
+      <code>outcome_unknown</code>, preventing an unverified retry from duplicating a
+      possibly completed side effect.
     </li>
     <li>
       Immediate and future wake scheduling use per-session generation guards. Stop invalidates DB
@@ -264,7 +265,8 @@
     <li>Full regression: 316 files, 1,959 tests passed.</li>
     <li>
       <code>bun run typecheck</code>, <code>bun run lint</code>,
-      <code>bun run check:architecture</code>, and <code>git diff --check</code> passed.
+      <code>bun run check:architecture</code>, and
+      <code>git diff --check</code> passed.
     </li>
     <li>Development server ports remained closed during review.</li>
   </ul>

@@ -10,8 +10,8 @@
     <li>Default activation: OFF</li>
     <li>Applies to: NightWorkers、vulnWorkbench、contextStill</li>
     <li>
-      Completion authority: capability別のdated <code>GO | ITERATE | STOP</code> decision backed by
-      the evidence below
+      Completion authority: capability別のdated <code>GO | ITERATE | STOP</code> decision
+      backed by the evidence below
     </li>
     <li>
       Completion evidence:
@@ -28,8 +28,8 @@
   </p>
   <p>
     証跡はvulnWorkbenchの
-    <code>spec/evidence/security-intelligence-integrity-smoke-template.json</code>（v2）へ記録する。
-    旧paired pilot evidence v1は履歴互換専用であり、新しい判断には使用しない。
+    <code>spec/evidence/security-intelligence-integrity-smoke-template.json</code>（v2）へ記録する。 旧paired pilot evidence
+    v1は履歴互換専用であり、新しい判断には使用しない。
   </p>
   <h2 id="p0-実行前固定--preflight">P0: 実行前固定 / preflight</h2>
   <ul>
@@ -38,16 +38,16 @@
       tree、provider project、allowlistを固定する。
     </li>
     <li>
-      <input checked="" disabled="" type="checkbox" /> vulnWorkbenchで<code
-        >bun run verify:security-intelligence-cross-repo-fixtures</code
-      >を実行し、 5 fixture groupすべてのsemantic digest一致を確認してv2証跡へ記録する。
+      <input checked="" disabled="" type="checkbox" />
+      vulnWorkbenchで<code>bun run verify:security-intelligence-cross-repo-fixtures</code>を実行し、 5 fixture
+      groupすべてのsemantic digest一致を確認してv2証跡へ記録する。
       不一致またはdigest未記録の場合はここで停止する。
     </li>
     <li>
       <input checked="" disabled="" type="checkbox" /> Project
       declarationをrevision/digest付きで検証できない場合、証跡の
-      <code>declarationScope</code>を<code>transport_integrity_only</code>とし、Project
-      Loop完成を主張しない。
+      <code>declarationScope</code
+      >を<code>transport_integrity_only</code>とし、Project Loop完成を主張しない。
     </li>
     <li>
       <input checked="" disabled="" type="checkbox" /> Security Intelligence endpoint、workspace
@@ -93,7 +93,8 @@
   </ul>
   <p>
     Stage 2 integrity PASSは、fixture一致、同一Run traceability、4つのidentity拒否、privacy、
-    rollbackの全条件が通った状態を指す。これは最終rollout <code>GO</code>ではない。
+    rollbackの全条件が通った状態を指す。これは最終rollout
+    <code>GO</code>ではない。
   </p>
   <h2 id="p2-stage-3-shadow-smoke">P2: Stage 3 shadow smoke</h2>
   <ul>
@@ -159,10 +160,8 @@
     </li>
     <li>
       <input checked="" disabled="" type="checkbox" /> 完成した証跡をvulnWorkbenchの
-      <code
-        >bun run verify:security-intelligence-integrity-evidence -- --evidence
-        &lt;artifact&gt;</code
-      >で検証する。
+      <code>bun run verify:security-intelligence-integrity-evidence -- --evidence
+        &lt;artifact&gt;</code>で検証する。
     </li>
   </ul>
   <h2 id="completion">Completion</h2>

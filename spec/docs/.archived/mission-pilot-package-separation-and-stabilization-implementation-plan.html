@@ -21,8 +21,9 @@
     projectではなく、root toolchainで型検査・buildされるsource boundaryである。
   </p>
   <p>
-    2026-07-31の設計修正により、Mission Pilot境界は独自の<code>package.json</code>、Drizzle
-    instance、LibSQL clientを持たない。SQLite
+    2026-07-31の設計修正により、Mission
+    Pilot境界は独自の<code>package.json</code>、Drizzle instance、LibSQL
+    clientを持たない。SQLite
     schema、bootstrap、transaction、repositoryはNightWorkers本体の<code>api/modules/missionPilot/persistence</code>が所有し、<code>api/composition/mission-pilot</code>だけが取得できる非HTTP
     capabilityをpackageへ注入する。本修正は、複数DB clientによる同時書込み競合と、汎用DB
     endpoint化による権限拡大を防ぐため、以降の旧workspace/package-owned persistence記述に優先する。
@@ -141,8 +142,8 @@
   <ul>
     <li>正本は<code>api/modules/planMode</code>が所有する。</li>
     <li>
-      <code>api/modules/planMode/**</code>と<code>src/modules/planMode/**</code>はMission Pilot
-      packageをimportしない。
+      <code>api/modules/planMode/**</code
+      >と<code>src/modules/planMode/**</code>はMission Pilot packageをimportしない。
     </li>
     <li>
       Mission Pilot packageはPlan Mode route、service、repository、reader/writer portを所有しない。
@@ -159,7 +160,9 @@
   </ul>
   <h3 id="section-24-host-and-package">2.4 Host and package</h3>
   <ul>
-    <li>packageには<code>package.json</code>と専用<code>tsconfig.json</code>を置かない。</li>
+    <li>
+      packageには<code>package.json</code>と専用<code>tsconfig.json</code>を置かない。
+    </li>
     <li>packageはNightWorkersのprivate moduleを相対importしない。</li>
     <li>NightWorkers本体はpackageの明示exportだけをimportする。</li>
     <li>
@@ -206,8 +209,8 @@
       <code>db</code> schemaへ混ぜる。
     </li>
     <li>
-      <code>api/server.ts</code>がMission Pilot startup reconciliationとQuestionnaire
-      timerを直接起動する。
+      <code>api/server.ts</code>がMission Pilot startup
+      reconciliationとQuestionnaire timerを直接起動する。
     </li>
     <li>
       frontendのcore realtime hookが<code>mission_pilot.updated</code>を直接処理し、Task
@@ -302,7 +305,9 @@ Mission Pilot package ──X──&gt; Plan Mode internals
   <h2 id="section-5-pure-typescript-boundary-design">5. Pure TypeScript Boundary Design</h2>
   <h3 id="section-51-root-typescript-resolution">5.1 Root TypeScript resolution</h3>
   <p>
-    root <code>package.json</code>へworkspace設定や<code>@nightworkers/mission-pilot</code>
+    root <code>package.json</code>へworkspace設定や<code
+      >@nightworkers/mission-pilot</code
+    >
     dependencyを追加しない。root
     <code>tsconfig.json</code
     >は<code>packages/mission-pilot/src/**/*</code>を検査対象に含め、次の完全一致aliasだけを公開surfaceとして解決する。
@@ -318,14 +323,17 @@ Mission Pilot package ──X──&gt; Plan Mode internals
   <p>禁止事項:</p>
   <ul>
     <li>
-      <code>packages/mission-pilot/package.json</code
-      >と<code>packages/mission-pilot/tsconfig.json</code>。
+      <code>packages/mission-pilot/package.json</code>と<code>packages/mission-pilot/tsconfig.json</code>。
     </li>
     <li><code>&quot;.&quot;</code>のbroad export。</li>
     <li>internal directoryのwildcard export。</li>
     <li>repository、DB schema、prompt、service classの個別export。</li>
     <li>package内部fileへのdeep import。</li>
-    <li><code>api/**</code>、<code>src/**</code>、<code>shared/**</code>へのrelative import。</li>
+    <li>
+      <code>api/**</code
+      >、<code>src/**</code>、<code>shared/**</code>へのrelative
+      import。
+    </li>
     <li>Coding Agent SDKまたはfilesystem/Git libraryのdependency追加。</li>
   </ul>
   <h3 id="section-53-package-layout">5.3 Package layout</h3>
@@ -371,7 +379,9 @@ Mission Pilot package ──X──&gt; Plan Mode internals
       fakes/
       index.ts
 </code></pre>
-  <p><code>AGENTS.md</code>には、少なくとも次をpackage-local ruleとして置く。</p>
+  <p>
+    <code>AGENTS.md</code>には、少なくとも次をpackage-local ruleとして置く。
+  </p>
   <ul>
     <li>repository、filesystem、Git、shellへアクセスしない。</li>
     <li>Coding Agent、Plan Mode、NightWorkers repositoryをimportしない。</li>
@@ -438,8 +448,9 @@ export function MissionPilotControl(props: { taskId: string; client: MissionPilo
 export function MissionPilotTimelineCard(...): JSX.Element;
 </code></pre>
   <p>
-    package componentは<code>NightWorkersShell</code>、<code>ThreadMessage</code>、workbench route
-    state、core
+    package
+    componentは<code>NightWorkersShell</code>、<code>ThreadMessage</code>、workbench
+    route state、core
     Task型をimportしない。hostから渡す値は<code>taskId</code>、表示slot、callback等の最小view
     contractにする。
   </p>
@@ -478,15 +489,25 @@ export function MissionPilotTimelineCard(...): JSX.Element;
 </code></pre>
   <p>port名が同じでも、Mission Pilot専用の裏口を実装してはならない。</p>
   <ul>
-    <li><code>taskOperator.query</code>はTask Operator公開resource queryへそのまま接続する。</li>
-    <li><code>taskOperator.execute</code>はTask Operator公開action commandへそのまま接続する。</li>
+    <li>
+      <code>taskOperator.query</code>はTask Operator公開resource
+      queryへそのまま接続する。
+    </li>
+    <li>
+      <code>taskOperator.execute</code>はTask Operator公開action
+      commandへそのまま接続する。
+    </li>
     <li>
       <code>taskIntake.submitUserMessage</code>は人間UIが初期Promptを送るものと同じTask intake
       commandへ接続する。
     </li>
-    <li><code>events.subscribe</code>はtyped public application eventだけを配信する。</li>
+    <li>
+      <code>events.subscribe</code>はtyped public application eventだけを配信する。
+    </li>
     <li><code>structuredLlm.generate</code>はstateless provider callに限定する。</li>
-    <li><code>authorization</code>は人間ユーザーと同じtask access policyを使う。</li>
+    <li>
+      <code>authorization</code>は人間ユーザーと同じtask access policyを使う。
+    </li>
   </ul>
   <p>禁止するport例:</p>
   <ul>
@@ -502,8 +523,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   <h2 id="section-8-core-task-decoupling">8. Core Task Decoupling</h2>
   <h3 id="section-81-neutral-task">8.1 Neutral Task</h3>
   <p>
-    core Task responseから必須の<code>missionPilot</code> fieldを外す。TaskはMission Pilot
-    sessionが存在しなくても正当である。
+    core Task responseから必須の<code>missionPilot</code>
+    fieldを外す。TaskはMission Pilot sessionが存在しなくても正当である。
   </p>
   <p>廃止対象:</p>
   <ul>
@@ -514,7 +535,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   </ul>
   <p>置換後:</p>
   <ul>
-    <li>全Task作成元はAgent非依存の<code>createTask</code>だけを使用する。</li>
+    <li>
+      全Task作成元はAgent非依存の<code>createTask</code>だけを使用する。
+    </li>
     <li>
       <code>mission-planner</code
       >、<code>taskGeneration</code>、<code>project-evaluation</code>、<code>quality</code>もneutral
@@ -548,8 +571,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   </ul>
   <h3 id="section-83-atomic-apiui-cutover">8.3 Atomic API/UI cutover</h3>
   <p>
-    core Taskから<code>missionPilot</code>を外す変更と、frontendがpackage control
-    queryを使う変更は同一checkpointで切り替える。旧Task
+    core Taskから<code>missionPilot</code>を外す変更と、frontendがpackage
+    control queryを使う変更は同一checkpointで切り替える。旧Task
     fieldと新queryをproductionで長期間dual-readしない。
   </p>
   <p>
@@ -566,8 +589,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     instanceへschemaを統合し、Mission Pilot packageに別clientを作らない。
   </p>
   <p>
-    packageが利用できるのは<code>executeMissionPilotPersistence({ operation, args })</code
-    >のin-process callbackだけである。operationはcompile-time listとcore handler
+    packageが利用できるのは<code>executeMissionPilotPersistence({ operation, args })</code>のin-process
+    callbackだけである。operationはcompile-time listとcore handler
     mapの両方で固定し、任意SQL、table名、DB
     client、transactionを受け付けない。このcallbackはHTTP、OpenAPI、router、public backend
     indexへ公開しない。
@@ -683,8 +706,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     <li>user/error keyword分岐。</li>
   </ul>
   <p>
-    <code>api/app.ts</code>と<code>api/server.ts</code>はcomposition
-    entryを呼ぶだけに縮小し、Mission Pilot service、repository、timer関数を直接importしない。
+    <code>api/app.ts</code
+    >と<code>api/server.ts</code>はcomposition entryを呼ぶだけに縮小し、Mission
+    Pilot service、repository、timer関数を直接importしない。
   </p>
   <h2 id="section-11-mission-pilot-runtime-flow">11. Mission Pilot Runtime Flow</h2>
   <h3 id="section-111-play-and-initial-prompt">11.1 Play and initial prompt</h3>
@@ -780,8 +804,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   </p>
   <p>
     include/omitと理由はtask-keyed
-    routingへ保存し、<code>plan_mode.routing_changed</code>でUIへ通知する。Mission Pilotのlocal
-    sessionだけへ保存しない。
+    routingへ保存し、<code>plan_mode.routing_changed</code>でUIへ通知する。Mission
+    Pilotのlocal sessionだけへ保存しない。
   </p>
   <p>
     Mission Pilot稼働中でもUIのArtifact selectionをdisabledにしない。ユーザー変更とMission Pilot
@@ -790,8 +814,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   </p>
   <h3 id="section-115-implementation-start">11.5 Implementation start</h3>
   <p>
-    Artifact準備後の実装開始は、Task Operatorの<code>run.implementation.start</code>を使う。Coding
-    Agent route/service/repositoryを直接呼ばない。
+    Artifact準備後の実装開始は、Task
+    Operatorの<code>run.implementation.start</code>を使う。Coding Agent
+    route/service/repositoryを直接呼ばない。
   </p>
   <p>
     Mission Pilot handoffのprovenanceはRunへ構造的に保存するが、Coding
@@ -864,8 +889,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     registrationが必要なら、generic registrationまたはcomposition contributionとして受け取る。
   </p>
   <p>
-    frontendではcore <code>useNightWorkersRealtime</code>からMission Pilot importとTask cache
-    mutationを外す。
+    frontendではcore <code>useNightWorkersRealtime</code>からMission Pilot importとTask
+    cache mutationを外す。
   </p>
   <pre><code class="language-text">core realtime transport
   -&gt; core handlers update core query cache
@@ -878,9 +903,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     cacheへ<code>missionPilot</code>を埋め戻さない。
   </p>
   <p>
-    event payloadを全面的な<code>unknown</code>へ弱めず、boundaryでpackage contract
-    schemaにより検証する。unknown event typeはcore transportが安全に無視し、既知typeのinvalid
-    payloadは構造化logへ出す。
+    event payloadを全面的な<code>unknown</code>へ弱めず、boundaryでpackage
+    contract schemaにより検証する。unknown event typeはcore
+    transportが安全に無視し、既知typeのinvalid payloadは構造化logへ出す。
   </p>
   <h2 id="section-14-frontend-composition">14. Frontend Composition</h2>
   <p>frontend接続は<code>src/composition/mission-pilot/**</code>に限定する。</p>
@@ -930,7 +955,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     <li>Coding Agent standalone boundary script</li>
     <li>Task Operator boundary script</li>
   </ul>
-  <p>root <code>AGENTS.md</code>のAgent固有production locationは次へ更新する。</p>
+  <p>
+    root <code>AGENTS.md</code>のAgent固有production locationは次へ更新する。
+  </p>
   <ul>
     <li>
       Coding
@@ -955,8 +982,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
       importを禁止する。
     </li>
     <li>
-      <code>api/modules/planMode/**</code>、<code>src/modules/planMode/**</code>からpackage
-      importを禁止する。
+      <code>api/modules/planMode/**</code
+      >、<code>src/modules/planMode/**</code>からpackage importを禁止する。
     </li>
     <li>
       packageから<code>api/**</code>、<code>src/**</code>、<code>shared/**</code>へのsource
@@ -975,8 +1002,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
       schemaがないことを検査する。
     </li>
     <li>
-      rootで<code>missionPilot</code> identifierを許す場所を、composition、SystemContext、historical
-      migration、package integration testへ限定する。
+      rootで<code>missionPilot</code>
+      identifierを許す場所を、composition、SystemContext、historical migration、package integration
+      testへ限定する。
     </li>
     <li>architecture scan対象へ<code>packages/**</code>を含める。</li>
     <li>dynamic import、type-only import、re-exportも同じ規則で検査する。</li>
@@ -1041,8 +1069,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
       <code>AGENTS.md</code>。
     </li>
     <li>
-      root <code>AGENTS.md</code>とontologyへ最終配置ルール、および期限付きshrink-only migration
-      ledgerを追加する。
+      root
+      <code>AGENTS.md</code
+      >とontologyへ最終配置ルール、および期限付きshrink-only migration ledgerを追加する。
     </li>
     <li>architecture scriptsを<code>packages/**</code>対応にする。</li>
     <li>packageからroot private sourceへのimport禁止。</li>
@@ -1098,7 +1127,10 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   <ul>
     <li>neutral Task schemaへ切り替える。</li>
     <li><code>taskWithMissionPilotSchema</code>利用を除去する。</li>
-    <li><code>createTaskWithMissionPilot</code>をAgent非依存<code>createTask</code>へ置換する。</li>
+    <li>
+      <code>createTaskWithMissionPilot</code
+      >をAgent非依存<code>createTask</code>へ置換する。
+    </li>
     <li>Task作成時session作成を廃止する。</li>
     <li>Mission Pilot summary queryを独立させる。</li>
     <li>frontendはTask fieldではなくsummary queryを読む。</li>
@@ -1131,8 +1163,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     <li>coreの単一Drizzle/libSQL pathへschemaを統合する。</li>
     <li>packageへ固定operation allowlistの非HTTP capabilityを注入する。</li>
     <li>
-      packageの<code>drizzle-orm</code>、<code>@libsql/client</code>、DB client/schema
-      importを0件にする。
+      packageの<code>drizzle-orm</code>、<code>@libsql/client</code>、DB
+      client/schema importを0件にする。
     </li>
     <li>Mission Pilot固有provenance backfillをcore bootstrapへ移す。</li>
     <li>role名付きcore physical columnsへ中立column migrationを追加する。</li>
@@ -1161,7 +1193,8 @@ export function MissionPilotTimelineCard(...): JSX.Element;
     <li>package backendをhost portsだけで動かす。</li>
     <li>router/runtime/storageをexplicit factoryからcompositionする。</li>
     <li>
-      <code>api/app.ts</code>と<code>api/server.ts</code>のdirect service
+      <code>api/app.ts</code
+      >と<code>api/server.ts</code>のdirect service
       import、timer、reconciliationをcompositionへ置換する。
     </li>
     <li>old backend/shared directoryとcompatibility re-exportを削除する。</li>
@@ -1190,7 +1223,9 @@ export function MissionPilotTimelineCard(...): JSX.Element;
   <ul>
     <li><code>src/modules/missionPilot/**</code>をpackage frontendへ移す。</li>
     <li>package client、components、hooks、i18n、CSSをexplicit exportする。</li>
-    <li><code>src/composition/mission-pilot</code>でshell slotとrealtime extensionへ接続する。</li>
+    <li>
+      <code>src/composition/mission-pilot</code>でshell slotとrealtime extensionへ接続する。
+    </li>
     <li>core Task cacheからMission Pilot fieldを完全除去する。</li>
     <li>old frontend pathとcompatibility re-exportを削除する。</li>
   </ul>
@@ -1380,7 +1415,10 @@ bun run check:docs
     <li><code>api/modules/nightworkers/**</code>のTask neutralization</li>
     <li><code>shared/schemas/**</code>のTask shape neutralization</li>
     <li><code>api/db/**</code>のschema separationとadditive migration</li>
-    <li><code>api/app.ts</code>、<code>api/server.ts</code>のcomposition</li>
+    <li>
+      <code>api/app.ts</code
+      >、<code>api/server.ts</code>のcomposition
+    </li>
     <li>root frontend shell/realtime/CSS/i18n composition</li>
     <li><code>api/systemContexts</code>のpackage binding接続</li>
   </ul>
@@ -1407,9 +1445,10 @@ bun run check:docs
     <li>packageはNightWorkers private sourceをimportしない。</li>
     <li>
       Coding AgentとPlan Modeからpackageへのdirect/transitive dependencyがない。 5a.
-      <code>packages/mission-pilot/package.json</code>と専用<code>tsconfig.json</code>が存在しない。
-      5b. package内の<code>drizzle-orm</code>、<code>@libsql/client</code>、DB client/schema
-      importが0件である。 5c. persistence
+      <code>packages/mission-pilot/package.json</code
+      >と専用<code>tsconfig.json</code>が存在しない。 5b.
+      package内の<code>drizzle-orm</code>、<code>@libsql/client</code>、DB
+      client/schema importが0件である。 5c. persistence
       capabilityは非HTTPで、任意SQLを受け付けず、compositionからpackageへだけ注入される。
     </li>
     <li>Mission Pilot sessionなしでTaskとCoding Agentが正常動作する。</li>

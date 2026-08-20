@@ -18,9 +18,7 @@
     <li>
       Authority:
       <ul>
-        <li>
-          Role/module境界は<code>spec/docs/mission-pilot-coding-agent-module-separation-plan.html</code>を継承する。
-        </li>
+        <li>Role/module境界は<code>spec/docs/mission-pilot-coding-agent-module-separation-plan.html</code>を継承する。</li>
         <li>
           S11t
           runtime、CLI、生成物、canary、検証規則は<code>spec/s11t-coding-agent-guide.md</code>を継承する。
@@ -60,7 +58,8 @@
     </li>
     <li>Runの関連付けと復旧はTask Operator receipt / resource refを正本にした。</li>
     <li>
-      <code>questionnaire.submit</code>はMission Pilotへ公開せず、20秒のユーザー介入契約を維持した。
+      <code>questionnaire.submit</code>はMission
+      Pilotへ公開せず、20秒のユーザー介入契約を維持した。
     </li>
     <li>
       <code>plan.artifact.regenerate</code>はorphan actionとして残さず、型別の共通Artifact
@@ -78,9 +77,8 @@
     </li>
   </ul>
   <p>
-    実装中に、provider fixtureが<code>implementation</code> scope未登録時にMission Pilot用<code
-      >default</code
-    >
+    実装中に、provider fixtureが<code>implementation</code> scope未登録時にMission
+    Pilot用<code>default</code>
     scopeへfallbackする問題を検出した。scopeは完全一致へ変更し、異なるroleのturnを消費しない。
     また、Bun SQLiteとlibSQLの同一DB併用によるwrite lockを検出し、同期queryもlibSQLへ統一した。
   </p>
@@ -170,8 +168,8 @@ shared/modules/codingAgent/**
       Pilot固有fieldやrole分岐を置き、そこを介して結合する実装。
     </li>
     <li>
-      <code>agentsShare</code>へrole固有repository、route、continuation、semantic
-      decisionを移して境界を迂回する実装。
+      <code>agentsShare</code
+      >へrole固有repository、route、continuation、semantic decisionを移して境界を迂回する実装。
     </li>
   </ul>
   <h3 id="section-04-許可する依存">0.4 許可する依存</h3>
@@ -240,7 +238,10 @@ shared/modules/codingAgent/**
       </tr>
       <tr>
         <td>F4</td>
-        <td><code>questionnaire.submit</code>がcomment、test、実行ログで異なる扱いになっている</td>
+        <td>
+          <code>questionnaire.submit</code
+          >がcomment、test、実行ログで異なる扱いになっている
+        </td>
         <td>ユーザー介入を迂回する、またはMission Pilotが停止する</td>
         <td>R2、R3</td>
       </tr>
@@ -256,7 +257,8 @@ shared/modules/codingAgent/**
       <tr>
         <td>F6</td>
         <td>
-          Mission Pilot action復旧がRun DBと<code>coding_agent.requested</code> payloadを探索する
+          Mission Pilot action復旧がRun DBと<code>coding_agent.requested</code>
+          payloadを探索する
         </td>
         <td>Coding Agent保存形式への隠れた依存</td>
         <td>R4</td>
@@ -449,7 +451,10 @@ completed
   <p>Mission PilotはCoding Agent内部のtool、mode、Todo、実行順を指定しない。</p>
   <h3 id="section-35-run評価とtask完了">3.5 Run評価とTask完了</h3>
   <p>Run成功はTask完了ではない。</p>
-  <p>Mission PilotはTask Operatorの<code>run_outcome</code> resourceから次を読む。</p>
+  <p>
+    Mission PilotはTask Operatorの<code>run_outcome</code>
+    resourceから次を読む。
+  </p>
   <ul>
     <li>terminal status。</li>
     <li>final report。</li>
@@ -466,7 +471,8 @@ completed
     commandがpreconditionを満たした場合だけである。
   </p>
   <p>
-    <code>agent.finish</code>はMission Pilot runtimeを終了するだけであり、Taskを暗黙完了しない。
+    <code>agent.finish</code>はMission Pilot
+    runtimeを終了するだけであり、Taskを暗黙完了しない。
   </p>
   <hr />
   <h2 id="section-4-canonical-user-equivalent-task-operator-contract">
@@ -508,8 +514,8 @@ completed
 };
 </code></pre>
   <p>
-    Mission Pilotは<code>available</code>のactionだけを実行できる。 availabilityをMission
-    Pilot側のscope mapや固定phaseで上書きしない。
+    Mission Pilotは<code>available</code>のactionだけを実行できる。
+    availabilityをMission Pilot側のscope mapや固定phaseで上書きしない。
   </p>
   <h3 id="section-43-delegated-user-principal">4.3 Delegated user principal</h3>
   <p>
@@ -587,7 +593,8 @@ completed
     <tbody>
       <tr>
         <td>
-          <code>questionnaire.draft.update</code>と<code>questionnaire.draft.save</code>が同じ処理
+          <code>questionnaire.draft.update</code
+          >と<code>questionnaire.draft.save</code>が同じ処理
         </td>
         <td>一つを正本にし、必要なら他方を期限付きcompatibility aliasとする</td>
       </tr>
@@ -650,7 +657,8 @@ Agent非依存event:
   task_run.failed
 </code></pre>
   <p>
-    Mission Pilotは<code>startCodingAgentRun</code>、<code>resumeCodingAgentRunTodo</code>、Coding
+    Mission
+    Pilotは<code>startCodingAgentRun</code>、<code>resumeCodingAgentRunTodo</code>、Coding
     Agent handler、Coding Agent eventを知らない。
   </p>
   <h3 id="section-52-task-operator内部adapter">5.2 Task Operator内部adapter</h3>
@@ -704,7 +712,8 @@ Agent非依存event:
   <p>同じterminal eventを複数listener経路で生成しない。 event IDでidempotentに保存する。</p>
   <h3 id="section-55-outcome">5.5 Outcome</h3>
   <p>
-    Mission PilotはRun DBを直接読まず、Task Operatorのbounded <code>run_outcome</code> queryを使う。
+    Mission PilotはRun DBを直接読まず、Task Operatorのbounded
+    <code>run_outcome</code> queryを使う。
     reportが大きい場合はdigestとpagingを返し、正本を改変しない。
   </p>
   <hr />
@@ -774,7 +783,10 @@ Agent非依存event:
   <ol>
     <li>working treeを記録する。</li>
     <li>Mission Pilot、Task Operator、Queue、agentsShareの関連fileを分類する。</li>
-    <li>production <code>/play</code>からpersistent runtimeまでのimport graphを記録する。</li>
+    <li>
+      production <code>/play</code>からpersistent runtimeまでのimport
+      graphを記録する。
+    </li>
     <li>旧coordinatorの全consumerを記録する。</li>
     <li>action registryとTask Operator catalogの差分を機械的に記録する。</li>
     <li>Mission Pilot moduleから共有DB tableへのimportを列挙する。</li>
@@ -848,7 +860,9 @@ Agent非依存event:
       <code>plan.artifact.regenerate</code>を実行可能な正本commandへ追加するか、Mission Pilot
       definitionから削除する。
     </li>
-    <li><code>questionnaire.submit</code>をMission Pilot delegated catalogから除外する。</li>
+    <li>
+      <code>questionnaire.submit</code>をMission Pilot delegated catalogから除外する。
+    </li>
     <li>
       <code>questionnaire.draft.update</code
       >と<code>questionnaire.draft.save</code>の正本を一つにする。
@@ -913,20 +927,22 @@ Agent非依存event:
   </p>
   <h3 id="作業-3">作業</h3>
   <ol>
-    <li><code>run.implementation.start</code>のraw resultをTask Operator receiptへ正規化する。</li>
+    <li>
+      <code>run.implementation.start</code>のraw resultをTask Operator receiptへ正規化する。
+    </li>
     <li>Run refをreceiptの<code>resourceRefs</code>へ保存する。</li>
     <li>
-      <code>run.todo.resume</code>と<code>run.stop</code>も同じreceipt / failure shapeへ統一する。
+      <code>run.todo.resume</code
+      >と<code>run.stop</code>も同じreceipt / failure shapeへ統一する。
     </li>
     <li>Queue commandはQueue entry refを返す。</li>
     <li>Mission Pilot action receiptはTask Operator receipt refだけを保存する。</li>
     <li>
-      <code>mission-pilot-action-execution.repository.ts</code>からRun table scanとevent
-      payload解析を削除する。
+      <code>mission-pilot-action-execution.repository.ts</code>からRun table scanとevent payload解析を削除する。
     </li>
     <li>
-      <code>mission-pilot-run-outcome.adapter.ts</code>等の直接DB queryを削除し、Task Operator
-      resource queryへ統一する。
+      <code>mission-pilot-run-outcome.adapter.ts</code>等の直接DB queryを削除し、Task Operator resource
+      queryへ統一する。
     </li>
     <li>Terminal eventはAgent非依存event IDでidempotentにinboxへ保存する。</li>
     <li>
@@ -947,7 +963,9 @@ Agent非依存event:
       Mission Pilot production
       codeに<code>taskRuns</code>、<code>taskRunCommitRecords</code>、<code>taskRunActionRecords</code>のimportがない。
     </li>
-    <li>Mission Pilot production codeに<code>coding_agent.requested</code>のparseがない。</li>
+    <li>
+      Mission Pilot production codeに<code>coding_agent.requested</code>のparseがない。
+    </li>
     <li>crash後に同一Task Operator receiptからRun refを復元できる。</li>
     <li>Start、resume、stop、outcome、terminal eventが同じRun refで結ばれる。</li>
     <li>QueueのMission Pilot固有provenance fieldへ依存しない。</li>
@@ -1020,8 +1038,8 @@ Agent非依存event:
   </h2>
   <h3 id="目的-7">目的</h3>
   <p>
-    fixtureだけでなく、実際の<code>/play</code>、persistent runtime、provider、Task Operator、Run
-    eventを通して動作を証明する。
+    fixtureだけでなく、実際の<code>/play</code>、persistent
+    runtime、provider、Task Operator、Run eventを通して動作を証明する。
   </p>
   <h3 id="integration-scenarios">Integration scenarios</h3>
   <ol>
@@ -1029,11 +1047,13 @@ Agent非依存event:
     <li>Questionnaire draft save → intervention → state changed →再評価。</li>
     <li>Artifact生成 →不備評価 →再生成。</li>
     <li>
-      <code>run.implementation.start</code> → Run ref receipt → terminal event → outcome read。
+      <code>run.implementation.start</code> → Run ref receipt → terminal event → outcome
+      read。
     </li>
     <li>Run failure →具体的な修正依頼 →別Run →再評価。</li>
     <li>
-      Run success → verification評価 → <code>task.complete</code> → <code>agent.finish</code>。
+      Run success → verification評価 → <code>task.complete</code> →
+      <code>agent.finish</code>。
     </li>
     <li>user message割り込み →同じconversationで再評価。</li>
     <li>Stop → in-flight provider/tool停止 →再起動しない。</li>
@@ -1044,8 +1064,8 @@ Agent非依存event:
   </ol>
   <h3 id="live-testの修正">Live testの修正</h3>
   <p>
-    既存<code>tests/live/mission-pilot-plan-pipeline-live.test.ts</code>をproduction証拠として扱わない。
-    新しいlive testは次を満たす。
+    既存<code>tests/live/mission-pilot-plan-pipeline-live.test.ts</code>をproduction証拠として扱わない。 新しいlive
+    testは次を満たす。
   </p>
   <ul>
     <li>公開<code>/mission-pilot/tasks/:taskId/play</code>を呼ぶ。</li>
@@ -1435,7 +1455,8 @@ NIGHTWORKERS_LIVE_MISSION_PILOT_MODEL=gpt-5.6-sol \
     <li>一つのCheckpointだけを進める。</li>
     <li>Checkpoint開始時に対象fileと既存dirty hunksを記録する。</li>
     <li>
-      <code>git reset --hard</code>、<code>git checkout --</code>、<code>git restore</code>、working
+      <code>git reset --hard</code
+      >、<code>git checkout --</code>、<code>git restore</code>、working
       tree全体のstashを使用しない。
     </li>
     <li>rollbackはそのCheckpointで追加したhunkだけを明示的に戻す。</li>
@@ -1486,7 +1507,10 @@ NIGHTWORKERS_LIVE_MISSION_PILOT_MODEL=gpt-5.6-sol \
     </li>
     <li>Coding Agentがrepository調査、編集、command、Todo、検証、結果生成を所有する。</li>
     <li>Run成功だけでTaskが完了しない。</li>
-    <li><code>task.complete</code>と<code>agent.finish</code>が分離される。</li>
+    <li>
+      <code>task.complete</code
+      >と<code>agent.finish</code>が分離される。
+    </li>
     <li>hostが意味判断や固定workflowを所有しない。</li>
   </ul>
   <h3 id="dependency">Dependency</h3>

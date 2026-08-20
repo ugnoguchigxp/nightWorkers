@@ -121,14 +121,17 @@
       <code>api/modules/nightworkers/run-orchestration/start-task-run-runtime-context.ts</code
       >は、<code>planModeRequested</code>から<code>plan</code>または<code>implementation</code>を解決する。
     </li>
-    <li>runtime registryへ渡す<code>llmRouting</code>にもactive roleとrouteが存在する。</li>
     <li>
-      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-request-adapter.ts</code
-      >は、provider request生成時に<code>role = &quot;implementation&quot;</code>を固定する。
+      runtime registryへ渡す<code>llmRouting</code>にもactive
+      roleとrouteが存在する。
     </li>
     <li>
-      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-runner-routing.ts</code
-      >は、active roleだけでなく全roleのroute keyを許可するため、取り違えを検出しない。
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-request-adapter.ts</code>は、provider
+      request生成時に<code>role = &quot;implementation&quot;</code>を固定する。
+    </li>
+    <li>
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-runner-routing.ts</code>は、active roleだけでなく全roleのroute
+      keyを許可するため、取り違えを検出しない。
     </li>
   </ul>
   <h3 id="section-24-plan-mode契約の分裂">2.4 Plan Mode契約の分裂</h3>
@@ -138,7 +141,8 @@
       roleを使用する。これはTaskをPlanへ送るかを分類する呼び出しであり、Plan生成そのものではない。
     </li>
     <li>
-      <code>plan_mode</code>選択後はDesign QuestionnaireをPlan roleで生成し、Task Runは作成しない。
+      <code>plan_mode</code>選択後はDesign QuestionnaireをPlan
+      roleで生成し、Task Runは作成しない。
     </li>
     <li>
       Coding Agentのdirect Plan Run用System
@@ -168,7 +172,9 @@
     <li>対象test 5ファイル、90件: 成功</li>
     <li><code>bun run typecheck</code>: 成功</li>
     <li><code>bun run s11tnext:check</code>: 成功</li>
-    <li><code>bun run check:architecture</code>: 既存の未追跡testによる本件外の境界違反で失敗</li>
+    <li>
+      <code>bun run check:architecture</code>: 既存の未追跡testによる本件外の境界違反で失敗
+    </li>
   </ul>
   <p>実装開始時に同じbaselineを再取得し、本件変更と既存worktreeの差を分離する。</p>
   <h2 id="section-3-root-cause">3. Root Cause</h2>
@@ -236,8 +242,11 @@ Implementation routeを再解決
   <ul>
     <li>endpoint kindごとに実行用接続フィールドは一つだけを正本とする。</li>
     <li>
-      <code>azure</code>は<code>endpoint</code>、<code>openai</code> /
-      <code>openai-compatible</code> /
+      <code>azure</code
+      >は<code>endpoint</code>、<code
+        >openai</code
+      >
+      / <code>openai-compatible</code> /
       <code>local</code
       >は<code>baseUrl</code>、<code>bedrock</code>は<code>region</code>、<code>codex</code>はCodex
       runtime設定を使用する。
@@ -313,7 +322,8 @@ Implementation routeを再解決
       Runを作成しない。
     </li>
     <li>
-      direct Plan Runは明示commandだけから開始し、<code>planModeRequested=true</code>、active
+      direct Plan
+      Runは明示commandだけから開始し、<code>planModeRequested=true</code>、active
       role=<code>plan</code>を保存する。
     </li>
     <li>direct Plan Runは単一Coding Agent runtimeを使用し、新しいruntime kindを作らない。</li>
@@ -334,8 +344,8 @@ Implementation routeを再解決
       最低限、<code>connection</code>、<code>timeout</code>、<code>authentication</code>、<code>authorization</code>、<code>rate_limited</code>、<code>http_status</code>、<code>invalid_response</code>、<code>schema_invalid</code>、<code>cancelled</code>を区別する。
     </li>
     <li>
-      failureは<code>retryable</code>、provider ID、endpoint ID、model、HTTP status、raw provider
-      body refを保持する。
+      failureは<code>retryable</code>、provider ID、endpoint ID、model、HTTP
+      status、raw provider body refを保持する。
     </li>
     <li>
       retryは<code>retryable=true</code>の一時障害だけを対象にし、回数上限、timeout、AbortSignalを維持する。
@@ -374,7 +384,8 @@ Implementation routeを再解決
       failure、最小互換正規化だけを置く。
     </li>
     <li>
-      System Context source、binding、生成catalogは<code>api/systemContexts</code>へ一元化する。
+      System Context
+      source、binding、生成catalogは<code>api/systemContexts</code>へ一元化する。
     </li>
     <li>
       Mission PilotとCoding
@@ -399,8 +410,8 @@ Implementation routeを再解決
   <ul>
     <li>resolverはcanonical field以外を読まない。</li>
     <li>
-      <code>requestTarget</code>はprovider requestが使う最終targetを返すが、credential
-      queryは含めない。
+      <code>requestTarget</code>はprovider
+      requestが使う最終targetを返すが、credential queryは含めない。
     </li>
     <li>
       traceとsnapshotでは<code>requestTarget</code>そのものではなく、redacted
@@ -471,7 +482,10 @@ Implementation routeを再解決
         <td>Workbench Plan gate</td>
         <td>Evaluation</td>
         <td>なし</td>
-        <td><code>plan_mode</code> / <code>coding_agent</code> decision</td>
+        <td>
+          <code>plan_mode</code> /
+          <code>coding_agent</code> decision
+        </td>
       </tr>
       <tr>
         <td>Workbench Plan generation</td>
@@ -535,7 +549,8 @@ Implementation routeを再解決
   <h4 id="実装">実装</h4>
   <ol>
     <li>
-      local endpointに異なる<code>baseUrl</code>と<code>endpoint</code>を持たせるfixtureを追加する。
+      local
+      endpointに異なる<code>baseUrl</code>と<code>endpoint</code>を持たせるfixtureを追加する。
     </li>
     <li>Healthは成功するがprovider requestが別targetへ向かう現状を失敗testとして固定する。</li>
     <li>Plan roleをAPI、Implementation roleをCodexにしたroute fixtureを追加する。</li>
@@ -599,8 +614,13 @@ Implementation routeを再解決
   </ul>
   <h4 id="受け入れ条件-1">受け入れ条件</h4>
   <ul>
-    <li>local / OpenAI compatibleの実行時に旧<code>endpoint</code>が参照されない。</li>
-    <li>現在再現しているconflict設定は<code>baseUrl</code>を正本として一度だけmigrationされる。</li>
+    <li>
+      local / OpenAI
+      compatibleの実行時に旧<code>endpoint</code>が参照されない。
+    </li>
+    <li>
+      現在再現しているconflict設定は<code>baseUrl</code>を正本として一度だけmigrationされる。
+    </li>
     <li>kind変更後、UIに見えない接続先がruntimeで使用されない。</li>
     <li>migrationを二回実行してもsettings digestが変わらない。</li>
     <li>API keyと既存role routeを失わない。</li>
@@ -608,9 +628,7 @@ Implementation routeを再解決
   <h3 id="phase-2-共通target-resolverとreadiness">Phase 2: 共通target resolverとreadiness</h3>
   <h4 id="実装-2">実装</h4>
   <ol>
-    <li>
-      kind別の<code>ResolvedStructuredProviderTarget</code>を生成するpure resolverを追加する。
-    </li>
+    <li>kind別の<code>ResolvedStructuredProviderTarget</code>を生成するpure resolverを追加する。</li>
     <li>structured request、provider health、Native API requestをresolverへ接続する。</li>
     <li>
       providerごとのURL joinを一箇所へ集約し、Azure deployment / api-versionとOpenAI-compatible
@@ -637,14 +655,19 @@ Implementation routeを再解決
   <h4 id="受け入れ条件-2">受け入れ条件</h4>
   <ul>
     <li>Healthとprovider requestが同じtarget digestを報告する。</li>
-    <li><code>/health</code>成功だけで<code>execution_readiness=true</code>にならない。</li>
+    <li>
+      <code>/health</code
+      >成功だけで<code>execution_readiness=true</code>にならない。
+    </li>
     <li>Settingsで成功したexecution readinessと同じ設定による最小runtime requestが成功する。</li>
     <li>targetが異なる場合はRun開始前または最初のrequestで明示的にstaleと分かる。</li>
   </ul>
   <h3 id="phase-3-active-roleとrun-route-snapshot">Phase 3: Active roleとRun route snapshot</h3>
   <h4 id="実装-3">実装</h4>
   <ol>
-    <li>Native API request builderの<code>implementation</code>固定を削除する。</li>
+    <li>
+      Native API request builderの<code>implementation</code>固定を削除する。
+    </li>
     <li>
       Run runtime contextで解決したactive roleをregistry、runner、request
       adapterまで必須引数として渡す。
@@ -675,7 +698,9 @@ Implementation routeを再解決
   </ul>
   <h4 id="受け入れ条件-3">受け入れ条件</h4>
   <ul>
-    <li><code>planModeRequested=true</code>のNative API requestはPlan routeだけを使用する。</li>
+    <li>
+      <code>planModeRequested=true</code>のNative API requestはPlan routeだけを使用する。
+    </li>
     <li>Implementation RunはImplementation routeだけを使用する。</li>
     <li>active roleのlaneとrunnerが不一致ならprovider call前にtyped conflictとなる。</li>
     <li>Run中にSettingsを変更しても、別roleまたは別endpointへroute driftしない。</li>
@@ -690,8 +715,8 @@ Implementation routeを再解決
     </li>
     <li>Evaluation gateのrequest開始をUIに表示し、Plan role requestと区別する。</li>
     <li>
-      <code>plan_mode</code>選択後のQuestionnaire生成がPlan roleを使用していることをroute
-      snapshotで記録する。
+      <code>plan_mode</code>選択後のQuestionnaire生成がPlan
+      roleを使用していることをroute snapshotで記録する。
     </li>
     <li>
       direct Plan Runの明示application
@@ -742,13 +767,17 @@ Implementation routeを再解決
   <h4 id="実装-5">実装</h4>
   <ol>
     <li>
-      provider共通の<code>StructuredProviderFailure</code>とconstructor / type guardを追加する。
+      provider共通の<code>StructuredProviderFailure</code>とconstructor / type
+      guardを追加する。
     </li>
     <li>
       OpenAI、Azure、Bedrock、Codex adapterでSDK class、HTTP status、AbortSignalからtyped
       failureへ変換する。
     </li>
-    <li>generic HTTP <code>Error</code>とmessage regexによるtransient判定を削除する。</li>
+    <li>
+      generic HTTP <code>Error</code>とmessage
+      regexによるtransient判定を削除する。
+    </li>
     <li>route fallbackはtyped failureと明示policyだけを判断材料にする。</li>
     <li>retryable failureだけを既存上限内でretryし、AbortSignalで停止できることを検証する。</li>
     <li>raw provider bodyを本文とは別のbounded evidence refとして保持する。</li>
@@ -816,7 +845,8 @@ Implementation routeを再解決
   <ol>
     <li>Azureからlocalへkind変更し、旧Azure endpointが非表示・非実行になる。</li>
     <li>
-      local endpointで<code>baseUrl</code>と旧<code>endpoint</code>が競合し、canonical
+      local
+      endpointで<code>baseUrl</code>と旧<code>endpoint</code>が競合し、canonical
       migration後にHealthとrequestのtarget digestが一致する。
     </li>
     <li>
@@ -873,7 +903,10 @@ Implementation routeを再解決
       <tr>
         <td>Settings unit</td>
         <td>Azure → local</td>
-        <td><code>endpoint</code>を実行に使わず<code>baseUrl</code>だけを保存</td>
+        <td>
+          <code>endpoint</code
+          >を実行に使わず<code>baseUrl</code>だけを保存
+        </td>
       </tr>
       <tr>
         <td>Settings unit</td>
@@ -1004,8 +1037,8 @@ bun run s11tnext:check
   <h2 id="section-11-実装時の禁止事項">11. 実装時の禁止事項</h2>
   <ul>
     <li>
-      <code>endpoint || baseUrl</code>または<code>baseUrl || endpoint</code
-      >という互換fallbackを別箇所へ移して残さない。
+      <code>endpoint || baseUrl</code
+      >または<code>baseUrl || endpoint</code>という互換fallbackを別箇所へ移して残さない。
     </li>
     <li>providerやroleの意味をuser message、error message、model名のkeywordで判定しない。</li>
     <li>Native API runner専用の固定workflow、Plan runtime、tool allowlistを新設しない。</li>
@@ -1031,8 +1064,9 @@ bun run s11tnext:check
       digestを返すようにした。Run開始時の暗黙probeと旧環境フラグ経路は削除した。
     </li>
     <li>
-      Native API runnerの<code>implementation</code> role固定を削除し、Runへ保存したactive
-      roleとsettings revisionでprovider call前にrouteをfail-close検証するようにした。保存role
+      Native API runnerの<code>implementation</code>
+      role固定を削除し、Runへ保存したactive roleとsettings revisionでprovider
+      call前にrouteをfail-close検証するようにした。保存role
       planまたは現在revisionが欠落した場合もprovider callを開始しない。
     </li>
     <li>
@@ -1046,17 +1080,20 @@ bun run s11tnext:check
     </li>
     <li>
       HTTP、transport、timeout、authentication、permission、invalid responseをtyped
-      failureへ正規化し、retry / fallbackを<code>retryable</code>だけで判断するようにした。
+      failureへ正規化し、retry /
+      fallbackを<code>retryable</code>だけで判断するようにした。
     </li>
     <li>
-      provider HTTP / invalid JSON本文はbounded <code>providerBody</code>として保持し、log/event
+      provider HTTP / invalid JSON本文はbounded
+      <code>providerBody</code>として保持し、log/event
       messageへ混入させないようにした。
     </li>
     <li>
       WorkbenchとNative API
       ledgerへ<code>model.request_failed</code>を追加し、phase、role、endpoint、model、target
       digest、failure kindを追跡可能にした。観測eventの永続化はprovider
-      requestをblockしないqueueへ送り、Native turnは<code>turn_finished</code>を一度だけ記録する。
+      requestをblockしないqueueへ送り、Native
+      turnは<code>turn_finished</code>を一度だけ記録する。
     </li>
     <li>
       Structured / Nativeの空provider応答はnon-retryable

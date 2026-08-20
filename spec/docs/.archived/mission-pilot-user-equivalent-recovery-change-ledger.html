@@ -13,10 +13,8 @@
         <li><code>b746ed831f5ff1a96988c2da33d1b0d2a5b26b1f88e7f3732f1c39108a9f114f</code></li>
         <li>
           Source:
-          <code
-            >git ls-tree -r HEAD api/modules/codingAgent src/modules/codingAgent
-            shared/modules/codingAgent | shasum -a 256</code
-          >
+          <code>git ls-tree -r HEAD api/modules/codingAgent src/modules/codingAgent
+            shared/modules/codingAgent | shasum -a 256</code>
         </li>
       </ul>
     </li>
@@ -65,7 +63,8 @@
         <td>failed</td>
         <td>
           Task update action did not change title; expected
-          <code>updated by persistent agent</code>, received <code>agent runtime</code>
+          <code>updated by persistent agent</code>, received
+          <code>agent runtime</code>
         </td>
       </tr>
       <tr>
@@ -225,8 +224,8 @@
       <tr>
         <td>V3</td>
         <td>
-          <code>questionnaire.submit</code>をMission Pilot unavailable actionとして固定し、draft /
-          intervention pathへ統一した。
+          <code>questionnaire.submit</code>をMission Pilot unavailable
+          actionとして固定し、draft / intervention pathへ統一した。
         </td>
       </tr>
       <tr>
@@ -282,16 +281,19 @@
       <tr>
         <td>E1</td>
         <td>
-          provider tool fixtureの<code>implementation</code> scopeが未登録の場合、Mission
-          Pilot用<code>default</code> scopeへfallbackしていた
+          provider tool fixtureの<code>implementation</code>
+          scopeが未登録の場合、Mission Pilot用<code>default</code>
+          scopeへfallbackしていた
         </td>
         <td>scopeを完全一致にし、異なるroleのfixture turnを消費しないcontract testを追加</td>
       </tr>
       <tr>
         <td>E2</td>
         <td>
-          Bun <code>bun:sqlite</code>の同期readとlibSQLの非同期writeが同一DBで競合し、Mission Pilot
-          action receipt書込みがlockした
+          Bun
+          <code>bun:sqlite</code
+          >の同期readとlibSQLの非同期writeが同一DBで競合し、Mission Pilot action
+          receipt書込みがlockした
         </td>
         <td>sync SQLite adapterをlibSQLへ統一</td>
       </tr>
@@ -545,7 +547,9 @@ shared/modules/codingAgent/**
       </tr>
       <tr>
         <td>R3</td>
-        <td>generic <code>execute_task_action</code>とaction別legacy tool名が併存していた</td>
+        <td>
+          generic <code>execute_task_action</code>とaction別legacy tool名が併存していた
+        </td>
         <td>
           provider公開APIをread 4種、generic execute 1種、agent control 2種の計7 toolへ固定した
         </td>
@@ -553,7 +557,8 @@ shared/modules/codingAgent/**
       <tr>
         <td>R4</td>
         <td>
-          receipt readが<code>actorKind</code>を条件に含めず、同じactor IDの別principalと衝突し得た
+          receipt readが<code>actorKind</code>を条件に含めず、同じactor
+          IDの別principalと衝突し得た
         </td>
         <td>
           receipt lookupをDB unique keyと同じ<code>actorKind + actorId + idempotencyKey</code>にした
@@ -584,7 +589,8 @@ shared/modules/codingAgent/**
           bounded Task本文とtimeline本文だけで最終判断でき、切り詰められた正本を回収できなかった
         </td>
         <td>
-          <code>task_text</code> / <code>task_message</code> resourceとpagingを追加し、Play時のTask
+          <code>task_text</code> /
+          <code>task_message</code> resourceとpagingを追加し、Play時のTask
           Goalも完全な正本を取得するよう変更した
         </td>
       </tr>
@@ -595,7 +601,8 @@ shared/modules/codingAgent/**
           Pilotがverification、blocker、変更pathを再評価できなかった
         </td>
         <td>
-          Task Operatorのbounded <code>run_outcome</code>へ結果、検証、blocker、変更path、commit /
+          Task Operatorのbounded
+          <code>run_outcome</code>へ結果、検証、blocker、変更path、commit /
           artifact refを追加した
         </td>
       </tr>
@@ -691,7 +698,8 @@ shared/modules/codingAgent/**
     </tbody>
   </table>
   <p>
-    固定hashの更新は、<code>task_text</code> / <code>task_message</code>の完全取得を要求する日本語
+    固定hashの更新は、<code>task_text</code> /
+    <code>task_message</code>の完全取得を要求する日本語
     SystemContext本文を照合した上でMission Pilotの2値だけを更新した。 Coding
     AgentのSystemContext本文とhashは変更していない。
   </p>

@@ -3,9 +3,8 @@
   <h2 id="新しいセッションへの依頼">新しいセッションへの依頼</h2>
   <p>
     <code>hono-standard</code
-    >テンプレートの<code>LLM_CONTEXT.md</code>へ、Projectの正本品質ゲートが<code
-      >bun run verify</code
-    >であることと、そこに内包される個別scriptの扱いをProject contractとして明記してください。
+    >テンプレートの<code>LLM_CONTEXT.md</code>へ、Projectの正本品質ゲートが<code>bun run verify</code>であることと、そこに内包される個別scriptの扱いをProject
+    contractとして明記してください。
   </p>
   <p>
     この変更の目的は、Coding
@@ -20,9 +19,9 @@
     <li>Repository: <code>hono-standard</code></li>
     <li>主対象: <code>LLM_CONTEXT.md</code></li>
     <li>
-      確認対象: <code>package.json</code>、<code>scripts/verify.ts</code>、<code
-        >docs/delivery-quality-gates.md</code
-      >
+      確認対象:
+      <code>package.json</code
+      >、<code>scripts/verify.ts</code>、<code>docs/delivery-quality-gates.md</code>
     </li>
     <li>対象branch・variantでは、実体のscript構成を確認して本文を一致させること</li>
   </ul>
@@ -54,11 +53,11 @@
     <li><code>build</code></li>
   </ol>
   <p>
-    成功した工程は<code>OK &lt;step&gt;</code
-    >だけを出力し、失敗した工程だけcommandとstdout/stderrを表示して終了します。このfail-fastと出力抑制は維持してください。
+    成功した工程は<code>OK &lt;step&gt;</code>だけを出力し、失敗した工程だけcommandとstdout/stderrを表示して終了します。このfail-fastと出力抑制は維持してください。
   </p>
   <p>
-    <code>docs/delivery-quality-gates.md</code>でも、<code>bun run verify</code>がstatic
+    <code>docs/delivery-quality-gates.md</code
+    >でも、<code>bun run verify</code>がstatic
     checks、tests、coverage、buildを束ねる<code>DQ-BASE-001</code>の基本commandとして定義されています。
   </p>
   <h2 id="目的">目的</h2>
@@ -69,18 +68,23 @@
   <ul>
     <li>正本品質ゲートは<code>bun run verify</code>である。</li>
     <li>
-      <code>verify</code>はtypecheck、lint、format check、unit/contract/integration
-      test、coverage、production buildを内包する。
+      <code>verify</code>はtypecheck、lint、format
+      check、unit/contract/integration test、coverage、production buildを内包する。
     </li>
     <li>内包scriptは追加の品質ゲートではない。</li>
-    <li>内包scriptを<code>verify</code>前の事前検証として重ねて実行しない。</li>
+    <li>
+      内包scriptを<code>verify</code>前の事前検証として重ねて実行しない。
+    </li>
     <li>
       <code>verify</code
       >失敗後は、報告された失敗工程の診断または修正に限って個別commandを使用できる。
     </li>
     <li>sourceを変更した後は<code>bun run verify</code>全体を再実行する。</li>
     <li>個別commandの成功をProject完了の証跡として扱わない。</li>
-    <li><code>bun run format</code>はsourceを変更する修正操作であり、検証証跡ではない。</li>
+    <li>
+      <code>bun run format</code
+      >はsourceを変更する修正操作であり、検証証跡ではない。
+    </li>
   </ul>
   <h2 id="llm_contextmdの責務">LLM_CONTEXT.mdの責務</h2>
   <p>
@@ -99,7 +103,9 @@
       contractとして記載する。
     </p>
   </blockquote>
-  <p>そのうえで、独立した<code>Verification Contract</code> sectionを追加してください。</p>
+  <p>
+    そのうえで、独立した<code>Verification Contract</code> sectionを追加してください。
+  </p>
   <h2 id="必須文意">必須文意</h2>
   <p>
     実際の文体は既存の<code>LLM_CONTEXT.md</code>へ合わせてよいですが、少なくとも次の文意を維持してください。
@@ -136,7 +142,10 @@
     <li><code>bun run test:coverage</code></li>
     <li><code>bun run build</code></li>
   </ul>
-  <p><code>verify</code>成功後に同じ個別commandを再実行することも、追加の完了証跡にはしません。</p>
+  <p>
+    <code>verify</code
+    >成功後に同じ個別commandを再実行することも、追加の完了証跡にはしません。
+  </p>
   <h3 id="実行できるケース">実行できるケース</h3>
   <p>個別commandは次の場合だけ使用できます。</p>
   <ul>
@@ -150,14 +159,15 @@
     </li>
   </ul>
   <p>
-    個別commandを使用してsourceを変更または確認した後も、完了前には<code>bun run verify</code
-    >全体を再実行します。
+    個別commandを使用してsourceを変更または確認した後も、完了前には<code>bun run verify</code>全体を再実行します。
   </p>
   <h2 id="packagejsonの扱い">package.jsonの扱い</h2>
   <p>個別scriptは削除、非公開化、難読な名前への変更をしません。</p>
   <p>理由:</p>
   <ul>
-    <li><code>scripts/verify.ts</code>が個別scriptを構成要素として呼び出している。</li>
+    <li>
+      <code>scripts/verify.ts</code>が個別scriptを構成要素として呼び出している。
+    </li>
     <li>人間とCIが局所的な診断に使用できる必要がある。</li>
     <li>
       scriptを削除しても、tool executableの直接実行を防げず、Coding
@@ -186,21 +196,31 @@
       <code>docs/delivery-quality-gates.md</code
       >の<code>DQ-BASE-001</code>と矛盾する記述を追加しない。
     </li>
-    <li>必要なら<code>Verification Contract</code>から詳細文書への参照を1件だけ追加してよい。</li>
+    <li>
+      必要なら<code>Verification Contract</code>から詳細文書への参照を1件だけ追加してよい。
+    </li>
   </ul>
   <h2 id="禁止事項">禁止事項</h2>
   <ul>
     <li><code>AGENTS.md</code>を追加する。</li>
     <li><code>package.json</code>から個別scriptを削除する。</li>
-    <li><code>scripts/verify.ts</code>を個別scriptへ依存しない巨大な単一commandへ書き換える。</li>
-    <li><code>verify</code>のfail-fast、成功時の短い出力、失敗時だけ詳細を返す契約を壊す。</li>
+    <li>
+      <code>scripts/verify.ts</code
+      >を個別scriptへ依存しない巨大な単一commandへ書き換える。
+    </li>
+    <li>
+      <code>verify</code
+      >のfail-fast、成功時の短い出力、失敗時だけ詳細を返す契約を壊す。
+    </li>
     <li>coverage thresholdを下げる。</li>
     <li>E2Eを通常の<code>bun run verify</code>へ追加する。</li>
     <li>
       <code>LLM_CONTEXT.md</code
       >へNightWorkers固有のruntime、MCP、Todo、completion、SystemContextの説明を追加する。
     </li>
-    <li><code>LLM_CONTEXT.md</code>へタスク固有の実装workflowや固定手順を追加する。</li>
+    <li>
+      <code>LLM_CONTEXT.md</code>へタスク固有の実装workflowや固定手順を追加する。
+    </li>
     <li>個別commandを実行不能にするshell wrapperやcommand allowlistを追加する。</li>
     <li>本件と無関係なtemplate、auth、DB、frontend、testを変更する。</li>
   </ul>
@@ -212,14 +232,15 @@
       >の責務説明が、Project固有の正本品質ゲート契約を扱える表現へ更新されている。
     </li>
     <li>
-      <input disabled="" type="checkbox" /> <code>LLM_CONTEXT.md</code>に独立した<code
+      <input disabled="" type="checkbox" />
+      <code>LLM_CONTEXT.md</code>に独立した<code
         >Verification Contract</code
       >
       sectionがある。
     </li>
     <li>
-      <input disabled="" type="checkbox" /> 正本品質ゲートが<code>bun run verify</code
-      >だと明記されている。
+      <input disabled="" type="checkbox" />
+      正本品質ゲートが<code>bun run verify</code>だと明記されている。
     </li>
     <li>
       <input disabled="" type="checkbox" />
@@ -232,21 +253,26 @@
     </li>
     <li>
       <input disabled="" type="checkbox" />
-      <code>verify</code>失敗後の診断・修正に限り、個別commandを使用できることが明記されている。
-    </li>
-    <li>
-      <input disabled="" type="checkbox" /> source変更後は<code>bun run verify</code
-      >全体を再実行することが明記されている。
+      <code>verify</code
+      >失敗後の診断・修正に限り、個別commandを使用できることが明記されている。
     </li>
     <li>
       <input disabled="" type="checkbox" />
-      <code>bun run format</code>が修正操作であり、検証証跡ではないと明記されている。
+      source変更後は<code>bun run verify</code>全体を再実行することが明記されている。
+    </li>
+    <li>
+      <input disabled="" type="checkbox" />
+      <code>bun run format</code
+      >が修正操作であり、検証証跡ではないと明記されている。
     </li>
     <li>
       <input disabled="" type="checkbox" />
       E2Eが通常の<code>verify</code>へ含まれず、明示要求時だけ実行されることが明記されている。
     </li>
-    <li><input disabled="" type="checkbox" /> <code>AGENTS.md</code>を追加していない。</li>
+    <li>
+      <input disabled="" type="checkbox" />
+      <code>AGENTS.md</code>を追加していない。
+    </li>
     <li>
       <input disabled="" type="checkbox" />
       <code>package.json</code>の個別scriptを削除または改名していない。
@@ -257,7 +283,8 @@
     </li>
     <li><input disabled="" type="checkbox" /> 本件と無関係な既存変更へ触れていない。</li>
     <li>
-      <input disabled="" type="checkbox" /> 最終的な<code>bun run verify</code>が成功している。
+      <input disabled="" type="checkbox" />
+      最終的な<code>bun run verify</code>が成功している。
     </li>
   </ul>
   <h2 id="検証">検証</h2>
@@ -268,9 +295,7 @@
   <pre><code class="language-bash">bun run verify
 </code></pre>
   <p>
-    失敗した場合は、表示された失敗工程だけを診断・修正し、source変更後に同じ<code
-      >bun run verify</code
-    >を再実行してください。
+    失敗した場合は、表示された失敗工程だけを診断・修正し、source変更後に同じ<code>bun run verify</code>を再実行してください。
   </p>
   <p>
     文書変更だけを理由に、文章の完全一致を固定する脆いtestを新設する必要はありません。既存のdocumentation
@@ -282,7 +307,10 @@
   <ol>
     <li><code>LLM_CONTEXT.md</code>で変更した責務説明。</li>
     <li>追加した<code>Verification Contract</code>の要点。</li>
-    <li><code>package.json</code>と<code>scripts/verify.ts</code>を変更していないこと。</li>
+    <li>
+      <code>package.json</code
+      >と<code>scripts/verify.ts</code>を変更していないこと。
+    </li>
     <li><code>AGENTS.md</code>を追加していないこと。</li>
     <li>既存の無関係な変更へ触れていないこと。</li>
     <li>実行した<code>bun run verify</code>の結果。</li>

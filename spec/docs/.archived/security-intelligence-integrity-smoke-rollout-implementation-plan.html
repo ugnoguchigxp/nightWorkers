@@ -17,9 +17,7 @@
     </li>
     <li>
       Canonical evidence:
-      <code
-        >vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json</code
-      >
+      <code>vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json</code>
     </li>
     <li>Evidence schema: <code>security-intelligence-nightworkers-integrity-evidence-v2</code></li>
     <li>Default activation: this plan does not authorize default ON</li>
@@ -64,21 +62,15 @@
   </ul>
   <h2 id="section-3-authoritative-inputs">3. Authoritative inputs</h2>
   <ul>
-    <li>
-      NightWorkersの未完了条件: <code>spec/docs/security-intelligence-pilot-rollout-todo.html</code>
-    </li>
-    <li>
-      cross-projectの責務境界: <code>spec/docs/security-intelligence-integration-concept.html</code>
-    </li>
+    <li>NightWorkersの未完了条件: <code>spec/docs/security-intelligence-pilot-rollout-todo.html</code></li>
+    <li>cross-projectの責務境界: <code>spec/docs/security-intelligence-integration-concept.html</code></li>
     <li>
       v2 evidence template:
       <code>vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-template.json</code>
     </li>
     <li>
       v2 evidence schema:
-      <code
-        >vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.ts</code
-      >
+      <code>vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.ts</code>
     </li>
     <li>
       cross-repository fixture verifier:
@@ -90,8 +82,8 @@
     </li>
   </ul>
   <p>
-    旧<code>security-intelligence-nightworkers-pilot-evidence-v1</code>、旧decision
-    template、旧paired pilot planは履歴互換専用とし、新しいevidenceや完了判断の入力にしない。
+    旧<code>security-intelligence-nightworkers-pilot-evidence-v1</code>、旧decision template、旧paired pilot
+    planは履歴互換専用とし、新しいevidenceや完了判断の入力にしない。
   </p>
   <h2 id="section-4-repository-ownership">4. Repository ownership</h2>
   <h3 id="nightworkers">NightWorkers</h3>
@@ -103,7 +95,9 @@
     </li>
     <li>candidate / feedbackをRun-bound outboxへ保存し、contextStillへdispatchする。</li>
     <li>native API laneとCodex laneのadapter / tool contractを検証する。</li>
-    <li>smoke完了後にTODOを更新し、完了時だけTODOを<code>spec/docs/.archived</code>へ移す。</li>
+    <li>
+      smoke完了後にTODOを更新し、完了時だけTODOを<code>spec/docs/.archived</code>へ移す。
+    </li>
   </ul>
   <h3 id="vulnworkbench">vulnWorkbench</h3>
   <ul>
@@ -128,14 +122,10 @@
   </p>
   <ul>
     <li>
-      <code
-        >vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.ts</code
-      >
+      <code>vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.ts</code>
     </li>
     <li>
-      <code
-        >vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.test.ts</code
-      >
+      <code>vulnWorkbench/shared/schemas/nightworkers-security-intelligence-integrity-evidence.schema.test.ts</code>
     </li>
     <li><code>vulnWorkbench/scripts/verify-security-intelligence-cross-repo-fixtures.ts</code></li>
     <li><code>vulnWorkbench/scripts/verify-security-intelligence-integrity-evidence.ts</code></li>
@@ -154,19 +144,25 @@
   <p>templateを直接編集せず、次を新規作成する。</p>
   <ul>
     <li>
-      <code
-        >vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json</code
-      >
+      <code>vulnWorkbench/spec/evidence/security-intelligence-integrity-smoke-&lt;YYYY-MM-DD&gt;.json</code>
     </li>
   </ul>
   <p>artifactは次を満たす。</p>
   <ul>
     <li><code>smokeId</code>は再利用しないopaque IDに置き換える。</li>
-    <li><code>generatedAt</code>はterminal decision確定時のUTC timestampにする。</li>
+    <li>
+      <code>generatedAt</code>はterminal decision確定時のUTC timestampにする。
+    </li>
     <li>raw payloadやlog全文ではなく、再取得可能なopaque evidence refを保存する。</li>
     <li>capability decisionの全項目にdecisionと1件以上のevidence refを保存する。</li>
-    <li><code>defaultActivationAuthorized</code>は常に<code>false</code>のままにする。</li>
-    <li>failureで停止した場合も削除せず、<code>status: stopped</code>とstop reasonを保存する。</li>
+    <li>
+      <code>defaultActivationAuthorized</code
+      >は常に<code>false</code>のままにする。
+    </li>
+    <li>
+      failureで停止した場合も削除せず、<code>status: stopped</code>とstop
+      reasonを保存する。
+    </li>
   </ul>
   <p>
     実行時だけ使用するtoken、temporary database、workspace、process、raw logはartifactへ含めず、
@@ -304,7 +300,8 @@
     <li>NightWorkersとcontextStillのcandidate / feedback fixtureを同期する。</li>
     <li>3 repositoryのidentity mapping fixtureを同期する。</li>
     <li>
-      contextStillの専用SQLite ingress testは、必ず先頭に<code>./</code>を付けた明示pathで実行する。
+      contextStillの専用SQLite ingress
+      testは、必ず先頭に<code>./</code>を付けた明示pathで実行する。
     </li>
   </ol>
   <h3 id="verification">Verification</h3>
@@ -327,13 +324,15 @@ bun run typecheck
   <p>いずれかが失敗したらP0へ進まない。</p>
   <h2 id="section-8-phase-1-p0-preflight">8. Phase 1: P0 preflight</h2>
   <h3 id="section-81-baseline-capture">8.1 Baseline capture</h3>
-  <p>各repositoryで次を取得し、v2 artifactの<code>preflight</code>へ保存する。</p>
+  <p>
+    各repositoryで次を取得し、v2 artifactの<code>preflight</code>へ保存する。
+  </p>
   <pre><code class="language-bash">git rev-parse HEAD
 git status --porcelain
 </code></pre>
   <p>
-    <code>repositoryCommits</code>には40桁SHAを保存する。<code>git status --porcelain</code
-    >が空の場合だけ対応する
+    <code>repositoryCommits</code
+    >には40桁SHAを保存する。<code>git status --porcelain</code>が空の場合だけ対応する
     <code>cleanWorkingTrees</code
     >を<code>true</code>にする。smoke開始後にcodeまたはfixtureが変わった場合は、そのrunを
     無効化し、新しいpilot IDでP0からやり直す。
@@ -347,7 +346,8 @@ git status --porcelain
     <li>repository declarationのrevisionとdigestを検証する。</li>
     <li>検証できる場合だけ<code>verified_repository_declarations</code>を選ぶ。</li>
     <li>
-      検証できない場合は<code>transport_integrity_only</code>を選び、Project Loop完成を主張しない。
+      検証できない場合は<code>transport_integrity_only</code>を選び、Project
+      Loop完成を主張しない。
     </li>
   </ol>
   <h3 id="section-83-initial-configuration">8.3 Initial configuration</h3>
@@ -380,7 +380,10 @@ git status --porcelain
     <li>1 Taskとcurrent Task Revision Snapshotを作成または選択する。</li>
     <li>base revisionと、baseとは異なるsource revision / target digestを固定する。</li>
     <li>1 implementation Runと1 canonical Evidence Subjectを割り当てる。</li>
-    <li>primary laneを<code>native_api</code>または<code>codex</code>から1つ選ぶ。</li>
+    <li>
+      primary
+      laneを<code>native_api</code>または<code>codex</code>から1つ選ぶ。
+    </li>
     <li>secondary laneはprimaryと異なるlaneに固定する。</li>
   </ol>
   <p>このidentity tupleは途中で差し替えない。</p>
@@ -403,7 +406,10 @@ secondaryLane
       NightWorkersの<code>security.assessment.pre.bind</code>でcurrent Task Revision
       Snapshotへbindingする。
     </li>
-    <li><code>security.contract.write</code>でpre assessment由来のSecurity Contractを保存する。</li>
+    <li>
+      <code>security.contract.write</code>でpre assessment由来のSecurity
+      Contractを保存する。
+    </li>
     <li>必要な<code>security.condition.write</code>を保存する。</li>
     <li>Coding Agentが確定済みTask / Contractに基づき実装と検証を行う。</li>
     <li>
@@ -449,7 +455,9 @@ secondaryLane
     <li>cross-Run evidence採用が0件である。</li>
     <li>secret、source本文、absolute path漏洩が0件である。</li>
   </ul>
-  <p>1件でも拒否されなかった場合は<code>STOP</code>候補とし、P2へ進まない。</p>
+  <p>
+    1件でも拒否されなかった場合は<code>STOP</code>候補とし、P2へ進まない。
+  </p>
   <h2 id="section-11-phase-4-stage-2-rollback-drill">11. Phase 4: Stage 2 rollback drill</h2>
   <ol>
     <li>NightWorkers consumerとpost assessmentをOFFにする。</li>
@@ -472,7 +480,10 @@ secondaryLane
     <li>privacy assertions 3件PASS</li>
     <li>rollback後の通常Runと既存Security Scan v1が正常</li>
   </ul>
-  <p>このPASSはP2開始を許可するだけで、rollout <code>GO</code>やdefault ONを意味しない。</p>
+  <p>
+    このPASSはP2開始を許可するだけで、rollout <code>GO</code>やdefault
+    ONを意味しない。
+  </p>
   <h2 id="section-12-phase-5-p2-stage-3-shadow-smoke">12. Phase 5: P2 Stage 3 shadow smoke</h2>
   <h3 id="section-121-isolated-enablement">12.1 Isolated enablement</h3>
   <ol>
@@ -539,12 +550,18 @@ secondaryLane
   </ul>
   <p>各decisionは次で判断する。</p>
   <ul>
-    <li><code>GO</code>: 対象capabilityのintegrity、privacy、rollbackがすべてPASSした。</li>
+    <li>
+      <code>GO</code>:
+      対象capabilityのintegrity、privacy、rollbackがすべてPASSした。
+    </li>
     <li>
       <code>ITERATE</code>: integrity
       incidentはないが、coverage、cost、reliabilityに未解決事項がある。
     </li>
-    <li><code>STOP</code>: identity、privacy、evidence、failure presentationのincidentがある。</li>
+    <li>
+      <code>STOP</code>: identity、privacy、evidence、failure
+      presentationのincidentがある。
+    </li>
   </ul>
   <p>
     全capabilityに1件以上のopaque evidence

@@ -18,7 +18,9 @@
       Phase 1 gate は <code>bun run verify</code>、full Vitest、deterministic E2E
       coverage（45/45）、 Accessibility を通過した。
     </li>
-    <li>Phase 2 の現行 desktop gate は <code>bun run verify:desktop</code> を通過した。</li>
+    <li>
+      Phase 2 の現行 desktop gate は <code>bun run verify:desktop</code> を通過した。
+    </li>
     <li>
       release metadata、documentation consistency、dependency audit、desktop build / smokeを含む
       <code>bun run verify:release</code> を通過した。
@@ -41,9 +43,9 @@
   <ul>
     <li>
       Q7-01を完了した。<code>scripts/run-project-exploration-paired-pilot.ts</code>は980行から576行へ、
-      <code>src/modules/settings/SettingsLlmPanel.tsx</code>は629行から402行へ削減した。固定pilot
-      task、CLI contract、report集計、LLM settings controllerを独立moduleへ分離し、large-source
-      baselineの 例外を増やさず<code>bun run check:architecture</code>を通過した。
+      <code>src/modules/settings/SettingsLlmPanel.tsx</code>は629行から402行へ削減した。固定pilot task、CLI
+      contract、report集計、LLM settings controllerを独立moduleへ分離し、large-source baselineの
+      例外を増やさず<code>bun run check:architecture</code>を通過した。
     </li>
     <li>
       Q7-02を完了した。backend / frontend coverageをそれぞれ3つの独立runtime / SQLite shardで
@@ -63,8 +65,8 @@
     実装正本とする。
   </p>
   <p>
-    本計画は、既存の <code>scripts/verify.mjs</code>、Tauri shell、Node backend sidecar、 SQLite
-    runtime、GitHub Actions、release attestation を置き換える計画ではない。
+    本計画は、既存の <code>scripts/verify.mjs</code>、Tauri shell、Node backend
+    sidecar、 SQLite runtime、GitHub Actions、release attestation を置き換える計画ではない。
     現行境界を維持し、確認済みの失敗と配布上の不足を修復する。
   </p>
   <h2 id="section-1-目的">1. 目的</h2>
@@ -79,8 +81,8 @@
       <code>sqlite3</code> CLI に依存せず起動する。
     </li>
     <li>
-      macOS ARM64 の <code>.app</code> / DMG を署名・notarize・stapleし、同一SHAの検証済み
-      artifactとして限定β配布できる。
+      macOS ARM64 の <code>.app</code> / DMG
+      を署名・notarize・stapleし、同一SHAの検証済み artifactとして限定β配布できる。
     </li>
     <li>Tauri production build で CSP が有効になり、DevTools が無効になる。</li>
     <li>
@@ -248,11 +250,15 @@ node scripts/verify.mjs release --list
       </tr>
       <tr>
         <td>latest macOS CI</td>
-        <td>staged Nodeが<code>libnode.127.dylib</code>を解決できずsidecar smoke失敗</td>
+        <td>
+          staged Nodeが<code>libnode.127.dylib</code>を解決できずsidecar smoke失敗
+        </td>
       </tr>
       <tr>
         <td>latest Windows CI</td>
-        <td>production bootstrapが外部<code>sqlite3</code> CLIを要求して失敗</td>
+        <td>
+          production bootstrapが外部<code>sqlite3</code> CLIを要求して失敗
+        </td>
       </tr>
       <tr>
         <td>Linux / Windows package</td>
@@ -265,8 +271,9 @@ node scripts/verify.mjs release --list
     3.1 Fast gateとrelease truthが分離している
   </h3>
   <p>
-    <code>bun run verify</code>は高速で有用だが、full Vitest、E2E、Accessibility、Desktop packageを
-    含まない。現在はmainのfast gateが成功する一方、releaseに必要なworkflowが失敗している。
+    <code>bun run verify</code>は高速で有用だが、full
+    Vitest、E2E、Accessibility、Desktop packageを 含まない。現在はmainのfast
+    gateが成功する一方、releaseに必要なworkflowが失敗している。
   </p>
   <h3 id="section-32-e2e-fixtureとscenario-catalogが現行contractに追従していない">
     3.2 E2E fixtureとscenario catalogが現行contractに追従していない
@@ -283,7 +290,10 @@ node scripts/verify.mjs release --list
     <li>1 testに複数scenario tagがあり、scenario未指定testもある。</li>
     <li>required scenarioが1件unmappedである。</li>
     <li>
-      Accessibility testが現行navigation / localeと一致しない<code>Settings</code> linkを要求する。
+      Accessibility testが現行navigation / localeと一致しない<code
+        >Settings</code
+      >
+      linkを要求する。
     </li>
   </ul>
   <h3 id="section-33-sidecar-stagingがbuild-host依存である">
@@ -291,8 +301,8 @@ node scripts/verify.mjs release --list
   </h3>
   <p>
     <code>scripts/desktop/prepare-sidecar.mjs</code
-    >は、現在の<code>process.execPath</code>を単体copyする。 Node distributionのversion、dynamic
-    library、license、target tripleを固定していない。
+    >は、現在の<code>process.execPath</code>を単体copyする。 Node
+    distributionのversion、dynamic library、license、target tripleを固定していない。
   </p>
   <p>
     また、production bootstrap pathの
@@ -303,7 +313,9 @@ node scripts/verify.mjs release --list
     3.4 Tauri production hardeningが未完了である
   </h3>
   <ul>
-    <li><code>app.security.csp</code>が<code>null</code>。</li>
+    <li>
+      <code>app.security.csp</code>が<code>null</code>。
+    </li>
     <li>production windowでも<code>devtools: true</code>。</li>
     <li>Tauri crateが常時<code>devtools</code> featureを含む。</li>
     <li>
@@ -325,11 +337,13 @@ node scripts/verify.mjs release --list
     <li>bundleが508 MiBあり、target外native prebuildもstagingされる。</li>
     <li>Node binaryを配布するが、Node distributionのlicense / notice同梱を検証していない。</li>
     <li>
-      <code>SUPPORT.md</code>がGitHub Discussionsを案内する一方、repositoryではDiscussionsが無効。
+      <code>SUPPORT.md</code>がGitHub
+      Discussionsを案内する一方、repositoryではDiscussionsが無効。
     </li>
     <li>security reportのprivate contactが具体化されていない。</li>
     <li>
-      desktop runtime directoryのdocument記述とTauriの<code>app_data_dir</code>実装が一致しない。
+      desktop runtime
+      directoryのdocument記述とTauriの<code>app_data_dir</code>実装が一致しない。
     </li>
   </ul>
   <h2 id="section-4-目標状態">4. 目標状態</h2>
@@ -371,11 +385,13 @@ node scripts/verify.mjs release --list
     </li>
     <li>Node backend sidecar境界は維持し、本計画でRust backendへ全面移植しない。</li>
     <li>
-      application settingsから外部<code>sqlite3</code> CLI依存を除去する。<code>sqlite3</code>
+      application settingsから外部<code>sqlite3</code>
+      CLI依存を除去する。<code>sqlite3</code>
       executableの 同梱で延命しない。
     </li>
     <li>
-      sidecar Nodeはbuild hostの<code>process.execPath</code>をそのままcopyせず、versionとtargetを
+      sidecar Nodeはbuild
+      hostの<code>process.execPath</code>をそのままcopyせず、versionとtargetを
       固定した再配布可能なruntimeを使用する。
     </li>
     <li>
@@ -387,9 +403,12 @@ node scripts/verify.mjs release --list
     </li>
     <li>production Tauri packageではCSPを必須化し、DevToolsを無効化する。</li>
     <li>
-      公式release artifactはsigning / notarizationが<code>verified</code>でなければpublishしない。
+      公式release artifactはsigning /
+      notarizationが<code>verified</code>でなければpublishしない。
     </li>
-    <li><code>verify:live</code>はcredential不要のrelease gateへ追加しない。</li>
+    <li>
+      <code>verify:live</code>はcredential不要のrelease gateへ追加しない。
+    </li>
     <li>
       migration rollbackはdown migrationを暗黙実行せず、runtime backupと旧version復元を 基本とする。
     </li>
@@ -496,9 +515,13 @@ node scripts/verify.mjs release --list
   <ol>
     <li>既存Mission Pilot変更のownerと状態を確認する。</li>
     <li>品質改善を専用branch / worktreeで開始する。</li>
-    <li><code>git rev-parse HEAD</code>と<code>git status --short</code>を記録する。</li>
     <li>
-      gateは共有<code>test-results</code>やbuild stagingの干渉を避け、baselineでは直列実行する。
+      <code>git rev-parse HEAD</code
+      >と<code>git status --short</code>を記録する。
+    </li>
+    <li>
+      gateは共有<code>test-results</code>やbuild
+      stagingの干渉を避け、baselineでは直列実行する。
     </li>
     <li>latest GitHub Actions run URLとfailure logを保存する。</li>
   </ol>
@@ -514,7 +537,10 @@ gh run list --limit 10
 </code></pre>
   <h3 id="q0-02-gate-ownership表を固定する">Q0-02 Gate ownership表を固定する</h3>
   <h4 id="implementation-1">Implementation</h4>
-  <p><code>scripts/verify.mjs</code>のtask setとCI workflowを照合し、次を文書・testで固定する。</p>
+  <p>
+    <code>scripts/verify.mjs</code>のtask setとCI
+    workflowを照合し、次を文書・testで固定する。
+  </p>
   <table>
     <caption>
       Implementation
@@ -612,7 +638,9 @@ bun run test run
   <ol>
     <li>全E2E fixture repositoryを<code>git init --initial-branch=main</code>相当で作成する。</li>
     <li>Git version差を吸収する共通fixture helperへ集約する。</li>
-    <li>branch名を固定できない環境では、作成直後に<code>git branch -M main</code>を実行する。</li>
+    <li>
+      branch名を固定できない環境では、作成直後に<code>git branch -M main</code>を実行する。
+    </li>
     <li>global <code>init.defaultBranch</code>変更は行わない。</li>
     <li>Project登録前にfixture branchをassertし、失敗理由を局所化する。</li>
   </ol>
@@ -657,7 +685,10 @@ bun run verify:e2e
   </h3>
   <h4 id="implementation-5">Implementation</h4>
   <ol>
-    <li><code>Settings</code>英語固定locatorを現行locale / accessible name contractへ合わせる。</li>
+    <li>
+      <code>Settings</code>英語固定locatorを現行locale / accessible name
+      contractへ合わせる。
+    </li>
     <li>日本語・英語それぞれのnavigationを独立assertする。</li>
     <li>最初のfailureで後続3件の欠陥を隠さないよう、fixture依存を分離する。</li>
     <li>focus visibility、reduced motion、localized names、modal focus returnを全件実行する。</li>
@@ -692,13 +723,19 @@ node scripts/verify.mjs accessibility
     <li>production service import時にchild processを起動しない。</li>
     <li>transaction、busy timeout、revision increment、public / secret atomic writeを維持する。</li>
     <li>
-      CLI用maintenance scriptの<code>sqlite3</code>利用はproduction sidecar import graphと分離する。
+      CLI用maintenance scriptの<code>sqlite3</code>利用はproduction sidecar
+      import graphと分離する。
     </li>
-    <li>Windows上でPATHに<code>sqlite3</code>がなくてもbootstrapできるtestを追加する。</li>
+    <li>
+      Windows上でPATHに<code>sqlite3</code>がなくてもbootstrapできるtestを追加する。
+    </li>
   </ol>
   <h4 id="acceptance-6">Acceptance</h4>
   <ul>
-    <li>packaged backend startupが<code>sqlite3</code> executableを要求しない。</li>
+    <li>
+      packaged backend startupが<code>sqlite3</code>
+      executableを要求しない。
+    </li>
     <li>public / secret setting bundleが同一transactionで更新される。</li>
     <li>existing settings migrationとmaskingに回帰がない。</li>
   </ul>
@@ -719,7 +756,9 @@ bun run desktop:smoke-sidecar
     <li><code>process.execPath</code>単体copyを削除する。</li>
     <li>Nodeに必要なdynamic library、license、noticeをruntime単位で同梱する。</li>
     <li>manifestへNode version、target、source、SHA-256、必要library一覧を記録する。</li>
-    <li>backend <code>target=node20</code>と実runtime versionの不整合を解消する。</li>
+    <li>
+      backend <code>target=node20</code>と実runtime versionの不整合を解消する。
+    </li>
   </ol>
   <h4 id="acceptance-7">Acceptance</h4>
   <ul>
@@ -735,7 +774,8 @@ bun run desktop:smoke-sidecar
 otool -L scripts/desktop/staged/node/bin/node
 </code></pre>
   <p>
-    Windows / Linuxでは<code>dumpbin</code>または<code>ldd</code>相当のtarget別dependency
+    Windows /
+    Linuxでは<code>dumpbin</code>または<code>ldd</code>相当のtarget別dependency
     checkを使用する。
   </p>
   <h3 id="q2-03-native-package-stagingをtarget限定する">
@@ -750,7 +790,10 @@ otool -L scripts/desktop/staged/node/bin/node
   </ol>
   <h4 id="acceptance-8">Acceptance</h4>
   <ul>
-    <li>対象target以外のnative <code>.node</code> / executableがpackageへ入らない。</li>
+    <li>
+      対象target以外のnative <code>.node</code> /
+      executableがpackageへ入らない。
+    </li>
     <li>libSQL、argon2、Codex runtime importがpackaged sidecarで成功する。</li>
     <li>pruning前後でdesktop smokeに回帰がない。</li>
   </ul>
@@ -775,7 +818,10 @@ du -sh scripts/desktop/staged
   <ol>
     <li>production <code>tauri.conf.json</code>でDevToolsを無効にする。</li>
     <li>development専用configまたはdebug build条件でのみDevToolsを許可する。</li>
-    <li>production buildがTauri <code>devtools</code> featureを含まない構成を検討・適用する。</li>
+    <li>
+      production buildがTauri
+      <code>devtools</code> featureを含まない構成を検討・適用する。
+    </li>
     <li>production artifactのconfig inspection testを追加する。</li>
   </ol>
   <h4 id="acceptance-9">Acceptance</h4>
@@ -802,7 +848,11 @@ bun run desktop:smoke
   </ol>
   <h4 id="acceptance-10">Acceptance</h4>
   <ul>
-    <li>production <code>app.security.csp</code>が<code>null</code>ではない。</li>
+    <li>
+      production
+      <code>app.security.csp</code
+      >が<code>null</code>ではない。
+    </li>
     <li>inline / eval許可は必要性を説明できる最小値である。</li>
     <li>主要画面、artifact preview、API / WebSocketがCSP下で動作する。</li>
   </ul>
@@ -814,7 +864,10 @@ bun run desktop:smoke
   <h3 id="q3-03-loopback-api-boundaryを回帰検証する">Q3-03 Loopback API boundaryを回帰検証する</h3>
   <h4 id="implementation-11">Implementation</h4>
   <ol>
-    <li>packaged productionで<code>127.0.0.1</code>以外へbindしないことを維持する。</li>
+    <li>
+      packaged
+      productionで<code>127.0.0.1</code>以外へbindしないことを維持する。
+    </li>
     <li>wildcard CORS、Vite development origin、non-loopback unauthenticated bindを拒否する。</li>
     <li>CSRF / Origin / WebSocket origin testをrelease gateへ残す。</li>
     <li>local process threatはOS userと同等権限としてtrust modelへ明記する。</li>
@@ -834,16 +887,21 @@ bun run desktop:smoke
   </h3>
   <h4 id="implementation-12">Implementation</h4>
   <ol>
-    <li><code>APPLE_SIGNING_IDENTITY</code>またはTauriがサポートする署名設定をCIへ接続する。</li>
+    <li>
+      <code>APPLE_SIGNING_IDENTITY</code>またはTauriがサポートする署名設定をCIへ接続する。
+    </li>
     <li>
       App Store Connect APIまたはnotarytool credentialをrelease environment secretとして管理する。
     </li>
     <li>
-      <code>.app</code>内部のTauri executable、Node、Codex、native addonを正しい順序で署名する。
+      <code>.app</code>内部のTauri executable、Node、Codex、native
+      addonを正しい順序で署名する。
     </li>
     <li>hardened runtimeと必要entitlementを最小化する。</li>
     <li>notarization、stapling、validationを自動化する。</li>
-    <li><code>--deep</code>だけに依存する後付け署名scriptを正本にしない。</li>
+    <li>
+      <code>--deep</code>だけに依存する後付け署名scriptを正本にしない。
+    </li>
   </ol>
   <h4 id="acceptance-12">Acceptance</h4>
   <ul>
@@ -880,7 +938,8 @@ xcrun stapler validate &lt;NightWorkers.app-or-dmg&gt;
 bun run release:create
 </code></pre>
   <p>
-    <code>release:create</code>はこのPhaseでもdry-runとし、明示的な公開許可なしにtagを作成しない。
+    <code>release:create</code
+    >はこのPhaseでもdry-runとし、明示的な公開許可なしにtagを作成しない。
   </p>
   <h3 id="q4-03-clean-install-smokeを追加する">Q4-03 Clean-install smokeを追加する</h3>
   <h4 id="implementation-14">Implementation</h4>
@@ -888,14 +947,17 @@ bun run release:create
     <li>build workspace外のclean macOS user contextでinstallする。</li>
     <li>quarantine属性を持つdownload相当artifactから起動する。</li>
     <li>
-      first-run DB、JWT secret、settings、logsが<code>app_data_dir</code>へ作られることを確認する。
+      first-run DB、JWT
+      secret、settings、logsが<code>app_data_dir</code>へ作られることを確認する。
     </li>
     <li>Project登録、Overview、Queue endpoint、WebSocket、shutdown、relaunchを確認する。</li>
     <li>uninstall時のapp bundleとruntime dataの扱いを文書化する。</li>
   </ol>
   <h4 id="acceptance-14">Acceptance</h4>
   <ul>
-    <li>開発checkout、system Node、system <code>sqlite3</code>なしで起動する。</li>
+    <li>
+      開発checkout、system Node、system <code>sqlite3</code>なしで起動する。
+    </li>
     <li>初回起動と2回目起動が成功する。</li>
     <li>runtime dataがbundle resource directoryへ書かれない。</li>
   </ul>
@@ -1064,12 +1126,17 @@ bun run release:create
   <h3 id="q7-03-support--security--docs整合">Q7-03 Support / security / docs整合</h3>
   <h4 id="implementation-22">Implementation</h4>
   <ol>
-    <li>Discussionsを有効化するか、<code>SUPPORT.md</code>を実際の導線へ変更する。</li>
+    <li>
+      Discussionsを有効化するか、<code>SUPPORT.md</code>を実際の導線へ変更する。
+    </li>
     <li>security reportのprivate contactを具体化する。</li>
-    <li>desktop runtime defaultをTauri <code>app_data_dir</code>と一致させる。</li>
+    <li>
+      desktop runtime defaultをTauri <code>app_data_dir</code>と一致させる。
+    </li>
     <li>macOS ARM64限定βとWindows / Linuxの検証済み範囲を文書へ反映する。</li>
     <li>
-      <code>README.md</code>、<code>README.ja.md</code>、configuration、trust model、adoption
+      <code>README.md</code
+      >、<code>README.ja.md</code>、configuration、trust model、adoption
       checklist、 release note、GitHub Pagesを同時更新する。
     </li>
   </ol>
@@ -1115,7 +1182,10 @@ bun run release:create
     <tbody>
       <tr>
         <td>Phase 1</td>
-        <td><code>bun run verify</code>、full Vitest、<code>verify:e2e</code>、Accessibility</td>
+        <td>
+          <code>bun run verify</code>、full
+          Vitest、<code>verify:e2e</code>、Accessibility
+        </td>
       </tr>
       <tr>
         <td>Phase 2</td>
@@ -1127,7 +1197,10 @@ bun run release:create
       </tr>
       <tr>
         <td>Milestone A</td>
-        <td><code>verify:release</code>、codesign、spctl、notary、stapler、clean-install smoke</td>
+        <td>
+          <code>verify:release</code
+          >、codesign、spctl、notary、stapler、clean-install smoke
+        </td>
       </tr>
       <tr>
         <td>Phase 5</td>
@@ -1154,7 +1227,8 @@ bun run release:create
   <pre><code class="language-bash">bun run verify:release
 </code></pre>
   <p>
-    <code>release-ready</code>表示だけで完了とせず、同一SHAに対するAccessibility、Desktop matrix、
+    <code>release-ready</code
+    >表示だけで完了とせず、同一SHAに対するAccessibility、Desktop matrix、
     signing、notarization、clean-install evidenceを照合する。
   </p>
   <h2 id="section-10-risk-notes">10. Risk Notes</h2>
@@ -1171,7 +1245,8 @@ bun run release:create
   </p>
   <h3 id="section-103-signing-nested-binaries">10.3 Signing nested binaries</h3>
   <p>
-    Node、Codex、native addonを含むため、outer <code>.app</code>だけの署名では不十分になり得る。
+    Node、Codex、native addonを含むため、outer
+    <code>.app</code>だけの署名では不十分になり得る。
     notarization後の実artifactをGatekeeperで確認する。
   </p>
   <h3 id="section-104-test-only-green">10.4 Test-only green</h3>
@@ -1196,12 +1271,12 @@ bun run release:create
     </li>
     <li>
       CSPにより主要artifact / API /
-      WebSocketが壊れる場合、CSPを<code>null</code>へ戻して完了扱いにせず、 violation
-      sourceを特定して最小allowlistを追加する。
+      WebSocketが壊れる場合、CSPを<code>null</code>へ戻して完了扱いにせず、
+      violation sourceを特定して最小allowlistを追加する。
     </li>
     <li>
-      signing / notarizationが失敗した場合、<code>not_requested</code> artifactをofficial
-      releaseへ昇格しない。
+      signing / notarizationが失敗した場合、<code>not_requested</code>
+      artifactをofficial releaseへ昇格しない。
     </li>
     <li>
       Windows / Linux package smokeが不安定な場合、そのplatformをsupport matrixから外したまま
@@ -1216,7 +1291,9 @@ bun run release:create
   <p>次をすべて満たす。</p>
   <ul>
     <li>full Vitest、E2E、Accessibility、Desktop、dependency auditが成功する。</li>
-    <li>production sidecarがsystem Node / <code>sqlite3</code>に依存しない。</li>
+    <li>
+      production sidecarがsystem Node / <code>sqlite3</code>に依存しない。
+    </li>
     <li>production CSPが有効でDevToolsが無効である。</li>
     <li><code>.app</code> / DMGが署名・notarize・staple済みである。</li>
     <li>clean-install / first-run / relaunch / shutdown smokeが成功する。</li>
@@ -1256,7 +1333,11 @@ bun run release:create
   </ol>
   <p>Implementation Roleへ渡す必須参照:</p>
   <ul>
-    <li>本書 <code>Phase 0</code>、<code>Phase 1</code>、<code>Locked Decisions</code></li>
+    <li>
+      本書
+      <code>Phase 0</code
+      >、<code>Phase 1</code>、<code>Locked Decisions</code>
+    </li>
     <li><code>scripts/verify.mjs</code></li>
     <li><code>tests/verify-script.test.ts</code></li>
     <li><code>tests/e2e/scenario-catalog.json</code></li>

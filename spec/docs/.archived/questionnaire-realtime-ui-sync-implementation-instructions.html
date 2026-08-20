@@ -17,7 +17,8 @@
     <li>Plan ModeがQuestionnaireを生成した。</li>
     <li>Mission Pilotは20秒の介入時間が経過してから、Questionnaire正本を全ページ取得した。</li>
     <li>
-      Mission PilotはTask Operatorの共有actionである<code>questionnaire.submit</code>を実行した。
+      Mission PilotはTask
+      Operatorの共有actionである<code>questionnaire.submit</code>を実行した。
     </li>
     <li>15件の回答がQuestionnaire正本へ保存された。</li>
     <li>Questionnaire sessionは<code>review_ready</code>へ遷移した。</li>
@@ -79,7 +80,9 @@
   <h3 id="mission-pilot">Mission Pilot</h3>
   <p>Mission Pilotはユーザーと同等のapplication actorであり、Questionnaire UIの実装者ではない。</p>
   <ul>
-    <li>ユーザーに許可された共有<code>questionnaire.submit</code> commandを実行できる。</li>
+    <li>
+      ユーザーに許可された共有<code>questionnaire.submit</code> commandを実行できる。
+    </li>
     <li>command receiptとQuestionnaireの正本状態を観測できる。</li>
     <li>Questionnaire回答、Plan routing、次actionの判断を自身のrole責務として行う。</li>
     <li>UI query cache、React state、Questionnaire画面のroute、DOMを直接操作しない。</li>
@@ -253,9 +256,7 @@ Questionnaire画面が対象sessionのcanonical queryを再取得
     <li>Mission Pilot / Coding Agent module境界検査が成功する。</li>
   </ol>
   <p>
-    検証commandはリポジトリの既存scriptを確認して選択する。最低限、関連Vitest、<code
-      >bun run typecheck</code
-    >、<code>bun run check:architecture</code>を実行する。
+    検証commandはリポジトリの既存scriptを確認して選択する。最低限、関連Vitest、<code>bun run typecheck</code>、<code>bun run check:architecture</code>を実行する。
   </p>
   <h2 id="作業完了時の報告">作業完了時の報告</h2>
   <p>最終報告には次を含める。</p>

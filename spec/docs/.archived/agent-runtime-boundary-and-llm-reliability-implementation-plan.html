@@ -14,16 +14,18 @@
       >
     </li>
     <li>
-      Findings: <code>M1</code>, <code>M2</code>, <code>M3</code>, <code>M10</code>,
-      <code>M14</code>, <code>m8</code>, <code>m10</code>
+      Findings: <code>M1</code>,
+      <code>M2</code>, <code>M3</code>,
+      <code>M10</code>, <code>M14</code>,
+      <code>m8</code>, <code>m10</code>
     </li>
     <li>Implementation authorization: completed</li>
   </ul>
   <h2 id="実装結果">実装結果</h2>
   <ul>
     <li>
-      C-T0/C-T1: Codex CLI <code>0.144.4</code> (darwin/arm64, <code>workspace-write</code>)
-      を実測した結果、Project secret、repository外、
+      C-T0/C-T1: Codex CLI <code>0.144.4</code> (darwin/arm64,
+      <code>workspace-write</code>) を実測した結果、Project secret、repository外、
       symlink外部へのread/writeを遮断できないことを確認した。そのため当該platformのCodex laneは
       <code>CODEX_RUNTIME_SECURITY_CONTRACT_UNSATISFIED</code
       >でfail-closedにした。測定値・値を含まないdigest・schemaは
@@ -45,10 +47,12 @@
     </li>
     <li>
       検証: 関連Vitest 14 file / 100 tests、追加したhost-boundary suites 3 file / 20 tests、
-      <code>bun run check:architecture</code>が成功した。全体<code>tsc</code>は本計画外の<code
+      <code>bun run check:architecture</code
+      >が成功した。全体<code>tsc</code>は本計画外の<code
         >safe-outbound-fetch</code
       >
-      / <code>fetch-content</code>の 未完差分で失敗するため、この計画の完了判定には含めていない。
+      / <code>fetch-content</code>の
+      未完差分で失敗するため、この計画の完了判定には含めていない。
     </li>
   </ul>
   <h2 id="section-1-目的">1. 目的</h2>
@@ -69,7 +73,9 @@
   </ol>
   <h2 id="section-2-非目的">2. 非目的</h2>
   <ul>
-    <li><code>approvalPolicy: never</code>だけを理由にCodex sandboxが無効だと扱わない。</li>
+    <li>
+      <code>approvalPolicy: never</code>だけを理由にCodex sandboxが無効だと扱わない。
+    </li>
     <li>headless runtimeへ対話approval UIを根拠なく追加しない。</li>
     <li>Coding Agentへ意味別mode、固定workflow、tool allowlistを追加しない。</li>
     <li>Native API runtimeとCodex SDK runtimeを別Agent roleとして分割しない。</li>
@@ -81,7 +87,8 @@
   <h3 id="section-31-runtime-security-asymmetry">3.1 Runtime security asymmetry</h3>
   <ul>
     <li>
-      Codex SDKは<code>workspace-write</code>、<code>approvalPolicy: never</code>、repository
+      Codex
+      SDKは<code>workspace-write</code>、<code>approvalPolicy: never</code>、repository
       rootをworking directoryにする。
     </li>
     <li>
@@ -106,9 +113,8 @@
   <h3 id="section-33-provider--tool-structural-failure">3.3 Provider / tool structural failure</h3>
   <ul>
     <li>
-      Codex tool argument parse失敗は<code>{ _raw }</code>へ変換され、tool call自体は<code
-        >ok: true</code
-      >となる。
+      Codex tool argument parse失敗は<code>{ _raw }</code>へ変換され、tool
+      call自体は<code>ok: true</code>となる。
     </li>
     <li>
       mutating toolには下流validationがあるが、引数なしread toolはmalformed
@@ -214,10 +220,16 @@
   <ul>
     <li>repository内通常file read/write。</li>
     <li>repository外file read/write。</li>
-    <li><code>.env</code>、<code>.env.*</code>、PEM/key、registry credential file read。</li>
+    <li>
+      <code>.env</code
+      >、<code>.env.*</code>、PEM/key、registry credential file read。
+    </li>
     <li>shell child process、symlink、absolute path。</li>
     <li>network access。</li>
-    <li>MCP <code>approval_mode</code>とglobal <code>approvalPolicy</code>の組合せ。</li>
+    <li>
+      MCP <code>approval_mode</code>とglobal
+      <code>approvalPolicy</code>の組合せ。
+    </li>
     <li>server側authorization拒否時のCodex event/result。</li>
   </ul>
   <p>
@@ -294,8 +306,8 @@
   <ul>
     <li>
       <code>api/modules/codingAgent</code
-      >から<code>api/modules/nightworkers</code>のrepository、orchestration、serviceへの direct
-      importが0件である。
+      >から<code>api/modules/nightworkers</code>のrepository、orchestration、serviceへの
+      direct importが0件である。
     </li>
     <li>Coding Agent standalone entrypointのtestがhost fake portだけで実行できる。</li>
     <li>Task解釈や完了判断の所有権はCoding Agent applicationに残る。</li>
@@ -340,8 +352,8 @@
     </li>
     <li>raw本文はprovider turn/session historyへbounded保存する。</li>
     <li>
-      <code>ok: false</code>はtool dispatch前に<code>INVALID_TOOL_ARGS</code>相当のtyped tool
-      resultへ変換する。
+      <code>ok: false</code>はtool
+      dispatch前に<code>INVALID_TOOL_ARGS</code>相当のtyped tool resultへ変換する。
     </li>
     <li>
       引数なしtoolを含め、tool
@@ -361,7 +373,8 @@
   <ul>
     <li>SSE framingは空dataと<code>[DONE]</code>だけを正常skipする。</li>
     <li>
-      JSON parse不能recordは、payload preview/digestを保持した<code>StructuredProviderError</code>の
+      JSON parse不能recordは、payload
+      preview/digestを保持した<code>StructuredProviderError</code>の
       <code>invalid_response</code>へ変換する。
     </li>
     <li>既にemit済みdeltaがある場合も、最終resultをsuccessにしない。</li>
@@ -372,7 +385,9 @@
   <ul>
     <li>中間record破損後にvalid JSON contentが組み上がってもsuccessにならない。</li>
     <li>malformed payload全体を無制限にlog/persistしない。</li>
-    <li>callerは<code>invalid_response</code>とschema-invalid model本文を区別できる。</li>
+    <li>
+      callerは<code>invalid_response</code>とschema-invalid model本文を区別できる。
+    </li>
   </ul>
   <h3 id="phase-c6-budget-estimator-contract">Phase C6: Budget estimator contract</h3>
   <h4 id="implementation-6">Implementation</h4>
@@ -401,7 +416,9 @@
   <h3 id="phase-c7-abort-safe-retry">Phase C7: Abort-safe retry</h3>
   <h4 id="implementation-7">Implementation</h4>
   <ul>
-    <li>backoff関数を<code>completed | aborted</code> resultまたはAbortErrorにする。</li>
+    <li>
+      backoff関数を<code>completed | aborted</code> resultまたはAbortErrorにする。
+    </li>
     <li>backoff直後、attempt event発行前、provider call直前にsignalを再確認する。</li>
     <li>abort後はroute fallbackにも進まない。</li>
     <li>cancelled resultとprovider failureを区別し、retryableへ正規化しない。</li>
@@ -414,8 +431,8 @@
   <h2 id="section-7-terra実行チケット台帳">7. Terra実行チケット台帳</h2>
   <p>
     Area Cはsecurity実測、port境界、provider codecを別change
-    setにする。特に<code>C-T0</code>の測定結果がない状態で Codex laneをNative
-    laneと同等と記録してはならない。
+    setにする。特に<code>C-T0</code>の測定結果がない状態で Codex
+    laneをNative laneと同等と記録してはならない。
   </p>
   <h3 id="c-t0-codex-sdk-01444-security-capabilityを実測する">
     C-T0: Codex SDK 0.144.4 security capabilityを実測する
@@ -430,8 +447,7 @@
       Read-only参照:
       <code>package.json</code>、<code>node_modules/@openai/codex-sdk/dist/index.d.ts</code>、
       <code>api/modules/codingAgent/runtime/codex-sdk/codex-sdk-runtime-config.ts</code>、
-      <code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code>、Area Aのsecret/confinement
-      contract
+      <code>api/modules/codingAgent/runtime/CodexAgentRuntime.ts</code>、Area Aのsecret/confinement contract
     </li>
     <li>
       Fixed fact:
@@ -443,9 +459,8 @@
       Harness: tempではなく登録済みfixture repositoryをworking
       directoryにし、通常file、<code>.env</code>、<code>.env.local</code>、
       PEM/key、symlink外部、absolute外部、workspace内write、workspace外write、network、child
-      processを各1 turnで測る。 fixture secretはランダム生成し、結果JSONには値ではなく<code
-        >allowed/denied/error code/digest</code
-      >だけを保存する。
+      processを各1 turnで測る。 fixture
+      secretはランダム生成し、結果JSONには値ではなく<code>allowed/denied/error code/digest</code>だけを保存する。
     </li>
     <li>
       Matrix key: SDK version、bundled Codex version、OS/arch、sandboxMode、approvalPolicy、network
@@ -463,7 +478,10 @@
   </h3>
   <ul>
     <li>Findings: <code>M1</code></li>
-    <li>Depends on: <code>A-T2</code>, <code>A-T3</code>, <code>C-T0</code></li>
+    <li>
+      Depends on: <code>A-T2</code>,
+      <code>A-T3</code>, <code>C-T0</code>
+    </li>
     <li>
       Write set: 新規<code>api/modules/codingAgent/runtime/runtime-security-contract.ts</code>、
       新規<code>api/modules/codingAgent/runtime/codex-sdk/codex-confinement-wrapper.ts</code>、
@@ -489,7 +507,8 @@
       lane開始を<code>CODEX_RUNTIME_SECURITY_CAPABILITY_MISSING</code>で停止する。
     </li>
     <li>
-      Approval: <code>approvalPolicy: never</code>はheadless動作設定として維持し、security
+      Approval:
+      <code>approvalPolicy: never</code>はheadless動作設定として維持し、security
       boundaryの根拠に数えない。 MCP mutating toolのserver-side
       authorization/revision/idempotencyは変更しない。
     </li>
@@ -517,7 +536,8 @@
     </li>
     <li>
       Types: <code>typeof nightworkersRepo.*</code>をport public typeに使わず、Coding
-      Agentが実際に読むfieldだけを <code>CodingAgentTaskSnapshot</code>等へ定義する。Date、status
+      Agentが実際に読むfieldだけを
+      <code>CodingAgentTaskSnapshot</code>等へ定義する。Date、status
       enum、revision、context snapshotの意味は既存shared schemaを再利用する。
     </li>
     <li>
@@ -543,7 +563,8 @@
     <li>
       Write set: 新規<code>api/composition/coding-agent/coding-agent-host-adapter.ts</code>、新規
       <code>api/composition/coding-agent/index.ts</code
-      >、<code>api/app.ts</code>、<code>api/server.ts</code>、composition test
+      >、<code>api/app.ts</code>、<code>api/server.ts</code>、composition
+      test
     </li>
     <li>
       Fixed fact: 現HEADには<code>api/composition/mission-pilot</code>だけがあり、Coding Agent
@@ -555,7 +576,9 @@
       commandを呼ぶ。
     </li>
     <li>
-      Registration: <code>app.ts</code>/<code>server.ts</code>はCoding Agent moduleのzero-arg
+      Registration:
+      <code>app.ts</code
+      >/<code>server.ts</code>はCoding Agent moduleのzero-arg
       initializerではなくcomposition factoryを呼ぶ。 unregister/idempotent
       initializationの現行挙動を維持する。
     </li>
@@ -591,17 +614,16 @@
     </li>
     <li>
       Tests:
-      <code>tests/coding-agent-command-http.test.ts</code
-      >、<code>tests/task-operator-regressions.test.ts</code>、
-      <code>tests/coding-agent-runtime-reliability-integration.test.ts</code>と各近接coverage
-      suite。
+      <code>tests/coding-agent-command-http.test.ts</code>、<code>tests/task-operator-regressions.test.ts</code>、
+      <code>tests/coding-agent-runtime-reliability-integration.test.ts</code>と各近接coverage suite。
     </li>
     <li>
       Stop: DB transactionをCoding Agent側へ移す必要が生じたら行わず、composition
       adapterに新しいatomic host commandを追加する。
     </li>
     <li>
-      Done: 上記9 fileから<code>modules/nightworkers</code> importが0件で、fake host testが通る。
+      Done: 上記9 fileから<code>modules/nightworkers</code> importが0件で、fake host
+      testが通る。
     </li>
   </ul>
   <h3 id="c-t5-runtime-importerをportへ移しarchitecture-guardを有効化する">
@@ -611,10 +633,8 @@
     <li>Findings: <code>M2</code></li>
     <li>Depends on: <code>C-T4</code></li>
     <li>
-      Write set: 次の7 file、C-T2 port、C-T3
-      adapter、<code>.agent-ontology/boundary-policy.json</code>、
-      <code>scripts/check-module-boundaries.mjs</code
-      >、<code>tests/role-module-boundary.test.ts</code>。
+      Write set: 次の7 file、C-T2 port、C-T3 adapter、<code>.agent-ontology/boundary-policy.json</code>、
+      <code>scripts/check-module-boundaries.mjs</code>、<code>tests/role-module-boundary.test.ts</code>。
       <ul>
         <li><code>runtime/codex-repository-preflight.ts</code></li>
         <li><code>runtime/e2e-fixture-runtime.ts</code></li>
@@ -628,14 +648,14 @@
     <li>
       Note: inventoryはimportを持つ16 production fileを正本にし、上記は7 fileである。C-T4の9
       fileと重複する
-      <code>runtime-execution-interruption.service.ts</code>等を二重計上しない。実装開始時に<code
-        >rg -l</code
-      >を再実行し、合計が変われば台帳を更新する。
+      <code>runtime-execution-interruption.service.ts</code
+      >等を二重計上しない。実装開始時に<code>rg -l</code>を再実行し、合計が変われば台帳を更新する。
     </li>
     <li>
       Architecture rule:
       <code>api/modules/codingAgent/**</code
-      >から<code>api/modules/nightworkers/**</code>へのvalue/type import、dynamic import、 public
+      >から<code>api/modules/nightworkers/**</code>へのvalue/type import、dynamic import、
+      public
       index経由re-exportを禁止し、許可rootを<code>api/composition/coding-agent/**</code>だけにする。policyにsource/target
       edgeを 追加し、scriptがTypeScript preprocessorで静的import/exportを検査する。
     </li>
@@ -651,26 +671,28 @@
     <li>Findings: <code>M3</code></li>
     <li>
       Write set: <code>api/modules/missionPilot/persistence/authorization.ts</code>、
-      <code>api/modules/missionPilot/persistence/agent/agent-session.repository.ts</code>、
-      <code>api/modules/missionPilot/persistence/agent/conversation.repository.ts</code>、
-      <code>api/composition/mission-pilot/mission-pilot-host-ports.ts</code>、runtime
-      bindings/dependencies、 <code>scripts/check-mission-pilot-package-boundary.mjs</code>、
+      <code>api/modules/missionPilot/persistence/agent/agent-session.repository.ts</code>、 <code>api/modules/missionPilot/persistence/agent/conversation.repository.ts</code>、
+      <code>api/composition/mission-pilot/mission-pilot-host-ports.ts</code>、runtime bindings/dependencies、
+      <code>scripts/check-mission-pilot-package-boundary.mjs</code>、
       <code>tests/mission-pilot-repository.test.ts</code
       >、<code>tests/mission-pilot-provider-port.test.ts</code>、architecture test
     </li>
     <li>
-      Authorization: <code>readCurrentTaskOperatorUserCapabilities</code>とdigest生成をcomposition
-      host portへ移し、persistenceは
+      Authorization: <code>readCurrentTaskOperatorUserCapabilities</code>とdigest生成をcomposition host
+      portへ移し、persistenceは
       <code>{capabilities, capabilityDigest}</code>を入力としてauthorization
       rowを構築するだけにする。
     </li>
     <li>
       Backfill/play:
-      <code>humanTaskOperatorPrincipal</code>と<code>readTaskOperatorProjection</code>をhost port
-      callの結果として受け、 persistence repositoryからTask Operator commandを呼ばない。
+      <code>humanTaskOperatorPrincipal</code
+      >と<code>readTaskOperatorProjection</code>をhost port callの結果として受け、 persistence
+      repositoryからTask Operator commandを呼ばない。
     </li>
     <li>
-      Conversation: <code>getTaskOperatorActionDefinition</code>で解決した<code>actionId</code>
+      Conversation: <code>getTaskOperatorActionDefinition</code>で解決した<code
+        >actionId</code
+      >
       projectionをclaim/append command inputへ渡し、 DB transaction中に別role runtimeを呼ばない。
     </li>
     <li>
@@ -678,8 +700,8 @@
       typeは両roleで同義なら維持できる。
     </li>
     <li>
-      Done: 上記3 fileから<code>api/modules/taskOperator</code> value importが0件で、capability
-      digest/action ID/backfill結果が移行前fixtureと一致する。
+      Done: 上記3 fileから<code>api/modules/taskOperator</code> value
+      importが0件で、capability digest/action ID/backfill結果が移行前fixtureと一致する。
     </li>
   </ul>
   <h3 id="c-t7-malformed-tool-argumentをdispatch前のtyped-failureにする">
@@ -697,18 +719,16 @@
     </li>
     <li>
       Codec result:
-      <code
-        >{ok:true,value,raw} |
-        {ok:false,raw,failure:&#39;invalid_json&#39;|&#39;non_object&#39;}</code
-      >。空文字はschemaが
+      <code>{ok:true,value,raw} |
+        {ok:false,raw,failure:&#39;invalid_json&#39;|&#39;non_object&#39;}</code>。空文字はschemaが
       propertyなしを許す場合の<code>{}</code>として扱う。array/null/number/stringを<code>{value}</code>へ正規化しない。
     </li>
     <li>
       Failure: invalid
       callが1件でもあれば<code>ProviderToolCall</code>を生成せず、<code>StructuredProviderError</code>の
-      <code>kind:&#39;invalid_response&#39;</code>,
-      <code>code:&#39;INVALID_TOOL_ARGUMENTS&#39;</code>,
-      <code>retryable:false</code>をthrowする。outer response/contentと raw argumentsは8
+      <code>kind:&#39;invalid_response&#39;</code>, <code>code:&#39;INVALID_TOOL_ARGUMENTS&#39;</code>,
+      <code>retryable:false</code>をthrowする。outer response/contentと raw
+      argumentsは8
       KiB上限+digestの<code>providerBody</code>へ保持する。<code>{_raw}</code>を実行可能argumentsにしない。
     </li>
     <li>
@@ -729,18 +749,18 @@
     <li>
       Write set:
       <code>api/services/structured-llm/openai.ts</code>、<code>provider-failure.ts</code>、
-      <code>tests/structured-llm/services-structured-llm-02/schema-parsing.cases.ts</code
-      >、近接stream suite
+      <code>tests/structured-llm/services-structured-llm-02/schema-parsing.cases.ts</code>、近接stream suite
     </li>
     <li>
-      Contract: 空dataと<code>[DONE]</code>だけをskipする。JSON.parse失敗時はlogger
+      Contract:
+      空dataと<code>[DONE]</code>だけをskipする。JSON.parse失敗時はlogger
       warn+continueを廃止し、bounded payloadを
       <code>providerInvalidResponseError</code
       >へ渡して直ちにthrowする。既にemitしたdeltaがあってもfinal successを返さない。
     </li>
     <li>
-      Retry: kindは<code>invalid_response</code>、retryable false。local-compatible endpoint
-      fallbackを増やさない。
+      Retry: kindは<code>invalid_response</code>、retryable false。local-compatible
+      endpoint fallbackを増やさない。
     </li>
     <li>
       Done: 先頭/中間/末尾の破損record、multi-line SSE、UTF-8分割でpartial
@@ -755,18 +775,18 @@
     <li>
       Write set: <code>api/services/conversation-context/token-budget.ts</code>、
       <code>api/modules/codingAgent/runtime/native-api-runner/native-api-context-budget.ts</code>、
-      <code>packages/mission-pilot/src/services/conversation-context/token-budget.ts</code
-      >、各近接test
+      <code>packages/mission-pilot/src/services/conversation-context/token-budget.ts</code>、各近接test
     </li>
     <li>
       First step: ASCII、日本語、emoji、tool schema/history fixtureで3
       estimatorの出力、soft/compact/hard境界をsnapshotする。
     </li>
     <li>
-      Decision: current <code>/4</code>、conservative <code>/3</code>、UTF-8 byte
+      Decision: current <code>/4</code>、conservative
+      <code>/3</code>、UTF-8 byte
       <code>/4+buffer</code>は用途を示す関数名とalgorithm versionを付ける。
-      <code>soft &lt;= hard</code>、<code>autoCompact &lt;= safePrompt &lt;= context-reserved</code
-      >が全fixtureで成立するなら式を変更しない。
+      <code>soft &lt;= hard</code
+      >、<code>autoCompact &lt;= safePrompt &lt;= context-reserved</code>が全fixtureで成立するなら式を変更しない。
     </li>
     <li>
       Stop: model
@@ -781,15 +801,14 @@
     <li>Findings: <code>m10</code></li>
     <li>
       Write set:
-      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-provider-attempts.ts</code
-      >、 既存native provider attempt suite
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-provider-attempts.ts</code>、 既存native provider attempt suite
     </li>
     <li>
-      Contract: <code>waitForProviderRetryBackoff</code>は<code
-        >&#39;elapsed&#39; | &#39;aborted&#39;</code
-      >を返す。callerは<code>aborted</code>または
-      <code>signal.aborted</code>ならloopを終了し、attempt event、route fallback、provider
-      callを追加しない。
+      Contract:
+      <code>waitForProviderRetryBackoff</code
+      >は<code>&#39;elapsed&#39; | &#39;aborted&#39;</code>を返す。callerは<code>aborted</code>または
+      <code>signal.aborted</code>ならloopを終了し、attempt event、route
+      fallback、provider callを追加しない。
     </li>
     <li>
       Done: fake timerでbackoff中abortした時のprovider call count=1、後続attempt event=0、cancelled

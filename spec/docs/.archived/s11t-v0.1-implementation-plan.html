@@ -3,7 +3,8 @@
   <h2 id="status">Status</h2>
   <ul>
     <li>
-      Publication status: implemented and published as <code>s11tnext@0.1.0</code> and
+      Publication status: implemented and published as
+      <code>s11tnext@0.1.0</code> and
       <code>s11tnext-cli@0.1.0</code>
     </li>
     <li>
@@ -24,7 +25,8 @@
   <p>
     構想書は将来のeval、experiment、promotion、optimizerまで含む。対して本計画は、利用者が
     TOMLでSystemContextを編集し、CLIが決定的なJSON artifactとTypeScript型を生成し、実行時に
-    filesystem非依存のruntimeがJSON objectから型付き<code>p()</code>を提供するところまでに限定する。
+    filesystem非依存のruntimeがJSON
+    objectから型付き<code>p()</code>を提供するところまでに限定する。
   </p>
   <h2 id="section-1-目的">1. 目的</h2>
   <p>次のdeveloper experienceを成立させる。</p>
@@ -51,7 +53,8 @@ SystemContextInvocation&lt;string&gt; + manifest
     <li>SystemContext編集者はTOMLだけを編集する。</li>
     <li>application runtimeはTOMLをparseせず、生成済みJSON artifactだけを利用する。</li>
     <li>
-      runtime packageは<code>node:*</code> builtin、filesystem、process、databaseへ依存しない。
+      runtime packageは<code>node:*</code>
+      builtin、filesystem、process、databaseへ依存しない。
     </li>
     <li>runtimeはJSONの保存場所や取得方法を所有しない。</li>
     <li>SystemContext key、必須runtime値、output kindをTypeScriptで補助できる。</li>
@@ -131,8 +134,8 @@ git -C /Users/y.noguchi/Code/nightWorkers status --short --branch
     <li>runtimeはTOML parserをdependencyに持たない。</li>
     <li>JSON artifactはruntime値を展開する前のcompiled templateを保持する。</li>
     <li>
-      <code>taskGoal</code>等のrequest固有値、rendered SystemContext本文、user
-      messageをartifactへ保存しない。
+      <code>taskGoal</code>等のrequest固有値、rendered
+      SystemContext本文、user messageをartifactへ保存しない。
     </li>
     <li>
       JSON artifactの取得はapplicationが所有する。filesystem、database、object storage、HTTP、
@@ -147,11 +150,23 @@ git -C /Users/y.noguchi/Code/nightWorkers status --short --branch
     <li>simple text context。</li>
     <li>sectioned text context。</li>
     <li><code>namespace:key</code>形式のID。</li>
-    <li><code>ja-JP</code>、<code>en-US</code>を含む任意のBCP 47 locale string。</li>
+    <li>
+      <code>ja-JP</code
+      >、<code>en-US</code>を含む任意のBCP 47 locale string。
+    </li>
     <li>明示的なlocale fallback。</li>
     <li>必須runtime variable。</li>
-    <li><code>trusted</code> / <code>untrusted</code>分類。</li>
-    <li><code>raw</code>、<code>json-string</code>、<code>json-value</code> encoding。</li>
+    <li>
+      <code>trusted</code> /
+      <code>untrusted</code>分類。
+    </li>
+    <li>
+      <code>raw</code
+      >、<code>json-string</code>、<code
+        >json-value</code
+      >
+      encoding。
+    </li>
     <li><code>[[variableName]]</code> interpolation。</li>
     <li>schema validation、lint、build、typegen。</li>
     <li>deterministic definition hash、artifact hash、release digest、catalog digest。</li>
@@ -172,7 +187,8 @@ git -C /Users/y.noguchi/Code/nightWorkers status --short --branch
     <li>frontend専用packageまたはbrowser loader。</li>
   </ul>
   <p>
-    <code>output = &quot;messages&quot;</code>、<code>required = false</code>、profile
+    <code>output = &quot;messages&quot;</code
+    >、<code>required = false</code>、profile
     override等の予約fieldがsourceに現れた場合、 CLIは黙って無視せず、未対応を示す安定したdiagnostic
     codeで失敗する。
   </p>
@@ -186,9 +202,13 @@ git -C /Users/y.noguchi/Code/nightWorkers status --short --branch
       runtime packageも公式support matrixはNode 22 / 24とするが、sourceではNode builtinを使わない。
     </li>
     <li>TypeScriptはstrict modeを有効にする。</li>
-    <li>buildは最初に<code>tsc -b</code>を使用し、bundle toolを必須にしない。</li>
     <li>
-      public exportは<code>package.json#exports</code>に列挙し、internal path importを許可しない。
+      buildは最初に<code>tsc -b</code>を使用し、bundle
+      toolを必須にしない。
+    </li>
+    <li>
+      public exportは<code>package.json#exports</code>に列挙し、internal path
+      importを許可しない。
     </li>
   </ol>
   <p>
@@ -459,7 +479,8 @@ text = &#39;&#39;&#39;
     <li>同じvariableの複数参照は許可する。</li>
     <li>nested path、function call、condition、format指定を許可しない。</li>
     <li>
-      <code>[[</code>または<code>]]</code>をliteralとして記述するescape
+      <code>[[</code
+      >または<code>]]</code>をliteralとして記述するescape
       syntaxはv0.1で提供しない。必要なsourceは Unicode escape等で意図を明示する。
     </li>
   </ol>
@@ -497,13 +518,20 @@ text = &#39;&#39;&#39;
       </tr>
       <tr>
         <td><code>json-string</code></td>
-        <td><code>string</code> / <code>number</code> / <code>boolean</code></td>
+        <td>
+          <code>string</code> /
+          <code>number</code> /
+          <code>boolean</code>
+        </td>
         <td>string化後、quoteを含むJSON string literalとして挿入</td>
       </tr>
       <tr>
         <td><code>json-value</code></td>
         <td>
-          <code>string</code> / <code>number</code> / <code>boolean</code> / <code>json</code>
+          <code>string</code> /
+          <code>number</code> /
+          <code>boolean</code> /
+          <code>json</code>
         </td>
         <td>canonical JSONとして挿入</td>
       </tr>
@@ -543,7 +571,8 @@ text = &#39;&#39;&#39;
 };
 </code></pre>
   <p>
-    <code>configPath</code>と<code>sourceFiles</code>はconfig directoryからのPOSIX形式relative
+    <code>configPath</code
+    >と<code>sourceFiles</code>はconfig directoryからのPOSIX形式relative
     pathとする。absolute path、 home directory、temporary
     directoryをartifactへ保存しない。provenance pathはhash対象から除外する。
   </p>
@@ -578,11 +607,11 @@ text = &#39;&#39;&#39;
 };
 </code></pre>
   <p>
-    simple contextはCLIが内部的に安定したsection ID <code>context.text</code>を持つ1
-    sectionへ正規化する。 既定値は<code>kind = &quot;instruction&quot;</code>、<code
-      >severity = &quot;must&quot;</code
-    >、<code>enforcement = &quot;prompt&quot;</code>、
-    <code>optimizable = false</code>とする。runtimeはsimple / sectionedのsource差を知らない。
+    simple contextはCLIが内部的に安定したsection ID
+    <code>context.text</code>を持つ1 sectionへ正規化する。
+    既定値は<code>kind = &quot;instruction&quot;</code>、<code>severity = &quot;must&quot;</code>、<code>enforcement = &quot;prompt&quot;</code>、
+    <code>optimizable = false</code>とする。runtimeはsimple /
+    sectionedのsource差を知らない。
   </p>
   <h3 id="section-73-runtime-values-are-not-persisted">7.3 Runtime values are not persisted</h3>
   <p>次をJSON artifactへ含めない。</p>
@@ -596,7 +625,10 @@ text = &#39;&#39;&#39;
     <li>experiment assignment。</li>
     <li>user ID、tenant ID、email等のapplication identity。</li>
   </ul>
-  <p>これらは<code>p()</code>呼出し時またはhost application側traceで生成・保存する。</p>
+  <p>
+    これらは<code>p()</code>呼出し時またはhost
+    application側traceで生成・保存する。
+  </p>
   <h2 id="section-8-canonicalization-and-identity">8. Canonicalization and Identity</h2>
   <h3 id="section-81-normalization">8.1 Normalization</h3>
   <ol>
@@ -653,7 +685,10 @@ renderedHash  = sha256(&quot;s11t.rendered.v1\0&quot;   + utf8(renderedText))
     >越しに使用する。暗号実装を独自作成せず、browser-compatibleな監査実績のある
     dependencyを選び、lockfileで固定する。
   </p>
-  <p>CLIとruntimeは同じhash wrapperを使用し、Node <code>crypto</code>版との実装差を作らない。</p>
+  <p>
+    CLIとruntimeは同じhash wrapperを使用し、Node
+    <code>crypto</code>版との実装差を作らない。
+  </p>
   <h2 id="section-9-runtime-public-api">9. Runtime Public API</h2>
   <h3 id="section-91-pure-compiler-api">9.1 Pure compiler API</h3>
   <p>
@@ -680,8 +715,8 @@ const artifact = compileCatalog(canonicalDefinitions, {
     受け取らない。
   </p>
   <p>
-    <code>s11tnext/compiler</code>はtooling向けpublic APIだが、通常のapplication runtimeはroot
-    exportの <code>createCatalog()</code>だけを使用する。
+    <code>s11tnext/compiler</code>はtooling向けpublic APIだが、通常のapplication
+    runtimeはroot exportの <code>createCatalog()</code>だけを使用する。
   </p>
   <h3 id="section-92-catalog-creation">9.2 Catalog creation</h3>
   <pre><code class="language-ts">import { createAppCatalog } from &quot;./.s11tnext/catalog.generated.js&quot;;
@@ -690,8 +725,10 @@ const artifact: unknown = loadArtifactByApplication();
 const catalog = createAppCatalog(artifact);
 </code></pre>
   <p>
-    generated <code>createAppCatalog()</code>は、runtimeの<code>createCatalog()</code>へgenerated
-    type contractと期待する catalog
+    generated
+    <code>createAppCatalog()</code
+    >は、runtimeの<code>createCatalog()</code>へgenerated type contractと期待する
+    catalog
     digestを渡す。<code>createCatalog()</code>は入力を<code>unknown</code>として受け、artifact
     schema、期待digest、 全release digest、全artifact
     hashを検証する。不正なartifactや別世代のgenerated typeとの組合せを 部分的に受理しない。
@@ -765,7 +802,10 @@ class S11tError extends Error {
 	readonly path: Array&lt;string | number&gt;;
 }
 </code></pre>
-  <p>error messageの文言ではなく<code>code</code>をprogrammatic contractとする。</p>
+  <p>
+    error messageの文言ではなく<code>code</code>をprogrammatic
+    contractとする。
+  </p>
   <h2 id="section-10-generated-type-contract">10. Generated Type Contract</h2>
   <p>CLIは<code>.s11tnext/catalog.generated.ts</code>を生成する。</p>
   <pre><code class="language-ts">import type { CatalogContract, JsonValue } from &quot;s11tnext&quot;;
@@ -808,9 +848,10 @@ export function createAppCatalog(artifact: unknown) {
     記録する。絶対path、生成時刻を含めず、同じ入力からbyte-identicalにする。
   </p>
   <p>
-    variable typeからgenerated TypeScript型への対応は<code>string -&gt; string</code>、<code
-      >number -&gt; number</code
-    >、 <code>boolean -&gt; boolean</code>、<code>json -&gt; JsonValue</code>に固定する。
+    variable typeからgenerated
+    TypeScript型への対応は<code>string -&gt; string</code>、<code>number -&gt; number</code>、
+    <code>boolean -&gt; boolean</code
+    >、<code>json -&gt; JsonValue</code>に固定する。
   </p>
   <p>
     TypeScriptのexcess property checkは変数経由で完全ではないため、「余分な値を必ずcompile
@@ -855,12 +896,14 @@ s11tnext inspect &lt;namespace:key&gt; [--locale ja-JP]
   <p>
     staging directoryで両方を生成・相互検証してから、各fileを同じdirectoryのtemporary file経由で
     置換する。各fileの置換はatomicにするが、2 fileを跨ぐ完全なtransactionとは表明しない。 generated
-    TypeScriptに期待catalog digestを埋め込み、世代不一致は<code>createAppCatalog()</code>と
+    TypeScriptに期待catalog
+    digestを埋め込み、世代不一致は<code>createAppCatalog()</code>と
     <code>build --check</code
     >で検出する。compileまたはstaging検証の失敗時は既存の成功artifactを保持する。
   </p>
   <p>
-    <code>--check</code>は生成せず、現在の出力がsourceから再生成したbytesと一致するか検証する。CIは
+    <code>--check</code
+    >は生成せず、現在の出力がsourceから再生成したbytesと一致するか検証する。CIは
     <code>s11tnext build --check</code>を使用し、stale artifactを検出する。
   </p>
   <h3 id="section-114-diagnostics">11.4 Diagnostics</h3>
@@ -877,8 +920,10 @@ s11tnext inspect &lt;namespace:key&gt; [--locale ja-JP]
 </code></pre>
   <p>
     human-readable outputと<code>--format json</code>を提供する。終了codeはsuccess
-    <code>0</code>、source/config error <code>1</code>、 CLI misuse <code>2</code>、unexpected
-    internal error <code>3</code>に固定する。
+    <code>0</code>、source/config error
+    <code>1</code>、 CLI misuse
+    <code>2</code>、unexpected internal error
+    <code>3</code>に固定する。
   </p>
   <h2 id="section-12-package-metadata-and-distribution">12. Package Metadata and Distribution</h2>
   <h3 id="section-121-runtime-package">12.1 Runtime package</h3>
@@ -930,8 +975,13 @@ s11tnext inspect &lt;namespace:key&gt; [--locale ja-JP]
   <ul>
     <li>package managerはCorepackで固定したpnpmを使用する。</li>
     <li>Changesetsで2 packageのversionとchangelogを管理する。</li>
-    <li>canaryはimmutable versionと<code>canary</code> dist-tagで公開する。</li>
-    <li><code>latest</code>はNightWorkers consumer testを通過したstable versionだけに使用する。</li>
+    <li>
+      canaryはimmutable versionと<code>canary</code> dist-tagで公開する。
+    </li>
+    <li>
+      <code>latest</code>はNightWorkers consumer testを通過したstable
+      versionだけに使用する。
+    </li>
     <li>npm provenance / trusted publishingを使用する。</li>
     <li>local machineのlong-lived npm tokenからstable publishしない。</li>
     <li><code>npm pack --dry-run</code>と実tarball内容検査をrelease gateへ含める。</li>
@@ -956,7 +1006,8 @@ s11tnext inspect &lt;namespace:key&gt; [--locale ja-JP]
     <li>NightWorkersのsourceをcopyしない。</li>
     <li>initial commitにapplication固有promptやprivate datasetを含めない。</li>
     <li>
-      package scope未取得でも<code>private: true</code>のrootからlocal buildできるようにする。
+      package scope未取得でも<code>private: true</code>のrootからlocal
+      buildできるようにする。
     </li>
   </ul>
   <p>検証:</p>
@@ -968,7 +1019,12 @@ pnpm build
   <p>期待結果:</p>
   <ul>
     <li>clean checkoutで全commandが成功する。</li>
-    <li><code>packages/runtime</code>のbuild outputに<code>node:*</code> importがない。</li>
+    <li>
+      <code>packages/runtime</code>のbuild outputに<code
+        >node:*</code
+      >
+      importがない。
+    </li>
     <li>CLI binaryが<code>--help</code>を終了code 0で返す。</li>
   </ul>
   <p>失敗時:</p>
@@ -1104,7 +1160,9 @@ pnpm --filter s11tnext-cli test -- build-golden
   <ul>
     <li>generated JSONがartifact schemaに一致する。</li>
     <li>buildを2回実行してbyte-identical。</li>
-    <li>stale outputで<code>--check</code>が失敗し、再build後に成功する。</li>
+    <li>
+      stale outputで<code>--check</code>が失敗し、再build後に成功する。
+    </li>
     <li>build失敗時に以前の成功artifactが壊れない。</li>
   </ul>
   <h3 id="phase-2-gate">Phase 2 Gate</h3>
@@ -1114,13 +1172,18 @@ pnpm --filter s11tnext-cli test -- build-golden
     <li>lint / buildのdiagnosticとexit codeが固定済み。</li>
   </ul>
   <h2 id="phase-3-filesystem-independent-runtime">Phase 3: Filesystem-independent runtime</h2>
-  <h3 id="s3-01-createcatalogを実装する">S3-01 <code>createCatalog()</code>を実装する</h3>
+  <h3 id="s3-01-createcatalogを実装する">
+    S3-01 <code>createCatalog()</code>を実装する
+  </h3>
   <p>成果物:</p>
   <ul>
     <li>unknown JSON object validation。</li>
     <li>digest再検証。</li>
     <li>immutable internal catalog。</li>
-    <li><code>describe()</code> / <code>list()</code> read-only tooling API。</li>
+    <li>
+      <code>describe()</code> /
+      <code>list()</code> read-only tooling API。
+    </li>
   </ul>
   <p>検証:</p>
   <pre><code class="language-bash">pnpm --filter s11tnext test -- create-catalog
@@ -1132,7 +1195,9 @@ pnpm --filter s11tnext test -- artifact-tampering
     <li>text、hash、schema versionの改変を拒否する。</li>
     <li>callerが元objectを変更してもcatalog結果が変わらない。</li>
   </ul>
-  <h3 id="s3-02-locale-bindとpを実装する">S3-02 Locale bindと<code>p()</code>を実装する</h3>
+  <h3 id="s3-02-locale-bindとpを実装する">
+    S3-02 Locale bindと<code>p()</code>を実装する
+  </h3>
   <p>成果物:</p>
   <ul>
     <li>request-scoped <code>bind()</code>。</li>
@@ -1185,13 +1250,19 @@ pnpm --filter s11tnext test:browser-bundle
 </code></pre>
   <p>期待結果:</p>
   <ul>
-    <li>runtime source / dist / dependency graphに<code>node:*</code> importがない。</li>
+    <li>
+      runtime source / dist / dependency graphに<code>node:*</code>
+      importがない。
+    </li>
     <li>browser targetでbundle解決できる。</li>
     <li>filesystem loaderやbrowser専用loaderは追加されていない。</li>
   </ul>
   <h3 id="phase-3-gate">Phase 3 Gate</h3>
   <ul>
-    <li>applicationが取得したJSON objectだけで<code>p()</code>を利用できる。</li>
+    <li>
+      applicationが取得したJSON
+      objectだけで<code>p()</code>を利用できる。
+    </li>
     <li>runtimeがfilesystem、TOML、Node builtinを要求しない。</li>
     <li>runtime validationとTypeScriptに依存しないnegative testがある。</li>
   </ul>
@@ -1238,8 +1309,13 @@ pnpm --dir examples/node-basic start
   </ul>
   <h3 id="phase-4-gate">Phase 4 Gate</h3>
   <ul>
-    <li>READMEだけでTOML追加からtyped <code>p()</code>まで再現できる。</li>
-    <li>generated artifactとgenerated typeの世代ずれを<code>build --check</code>で検出できる。</li>
+    <li>
+      READMEだけでTOML追加からtyped <code>p()</code>まで再現できる。
+    </li>
+    <li>
+      generated artifactとgenerated
+      typeの世代ずれを<code>build --check</code>で検出できる。
+    </li>
   </ul>
   <h2 id="phase-5-npm-packaging-and-consumer-verification">
     Phase 5: npm packaging and consumer verification
@@ -1291,7 +1367,10 @@ pnpm release:dry-run
   <ul>
     <li>既存SystemContext 1件をTOMLへ移す。</li>
     <li>NightWorkers build時にJSON artifactと型を生成する。</li>
-    <li>NightWorkers runtimeでJSONをloadし、<code>p()</code>を1経路から利用する。</li>
+    <li>
+      NightWorkers
+      runtimeでJSONをloadし、<code>p()</code>を1経路から利用する。
+    </li>
     <li>既存promptの意味、locale、runtime値が維持される。</li>
     <li>package tarballを差し替えてrollbackできる。</li>
   </ul>
@@ -1299,7 +1378,9 @@ pnpm release:dry-run
   <ul>
     <li>packした2 packageがclean consumerで利用可能。</li>
     <li>NightWorkersが公開package boundaryだけを通じてdogfoodできる。</li>
-    <li>canaryが<code>latest</code>を汚染せず、provenance付きで公開可能。</li>
+    <li>
+      canaryが<code>latest</code>を汚染せず、provenance付きで公開可能。
+    </li>
   </ul>
   <h2 id="phase-6-v01-stable-release">Phase 6: v0.1 stable release</h2>
   <h3 id="s6-01-public-api-review">S6-01 Public API review</h3>
@@ -1312,7 +1393,9 @@ pnpm release:dry-run
     <li>hash semantics。</li>
     <li>package metadataとlicense。</li>
   </ul>
-  <p>破壊的変更が必要な場合は<code>v0.1.0</code>公開前に行い、公開後はSemVerに従う。</p>
+  <p>
+    破壊的変更が必要な場合は<code>v0.1.0</code>公開前に行い、公開後はSemVerに従う。
+  </p>
   <h3 id="s6-02-stable-publish-gate">S6-02 Stable publish gate</h3>
   <p>次をすべて満たした場合だけ<code>latest</code>へ公開する。</p>
   <pre><code class="language-bash">pnpm install --frozen-lockfile
@@ -1332,7 +1415,10 @@ pnpm release:dry-run
   <ul>
     <li>Node 22 / 24、Linux / macOS / Windows CIがgreen。</li>
     <li>canaryをNightWorkersで検証済み。</li>
-    <li><code>s11tnext</code>と<code>s11tnext-cli</code>のnpm公開確認済み。</li>
+    <li>
+      <code>s11tnext</code
+      >と<code>s11tnext-cli</code>のnpm公開確認済み。
+    </li>
     <li>npm trusted publisher確認済み。</li>
     <li>README、SECURITY、LICENSE、NOTICEがtarballに含まれる。</li>
     <li>known critical / high dependency vulnerabilityが未解決でない。</li>
@@ -1446,7 +1532,10 @@ pnpm release:dry-run
   <p>次の場合は次Phaseへ進まず、直前のcontractまたは実装を修正する。</p>
   <ol>
     <li>同じsourceからNode versionまたはOSにより異なるartifact / hashが生成される。</li>
-    <li>runtimeに<code>node:*</code> builtinまたはTOML parser dependencyが入る。</li>
+    <li>
+      runtimeに<code>node:*</code> builtinまたはTOML parser
+      dependencyが入る。
+    </li>
     <li>generated JSONへruntime value、absolute path、credentialが入る。</li>
     <li>invalid artifactをruntimeが部分的に受理する。</li>
     <li>build失敗で以前の成功artifactが破損する。</li>
@@ -1459,11 +1548,17 @@ pnpm release:dry-run
   <p>v0.1は次をすべて満たした時だけ完了とする。</p>
   <ol>
     <li>TOML simple / sectioned / multi-locale fixtureをlintできる。</li>
-    <li>TOMLからbyte-identicalな<code>catalog.json</code>とgenerated typesを生成できる。</li>
+    <li>
+      TOMLからbyte-identicalな<code>catalog.json</code>とgenerated
+      typesを生成できる。
+    </li>
     <li>JSON artifactが公開artifact schema v1に一致する。</li>
     <li>runtimeがJSON objectだけからcatalogを生成できる。</li>
     <li>runtimeがfilesystem、TOML、Node builtinへ依存しない。</li>
-    <li>request-scoped <code>p()</code>がlocale、runtime values、manifestを正しく扱う。</li>
+    <li>
+      request-scoped <code>p()</code>がlocale、runtime
+      values、manifestを正しく扱う。
+    </li>
     <li>missing / extra / invalid valueをruntimeで拒否する。</li>
     <li>definition / artifact / release / catalog / rendered hashがgolden contractに一致する。</li>
     <li>generated keyとvalues型がconsumer TypeScriptで利用できる。</li>
@@ -1494,7 +1589,7 @@ pnpm release:dry-run
     <li>Phase 1 Gateまで検証し、schemaとhash inputをreviewへ出す。</li>
   </ol>
   <p>
-    Phase 1 Gateが承認されるまで、CLI file emission、runtime <code>p()</code>、npm publish
-    workflowへ進まない。
+    Phase 1 Gateが承認されるまで、CLI file emission、runtime
+    <code>p()</code>、npm publish workflowへ進まない。
   </p>
 </article>

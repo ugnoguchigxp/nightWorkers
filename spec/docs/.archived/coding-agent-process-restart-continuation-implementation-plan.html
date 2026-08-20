@@ -44,7 +44,9 @@
   <p>実現する状態は次のとおり。</p>
   <ol>
     <li>
-      process停止を、ユーザーcancelやTask失敗と混同せず、構造的な<code>process_interrupted</code>
+      process停止を、ユーザーcancelやTask失敗と混同せず、構造的な<code
+        >process_interrupted</code
+      >
       pauseとして保存する。
     </li>
     <li>
@@ -52,8 +54,10 @@
       threadはproviderが再開を許可する限り同じidentityを再利用する。
     </li>
     <li>
-      通常chatの意味解釈はLLMへ委ね、hostはLLMの構造化された<code>start</code> /
-      <code>resume</code>判断と保存状態の整合性だけを検証する。
+      通常chatの意味解釈はLLMへ委ね、hostはLLMの構造化された<code
+        >start</code
+      >
+      / <code>resume</code>判断と保存状態の整合性だけを検証する。
     </li>
     <li>
       resume時にfresh Runを作成せず、同じRunへ新しいruntime execution ownerをCASで割り当てる。
@@ -83,8 +87,8 @@
       >から<code>step-4</code>は<code>passed</code>、<code>step-5</code>は<code>running</code>だった。
     </li>
     <li>
-      最終Run eventは<code>bun run test:coverage</code
-      >の<code>tool.call_started</code>で、対応する<code>tool.call_finished</code>は存在しなかった。
+      最終Run
+      eventは<code>bun run test:coverage</code>の<code>tool.call_started</code>で、対応する<code>tool.call_finished</code>は存在しなかった。
     </li>
     <li>Codex rollout JSONLも同じtool callで終了していた。</li>
     <li>workspaceの未commit差分は残っていた。</li>
@@ -96,8 +100,8 @@
       entryは<code>processing</code>のまま、ownerは終了済みの<code>api-process:3991</code>だった。
     </li>
     <li>
-      Runは<code>running</code>、runtime session stateは<code>active</code>、provider thread
-      IDも保存済みだった。
+      Runは<code>running</code>、runtime session
+      stateは<code>active</code>、provider thread IDも保存済みだった。
     </li>
     <li>新しいAPI processは別PIDで起動したが、旧ownerを即時に失効させなかった。</li>
     <li>
@@ -107,7 +111,9 @@
   </ul>
   <h3 id="section-23-ユーザー依頼後">2.3 ユーザー依頼後</h3>
   <ul>
-    <li>Composerはメッセージ内容に関係なく<code>intent=intake</code>を送った。</li>
+    <li>
+      Composerはメッセージ内容に関係なく<code>intent=intake</code>を送った。
+    </li>
     <li>Plan Mode gateのLLMは、既存Feature Planを再利用して実装を継続できると判断した。</li>
     <li>hostは<code>action=coding_agent</code>をfresh Run開始として扱った。</li>
     <li>
@@ -160,9 +166,7 @@ active Run guardがfresh startを拒否
 </code></pre>
   <p>
     根本原因はprovider threadの欠落ではない。process-bound runtime
-    ownershipが正本化されていないことと、LLMの<code>coding_agent</code>判断をhostが<code
-      >start new Run</code
-    >へ一意に写像していることの組み合わせである。
+    ownershipが正本化されていないことと、LLMの<code>coding_agent</code>判断をhostが<code>start new Run</code>へ一意に写像していることの組み合わせである。
   </p>
   <h2 id="section-4-scope">4. Scope</h2>
   <h3 id="section-41-in-scope">4.1 In scope</h3>
@@ -170,7 +174,10 @@ active Run guardがfresh startを拒否
     <li>Coding Agent runtime execution ownershipの永続化</li>
     <li>graceful shutdownとabrupt restartのinterruption reconciliation</li>
     <li>同一Run / Todo / Agent Mode Session / workspace / provider sessionのresume</li>
-    <li>Workbench intake decisionの<code>start</code> / <code>resume</code>構造化</li>
+    <li>
+      Workbench intake decisionの<code>start</code> /
+      <code>resume</code>構造化
+    </li>
     <li>in-flight tool callの<code>unknown_outcome</code> recovery evidence</li>
     <li>Queue lease、Task status、Run statusの原子的projection</li>
     <li>direct user RunとMission Pilot handoff Runのprovenance維持</li>
@@ -196,10 +203,12 @@ active Run guardがfresh startを拒否
       ID、<code>todoKey</code>、revision、statusは、人間またはLLMの明示commandなしに変更しない。
     </li>
     <li>
-      <code>workspace_id</code>、allocation version、repository identity revision、attestation
-      digestが一致しない場合はresumeをfail-closeする。
+      <code>workspace_id</code>、allocation version、repository identity
+      revision、attestation digestが一致しない場合はresumeをfail-closeする。
     </li>
-    <li>provider threadが利用可能なら同じ<code>provider_session_id</code>を使用する。</li>
+    <li>
+      provider threadが利用可能なら同じ<code>provider_session_id</code>を使用する。
+    </li>
     <li>
       provider resume失敗時だけ、同じRunとAgent Mode Sessionの下に新しいprovider session
       stateを作る。
@@ -242,8 +251,9 @@ active Run guardがfresh startを拒否
       Todoはrunningのまま保持し、hostが暗黙に<code>needs_human</code>や<code>failed</code>へ変えない。
     </li>
     <li>
-      <code>contextSnapshot.runtimePause</code>にはinterruption revision、reason、owner、workspace
-      binding、current Todo ref、unresolved tool call refsを保存する。
+      <code>contextSnapshot.runtimePause</code>にはinterruption
+      revision、reason、owner、workspace binding、current Todo ref、unresolved tool call
+      refsを保存する。
     </li>
   </ul>
   <h3 id="section-54-resume">5.4 Resume</h3>
@@ -252,17 +262,23 @@ active Run guardがfresh startを拒否
       resumeはexpected interruption revision、Run status、Todo revision、workspace
       attestation、execution owner lease versionをCASで検証する。
     </li>
-    <li>CAS成功後だけRunとTaskを<code>running</code>、Queueを<code>processing</code>へ戻す。</li>
+    <li>
+      CAS成功後だけRunとTaskを<code>running</code>、Queueを<code>processing</code>へ戻す。
+    </li>
     <li>二重resumeの二つ目はtyped conflictを返し、新しいruntimeを起動しない。</li>
-    <li>launch前失敗はRunを再び<code>needs_human</code>へ戻し、ユーザー文と失敗本文を保持する。</li>
+    <li>
+      launch前失敗はRunを再び<code>needs_human</code>へ戻し、ユーザー文と失敗本文を保持する。
+    </li>
     <li>provider本文を固定host messageへ差し替えない。</li>
   </ul>
   <h3 id="section-55-chat-routing">5.5 Chat routing</h3>
   <ul>
     <li>user textをkeywordで分類しない。</li>
     <li>
-      LLM decisionは<code>plan_mode</code> / <code>coding_agent</code>に加え、Coding Agent command
-      dispositionとして<code>start_new_run</code> / <code>resume_existing_run</code>を返す。
+      LLM decisionは<code>plan_mode</code> /
+      <code>coding_agent</code>に加え、Coding Agent command
+      dispositionとして<code>start_new_run</code> /
+      <code>resume_existing_run</code>を返す。
     </li>
     <li>
       LLMへ渡すresume candidateはhostが構造的に検証した一件だけとし、LLMにrunIdを生成させない。
@@ -277,7 +293,8 @@ active Run guardがfresh startを拒否
   <h3 id="section-56-in-flight-tool-call">5.6 In-flight tool call</h3>
   <ul>
     <li>
-      <code>started</code>があり<code>finished</code>がないtool
+      <code>started</code
+      >があり<code>finished</code>がないtool
       callをhostが成功または失敗へ分類しない。
     </li>
     <li>
@@ -314,8 +331,8 @@ active Run guardがfresh startを拒否
   <h2 id="section-6-採用設計">6. 採用設計</h2>
   <h3 id="section-61-durable-execution-ownership">6.1 Durable execution ownership</h3>
   <p>
-    Coding Agent moduleに<code>coding_agent_run_executions</code>を追加する。Queue leaseはscheduling
-    ownership、当該tableはruntime execution ownershipとして責務を分ける。
+    Coding Agent moduleに<code>coding_agent_run_executions</code>を追加する。Queue
+    leaseはscheduling ownership、当該tableはruntime execution ownershipとして責務を分ける。
   </p>
   <pre><code class="language-ts">type CodingAgentRunExecution = {
   runId: string;
@@ -334,14 +351,18 @@ active Run guardがfresh startを拒否
 };
 </code></pre>
   <ul>
-    <li><code>ownerInstanceId</code>はAPI/worker bootごとのUUIDとし、PIDをauthorityにしない。</li>
     <li>
-      unique keyは<code>run_id</code>とし、claim / heartbeat / interrupt / releaseをCAS
-      updateで行う。
+      <code>ownerInstanceId</code>はAPI/worker
+      bootごとのUUIDとし、PIDをauthorityにしない。
+    </li>
+    <li>
+      unique keyは<code>run_id</code>とし、claim / heartbeat / interrupt /
+      releaseをCAS updateで行う。
     </li>
     <li>schema、bootstrap、repositoryは<code>api/modules/codingAgent/persistence</code>へ置く。</li>
     <li>
-      Drizzle clientがschemaを束ねるためのimportだけを<code>api/db/client.ts</code>へ追加する。
+      Drizzle
+      clientがschemaを束ねるためのimportだけを<code>api/db/client.ts</code>へ追加する。
     </li>
     <li>migrationはadditiveとし、既存active Runをstartup reconciliationで安全にbackfillする。</li>
   </ul>
@@ -401,10 +422,12 @@ active Run guardがfresh startを拒否
     <li>current API boot identityを生成する。</li>
     <li>Coding Agent execution ownershipをreadする。</li>
     <li>
-      旧<code>api_process</code> boot ownerのactive executionをCASで<code>interrupted</code>へ移す。
+      旧<code>api_process</code> boot ownerのactive
+      executionをCASで<code>interrupted</code>へ移す。
     </li>
     <li>
-      Run、Task、Queue、runtimePauseを同じDB transactionで<code>needs_human</code>へprojectする。
+      Run、Task、Queue、runtimePauseを同じDB
+      transactionで<code>needs_human</code>へprojectする。
     </li>
     <li><code>run.process_interrupted</code> eventとsystem messageを一度だけ保存する。</li>
     <li>generic Queue reconciliationを実行する。</li>
@@ -418,9 +441,15 @@ active Run guardがfresh startを拒否
   <p>startup reconciliationは同じinterruption revisionに対してidempotentでなければならない。</p>
   <h3 id="section-64-graceful-shutdown">6.4 Graceful shutdown</h3>
   <ul>
-    <li>userのStopは従来どおり<code>cancelled</code>であり、process shutdownと分離する。</li>
     <li>
-      Agent runtimeへ<code>stop</code>とは別の<code>suspendForHostShutdown</code> signalを追加する。
+      userのStopは従来どおり<code>cancelled</code>であり、process
+      shutdownと分離する。
+    </li>
+    <li>
+      Agent runtimeへ<code>stop</code>とは別の<code
+        >suspendForHostShutdown</code
+      >
+      signalを追加する。
     </li>
     <li>
       shutdown signalでは、current ownerのRunだけをinterruptedへCASし、provider streamをabortする。
@@ -464,8 +493,8 @@ active Run guardがfresh startを拒否
   </ul>
   <p>
     成功時はnew execution ownerをclaimし、Run / Task / Queueをrunning
-    projectionへ戻す。同じRunの<code>startTaskRun</code> preparationを再利用するが、fresh
-    Run作成とAgent Mode Session作成は実行しない。
+    projectionへ戻す。同じRunの<code>startTaskRun</code>
+    preparationを再利用するが、fresh Run作成とAgent Mode Session作成は実行しない。
   </p>
   <h3 id="section-66-workbench-intake-decision">6.6 Workbench intake decision</h3>
   <p>既存Plan Mode gateの日本語System ContextとJSON contractを拡張する。</p>
@@ -477,7 +506,9 @@ active Run guardがfresh startを拒否
 };
 </code></pre>
   <ul>
-    <li><code>action=plan_mode</code>では<code>runDisposition=null</code>。</li>
+    <li>
+      <code>action=plan_mode</code>では<code>runDisposition=null</code>。
+    </li>
     <li><code>action=coding_agent</code>ではrun dispositionを必須とする。</li>
     <li>
       hostはresumable candidateのRun
@@ -514,10 +545,17 @@ active Run guardがfresh startを拒否
     <li>provider sessionがactiveなら<code>resumeThread(providerThreadId)</code>を使用する。</li>
     <li>最新user contextとprocess interruption State Cardを新しいturnへ渡す。</li>
     <li>
-      unresolved tool callは<code>unknown_outcome</code> evidenceとして渡し、自動再実行しない。
+      unresolved tool callは<code>unknown_outcome</code>
+      evidenceとして渡し、自動再実行しない。
     </li>
-    <li>resume成功時は同じprovider session stateの<code>lastSeenAt</code>を更新する。</li>
-    <li>resume失敗時はraw errorをeventへ保存し、旧stateを<code>resume_failed</code>へ変更する。</li>
+    <li>
+      resume成功時は同じprovider session
+      stateの<code>lastSeenAt</code>を更新する。
+    </li>
+    <li>
+      resume失敗時はraw
+      errorをeventへ保存し、旧stateを<code>resume_failed</code>へ変更する。
+    </li>
     <li>
       fallbackは同じRun、Todo、workspace、Agent Mode Sessionを維持し、新しいprovider session
       stateだけを作る。
@@ -528,11 +566,14 @@ active Run guardがfresh startを拒否
   <ul>
     <li>Queueはruntime生存判定をRun statusだけで行わず、Coding Agentの公開recovery portを呼ぶ。</li>
     <li>
-      Queue-only <code>needs_human</code> mutationを廃止し、Run / Task / execution ownerを含むatomic
-      interruption transitionへ委譲する。
+      Queue-only <code>needs_human</code> mutationを廃止し、Run / Task /
+      execution ownerを含むatomic interruption transitionへ委譲する。
     </li>
     <li>30分stale thresholdは未知ownerや外部workerのfallback watchdogとして残す。</li>
-    <li>process boot交代が確認できる<code>api_process</code> ownerはstale thresholdを待たない。</li>
+    <li>
+      process boot交代が確認できる<code>api_process</code> ownerはstale
+      thresholdを待たない。
+    </li>
     <li>
       resume claim成功時にQueue lease owner、version、heartbeatをnew execution ownerへ同期する。
     </li>
@@ -545,12 +586,18 @@ active Run guardがfresh startを拒否
     <li>
       Run / Todo / Queue / runtime session / workspaceをincidentと同じ状態へ作るfixtureを追加する。
     </li>
-    <li><code>tool.call_started</code>だけを保存し、result未保存でprocess消失した状態を作る。</li>
+    <li>
+      <code>tool.call_started</code
+      >だけを保存し、result未保存でprocess消失した状態を作る。
+    </li>
     <li>
       Workbenchへ任意のresume意味を持つmessageを送り、現状でfresh
       startと<code>RUN_ALREADY_ACTIVE</code>になるtestを追加する。
     </li>
-    <li>Task statusが<code>ready</code>へ壊れる現状もfailure evidenceとして固定する。</li>
+    <li>
+      Task statusが<code>ready</code>へ壊れる現状もfailure
+      evidenceとして固定する。
+    </li>
     <li>baseline schema、Run event sequence、System Context digestを記録する。</li>
   </ol>
   <h4 id="主な対象">主な対象</h4>
@@ -608,7 +655,8 @@ active Run guardがfresh startを拒否
     <li>Run / Task / Queue / execution owner / runtimePauseをatomicに更新する。</li>
     <li>graceful shutdown用suspend signalをAgent runtimeへ追加する。</li>
     <li>
-      <code>server.ts</code>はCoding Agent公開lifecycle commandをstartup / shutdown順序へ接続する。
+      <code>server.ts</code>はCoding Agent公開lifecycle commandをstartup /
+      shutdown順序へ接続する。
     </li>
     <li>generic Queue reconcileがQueueだけを変更しないようrecovery portへ委譲する。</li>
   </ol>
@@ -623,7 +671,9 @@ active Run guardがfresh startを拒否
     <li><code>api/modules/queue/queue-health.service.ts</code></li>
     <li><code>api/modules/nightworkers/run-orchestration/status.ts</code></li>
     <li><code>shared/schemas/nightworkers/run.schema.ts</code></li>
-    <li>Agent非依存のlifecycle contract / portだけを置く<code>api/modules/agentsShare</code></li>
+    <li>
+      Agent非依存のlifecycle contract / portだけを置く<code>api/modules/agentsShare</code>
+    </li>
   </ul>
   <h4 id="完了条件-2">完了条件</h4>
   <ul>
@@ -653,8 +703,8 @@ active Run guardがfresh startを拒否
     <li><code>api/modules/codingAgent/application/resume-interrupted-run.service.ts</code></li>
     <li><code>api/modules/codingAgent/application/start-coding-agent-run.service.ts</code></li>
     <li>
-      既存<code>api/modules/nightworkers/run-orchestration/resume-task-run*.ts</code>のCoding
-      Agent固有責務を移動または薄いhost adapter化
+      既存<code>api/modules/nightworkers/run-orchestration/resume-task-run*.ts</code>のCoding Agent固有責務を移動または薄いhost
+      adapter化
     </li>
   </ul>
   <h4 id="完了条件-3">完了条件</h4>
@@ -672,7 +722,10 @@ active Run guardがfresh startを拒否
     <li>structurally resumableなcandidate snapshotをpromptへ追加する。</li>
     <li><code>routingSnapshotDigest</code>をpersist / reload contractへ追加する。</li>
     <li><code>resume_existing_run</code>をsame-Run resume commandへdispatchする。</li>
-    <li>fresh start前のTask=<code>ready</code> mutationを削除し、成功後projectionへ移す。</li>
+    <li>
+      fresh start前のTask=<code>ready</code>
+      mutationを削除し、成功後projectionへ移す。
+    </li>
     <li>failure catchでTask / Run / Queue stateを変更しない。</li>
     <li>prompt文言は日本語を維持し、regex / keyword branchを追加しない。</li>
     <li>TOML、catalog JSON、generated TypeScriptを同時更新する。</li>
@@ -735,12 +788,17 @@ active Run guardがfresh startを拒否
     <li>Todoを作成し、current Todoをrunningにする。</li>
     <li>provider thread IDとworkspace attestationを保存する。</li>
     <li>
-      fixture runtimeがside-effectまたはverification toolの<code>started</code>
+      fixture runtimeがside-effectまたはverification toolの<code
+        >started</code
+      >
       eventを保存した直後で停止する。
     </li>
     <li>server boot AをSIGKILL相当で終了する。</li>
     <li>同じDBと登録済みProjectでserver boot Bを起動する。</li>
-    <li>startup reconciliationがRunを<code>process_interrupted</code>へ移すことを確認する。</li>
+    <li>
+      startup
+      reconciliationがRunを<code>process_interrupted</code>へ移すことを確認する。
+    </li>
     <li>Workbenchへuser messageを送る。</li>
     <li>LLM fixtureが<code>resume_existing_run</code>を返す。</li>
     <li>同じRun / Todo / Agent Mode Session / workspaceでruntimeを開始する。</li>
@@ -978,7 +1036,9 @@ bun run verify
     wiringだけを無効化し、保存済み監査情報をread可能に保つ。
   </p>
   <h2 id="section-12-完了条件">12. 完了条件</h2>
-  <p>本計画は次のすべてを満たした場合にのみ<code>completed</code>へ更新する。</p>
+  <p>
+    本計画は次のすべてを満たした場合にのみ<code>completed</code>へ更新する。
+  </p>
   <ul>
     <li>abrupt / gracefulの両方でprocess interruptionがcanonical pauseとして保存される。</li>
     <li>restart直後に旧API ownerを検出し、stale thresholdを待たない。</li>
@@ -1019,8 +1079,8 @@ bun run verify
     <li>Task、Run、Queue、execution ownerを同一transactionで遷移させ、running Todoを維持した。</li>
     <li>
       Workbench intakeのLLM
-      contractへ<code>runDisposition</code>を追加し、構造検証済みcandidateとrouting snapshot
-      digestからsame-Run resume commandへdispatchした。
+      contractへ<code>runDisposition</code>を追加し、構造検証済みcandidateとrouting
+      snapshot digestからsame-Run resume commandへdispatchした。
     </li>
     <li>
       provider thread resume成功、raw resume failure、same-Run fresh-thread
@@ -1033,9 +1093,8 @@ bun run verify
     <li>deterministic restart / Workbench resume scenarioは3回連続成功した。</li>
     <li>
       focused 69 tests、全Vitest 2,418 tests、S11t
-      lint/build/check、typecheck、lint、architecture、docs、frontend/backend build、<code
-        >bun run verify</code
-      >がgreenになった。
+      lint/build/check、typecheck、lint、architecture、docs、frontend/backend
+      build、<code>bun run verify</code>がgreenになった。
     </li>
     <li>
       follow-up reviewで800行超の手書きtest 2件をfixture / deadline / route supportへ分割し、worker

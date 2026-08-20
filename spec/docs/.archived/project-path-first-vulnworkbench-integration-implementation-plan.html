@@ -7,7 +7,11 @@
     <li>Plan status: <code>implemented_code_complete_rollout_pending</code></li>
     <li>Priority: <code>P1</code></li>
     <li>Document created: 2026-07-15</li>
-    <li>Target repositories: <code>vulnWorkbench</code>、<code>NightWorkers</code></li>
+    <li>
+      Target repositories: <code>vulnWorkbench</code>、<code
+        >NightWorkers</code
+      >
+    </li>
     <li>
       Producer dependency:
       <code>vulnWorkbench/spec/phase-44-project-path-first-static-intelligence-mcp-plan.md</code>
@@ -45,15 +49,17 @@
   <p>rollout時に必要な運用作業:</p>
   <ul>
     <li>
-      vulnWorkbench MCP
-      processへ最小範囲の<code>STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS</code>を設定する
+      vulnWorkbench MCP processへ最小範囲の<code>STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS</code>を設定する
     </li>
     <li>対象Projectだけfeature flagを有効化する</li>
     <li>native/API implementation laneのpaired runで削減率とquality非劣化を測定する</li>
   </ul>
   <p>
     本書は、NightWorkers と vulnWorkbench の Static Intelligence 連携を、vulnWorkbench 内部の
-    <code>projectId</code>、<code>scanRunId</code>、<code>generationId</code>、<code>rootRef</code>
+    <code>projectId</code
+    >、<code>scanRunId</code>、<code>generationId</code>、<code
+      >rootRef</code
+    >
     に依存する契約から、登録済み Project の
     <code>projectPath</code> を起点とする契約へ移行するための実装正本である。
   </p>
@@ -76,9 +82,9 @@
 </code></pre>
   <p>
     NightWorkers からの vulnWorkbench 呼び出しに使う project selector は
-    <code>projectPath</code> だけとする。内部 ID は vulnWorkbench の DB relation と監査 provenance
-    に残してよいが、NightWorkers の次回 request、run binding、foreign key、検索キー、prompt
-    固定値にはしない。
+    <code>projectPath</code> だけとする。内部 ID は vulnWorkbench の DB
+    relation と監査 provenance に残してよいが、NightWorkers の次回 request、run binding、foreign
+    key、検索キー、prompt 固定値にはしない。
   </p>
   <p>
     取得系 tool は read-only を維持し、scan または generation build
@@ -89,7 +95,9 @@
   <h3 id="section-21-nightworkers">2.1 NightWorkers</h3>
   <p>現在の project exploration pilot は run 作成前に次を行う。</p>
   <ol>
-    <li>登録済み repository root を <code>realpath</code> へ正規化する。</li>
+    <li>
+      登録済み repository root を <code>realpath</code> へ正規化する。
+    </li>
     <li>canonical root の SHA-256 を <code>rootRef</code> とする。</li>
     <li><code>vuln_list_knowledge_sources({ rootRef })</code> で候補を取得する。</li>
     <li>Git HEAD と readiness が一致する source を選ぶ。</li>
@@ -98,13 +106,15 @@
       で整合性を確認する。
     </li>
     <li>
-      <code>projectId</code>、<code>scanRunId</code>、<code>generationId</code>、<code
+      <code>projectId</code
+      >、<code>scanRunId</code>、<code>generationId</code>、<code
         >rootRef</code
       >
       を run snapshot に保存する。
     </li>
     <li>
-      LLM 向け guidance に <code>scanRunId</code> と <code>generationId</code> を埋め込み、generic
+      LLM 向け guidance に <code>scanRunId</code> と
+      <code>generationId</code> を埋め込み、generic
       <code>mcp_call_tool</code> から catalog を呼ばせる。
     </li>
   </ol>
@@ -128,13 +138,17 @@
   <h3 id="section-22-vulnworkbench">2.2 vulnWorkbench</h3>
   <p>
     現在の Static Intelligence MCP は read-only で、既存 tool は
-    <code>scanRunId</code>、<code>generationId</code>、<code>rootRef</code> を入力に使う。code
-    structure と catalog は persisted generation を読むだけで、未生成時に scan または build
-    を開始しない。
+    <code>scanRunId</code
+    >、<code>generationId</code>、<code>rootRef</code>
+    を入力に使う。code structure と catalog は persisted generation を読むだけで、未生成時に scan
+    または build を開始しない。
   </p>
   <p>vulnWorkbench には既に次の再利用可能な基盤がある。</p>
   <ul>
-    <li><code>resolveProjectByPath()</code> による <code>realpath</code> と project 解決</li>
+    <li>
+      <code>resolveProjectByPath()</code> による
+      <code>realpath</code> と project 解決
+    </li>
     <li>scan queue / process supervisor</li>
     <li><code>buildStaticIntelligenceGeneration()</code></li>
     <li>generation repository と source revision / source tree hash</li>
@@ -143,16 +157,17 @@
     <li>Phase 44 path-first producer 計画</li>
   </ul>
   <p>
-    ただし、現行 DB の project uniqueness は owner と <code>repoPath</code> の組み合わせであり、MCP
-    の path-only resolution に必要な canonical path の大域的一意性は保証していない。また、現行 MCP
-    server は全 tool に <code>readOnlyHint: true</code> を設定しているため、prepare action は tool
-    単位の annotation へ変更する必要がある。
+    ただし、現行 DB の project uniqueness は owner と
+    <code>repoPath</code> の組み合わせであり、MCP の path-only resolution
+    に必要な canonical path の大域的一意性は保証していない。また、現行 MCP server は全 tool に
+    <code>readOnlyHint: true</code> を設定しているため、prepare action は tool 単位の
+    annotation へ変更する必要がある。
   </p>
   <h2 id="section-3-goals">3. Goals</h2>
   <ol>
     <li>
-      NightWorkers が登録済み Project の <code>repoPath</code> だけで Static Intelligence
-      を準備できる。
+      NightWorkers が登録済み Project の <code>repoPath</code> だけで Static
+      Intelligence を準備できる。
     </li>
     <li>NightWorkers が内部 ID を解決、保持、再送せず catalog を取得できる。</li>
     <li>
@@ -175,7 +190,8 @@
       <code>projectPath</code> だけとする。
     </li>
     <li>
-      <code>projectId</code>、<code>scanRunId</code>、<code>generationId</code>、<code
+      <code>projectId</code
+      >、<code>scanRunId</code>、<code>generationId</code>、<code
         >rootRef</code
       >
       を NightWorkers request の必須・任意入力に含めない。
@@ -183,9 +199,11 @@
     <li>NightWorkers に内部 ID resolver API または vulnWorkbench DB access を追加しない。</li>
     <li>ID resolution と MCP query の二段階 consumer contractを作らない。</li>
     <li>
-      <code>vuln_prepare_project_intelligence</code> は副作用を持つ action tool とし、<code
-        >readOnlyHint: false</code
-      >、<code>destructiveHint: false</code>、<code>idempotentHint: true</code> を設定する。
+      <code>vuln_prepare_project_intelligence</code> は副作用を持つ action tool
+      とし、<code>readOnlyHint: false</code>、<code>destructiveHint: false</code>、<code
+        >idempotentHint: true</code
+      >
+      を設定する。
     </li>
     <li>
       status、snapshot、catalog は read-only とし、未準備・stale 時に暗黙 prepare を開始しない。
@@ -196,12 +214,12 @@
     </li>
     <li>
       <code>projectPath</code> は
-      <code>registeredProject.repoPath</code> から取得し、ユーザー本文、Task 文、LLM tool arguments
-      を採用しない。
+      <code>registeredProject.repoPath</code> から取得し、ユーザー本文、Task 文、LLM tool
+      arguments を採用しない。
     </li>
     <li>
-      absolute <code>projectPath</code> と vulnWorkbench 内部 provenance を system prompt
-      へ埋め込まない。
+      absolute <code>projectPath</code> と vulnWorkbench 内部 provenance を
+      system prompt へ埋め込まない。
     </li>
     <li>
       coding agent には NightWorkers 管理の <code>project_exploration_catalog</code> tool
@@ -209,8 +227,8 @@
     </li>
     <li>adapter が server ID と登録済み project path を run context から固定注入する。</li>
     <li>
-      generic <code>mcp_call_tool</code> から明示的に <code>readOnlyHint: false</code> の tool
-      を実行させない。
+      generic <code>mcp_call_tool</code> から明示的に
+      <code>readOnlyHint: false</code> の tool を実行させない。
     </li>
     <li>
       exploration preparation は構造情報生成を目的とし、Semgrep、Gitleaks、OSV、Trivy 等の full
@@ -225,12 +243,16 @@
     </li>
     <li>
       exploration catalog の
-      <code>focus</code> は必須とし、<code>paths</code>、<code>modules</code>、<code>terms</code>
+      <code>focus</code>
+      は必須とし、<code>paths</code>、<code>modules</code>、<code
+        >terms</code
+      >
       の少なくとも一つを非空にする。
     </li>
     <li>
       path-first facade は <code>focus.modules</code> を既存 producer の内部
-      <code>moduleIds</code> へ変換してよい。legacy ID-based tool schema は変更しない。
+      <code>moduleIds</code> へ変換してよい。legacy ID-based tool schema
+      は変更しない。
     </li>
     <li>stale catalog clue は coding agent へ返さず、NightWorkers は通常探索へ戻す。</li>
     <li>
@@ -301,7 +323,10 @@
     <li><code>vuln_prepare_project_intelligence</code> が登録されている。</li>
     <li><code>vuln_get_project_intelligence_status</code> が登録されている。</li>
     <li><code>vuln_get_project_exploration_catalog</code> の path-first schema が利用できる。</li>
-    <li>path-first input schema が <code>.strict()</code> で、内部 ID の余剰入力を拒否する。</li>
+    <li>
+      path-first input schema が <code>.strict()</code> で、内部 ID
+      の余剰入力を拒否する。
+    </li>
     <li>prepare だけが non-read-only annotation を持つ。</li>
     <li>
       allowed roots、canonicalization、symlink escape、file / missing path rejection
@@ -310,7 +335,9 @@
     <li>same source state の concurrent prepare が一つの job へ収束する。</li>
     <li>query 前後で project、scan、job、generation 件数が変わらない。</li>
     <li>path-only end-to-end fixture が pass する。</li>
-    <li>vulnWorkbench の focused test と <code>bun run verify</code> が pass する。</li>
+    <li>
+      vulnWorkbench の focused test と <code>bun run verify</code> が pass する。
+    </li>
   </ol>
   <p>
     producer が上記を満たさない場合、NightWorkers の existing rootRef-first pilot を削除しない。
@@ -322,7 +349,8 @@
 })
 </code></pre>
   <p>
-    NightWorkers は <code>createIfMissing</code>、profile、scanner、provider、generation option
+    NightWorkers は
+    <code>createIfMissing</code>、profile、scanner、provider、generation option
     を送らない。project creation policy は vulnWorkbench の運用設定で決める。
   </p>
   <p>推奨 policy:</p>
@@ -331,9 +359,9 @@
   | &quot;create_within_allowed_roots&quot;;
 </code></pre>
   <p>
-    既定値は <code>registered_only</code> とする。controlled fixture または明示設定時だけ
-    <code>create_within_allowed_roots</code> を許可する。NightWorkers request から policy
-    を上書きできないようにする。
+    既定値は <code>registered_only</code> とする。controlled fixture
+    または明示設定時だけ <code>create_within_allowed_roots</code> を許可する。NightWorkers
+    request から policy を上書きできないようにする。
   </p>
   <p>prepare result の domain status:</p>
   <pre><code class="language-ts">type PrepareStatus =
@@ -345,9 +373,9 @@
   | &quot;rejected&quot;;
 </code></pre>
   <p>
-    <code>queued</code> / <code>running</code> は transport success であり、MCP error
-    として扱わない。<code>retryAfterMs</code> は client hint とし、NightWorkers 側で安全範囲へ clamp
-    する。
+    <code>queued</code> / <code>running</code> は
+    transport success であり、MCP error として扱わない。<code>retryAfterMs</code>
+    は client hint とし、NightWorkers 側で安全範囲へ clamp する。
   </p>
   <h3 id="section-72-status">7.2 Status</h3>
   <pre><code class="language-ts">vuln_get_project_intelligence_status({
@@ -474,8 +502,9 @@ INTERNAL_ERROR
     <figcaption>8. Target Architectureの図</figcaption>
   </figure>
   <p>
-    LLM は <code>projectPath</code>、MCP server ID、vulnWorkbench internal ID を選択しない。LLM
-    が決めるのは、catalog を使うかと <code>focus</code> だけである。
+    LLM は <code>projectPath</code>、MCP server ID、vulnWorkbench internal ID
+    を選択しない。LLM が決めるのは、catalog を使うかと
+    <code>focus</code> だけである。
   </p>
   <h2 id="section-9-vulnworkbench-implementation-plan">9. vulnWorkbench Implementation Plan</h2>
   <h3 id="section-91-gate-v0-characterization-and-contract-freeze">
@@ -497,7 +526,8 @@ INTERNAL_ERROR
   <h3 id="section-92-gate-v1-canonical-path-resolver">9.2 Gate V1: Canonical Path Resolver</h3>
   <ol>
     <li>
-      <code>projectPath</code> の長さ、NUL、absolute、存在、directory、readability を検証する。
+      <code>projectPath</code>
+      の長さ、NUL、absolute、存在、directory、readability を検証する。
     </li>
     <li>明示的な <code>..</code> segment を拒否する。</li>
     <li><code>realpath</code> で canonical path を取得する。</li>
@@ -505,7 +535,8 @@ INTERNAL_ERROR
     <li>allowed root 外へ解決される symlink を拒否する。</li>
     <li>canonical path 完全一致で project を検索する。</li>
     <li>
-      同じ canonical path の複数 project を <code>PROJECT_PATH_AMBIGUOUS</code> として拒否する。
+      同じ canonical path の複数 project を
+      <code>PROJECT_PATH_AMBIGUOUS</code> として拒否する。
     </li>
     <li>migration 前に duplicate audit を行い、安全に統合できない row を自動削除しない。</li>
     <li>project creation policy を server setting から解決する。</li>
@@ -623,9 +654,11 @@ any active state -&gt; failed
     };
 </code></pre>
   <p>
-    この snapshot に <code>projectPath</code> を重複保存しない。登録済み path は既存
-    repository/request context を source of truth とする。<code>serverId</code> は NightWorkers MCP
-    設定の ID であり、vulnWorkbench DB ID ではない。
+    この snapshot に <code>projectPath</code> を重複保存しない。登録済み path
+    は既存 repository/request context を source of truth とする。<code
+      >serverId</code
+    >
+    は NightWorkers MCP 設定の ID であり、vulnWorkbench DB ID ではない。
   </p>
   <h2 id="section-11-nightworkers-implementation-plan">11. NightWorkers Implementation Plan</h2>
   <h3 id="section-111-gate-n0-characterization-tests">11.1 Gate N0: Characterization Tests</h3>
@@ -680,15 +713,22 @@ any active state -&gt; failed
   </h3>
   <p>run 作成前の preparation で次を行う。</p>
   <ol>
-    <li><code>repoInfo.localPath</code> を projectPath として一度だけ prepare を呼ぶ。</li>
+    <li>
+      <code>repoInfo.localPath</code> を projectPath として一度だけ prepare を呼ぶ。
+    </li>
     <li><code>ready</code> なら availability v2 を作る。</li>
-    <li><code>queued</code> / <code>running</code> なら同じ path の status を poll する。</li>
+    <li>
+      <code>queued</code> /
+      <code>running</code> なら同じ path の status を poll する。
+    </li>
     <li><code>retryAfterMs</code> を共通 policy の最小・最大へ clamp する。</li>
-    <li>bounded wait を超えたら <code>preparation_timeout</code> として fail-open する。</li>
+    <li>
+      bounded wait を超えたら <code>preparation_timeout</code> として fail-open する。
+    </li>
     <li>poll 中に prepare を再呼び出さない。</li>
     <li>
-      <code>failed</code> / <code>rejected</code> / <code>stale</code> を区別して run snapshot と
-      event へ残す。
+      <code>failed</code> / <code>rejected</code> /
+      <code>stale</code> を区別して run snapshot と event へ残す。
     </li>
     <li>
       MCP transport / parse / schema failure は <code>mcp_failed</code> /
@@ -736,10 +776,11 @@ any active state -&gt; failed
     </li>
   </ul>
   <p>
-    generic <code>list_mcp_tools</code> / <code>mcp_call_tool</code> は project exploration feature
+    generic <code>list_mcp_tools</code> /
+    <code>mcp_call_tool</code> は project exploration feature
     のためだけには公開しない。Ontology 等の別 capability
-    が必要とする場合は既存公開を維持するが、明示的に <code>readOnlyHint: false</code> の MCP tool は
-    model-facing generic dispatcher から拒否する。
+    が必要とする場合は既存公開を維持するが、明示的に <code>readOnlyHint: false</code> の
+    MCP tool は model-facing generic dispatcher から拒否する。
   </p>
   <h3 id="section-116-gate-n5-prompt-and-snapshot-migration">
     11.6 Gate N5: Prompt and Snapshot Migration
@@ -749,7 +790,10 @@ any active state -&gt; failed
     <li>catalog tool の focus-only guidance へ変更する。</li>
     <li>trivial single-file task では省略可能な現行 policy を維持する。</li>
     <li>catalog clue は source read 前の候補であり確定事実ではないと明記する。</li>
-    <li><code>rootRef</code>、source hash、absolute path、provenance ID を prompt に含めない。</li>
+    <li>
+      <code>rootRef</code>、source hash、absolute path、provenance ID を
+      prompt に含めない。
+    </li>
     <li>run 作成時の二つの snapshot に同じ availability v2 を保存する。</li>
     <li>
       version 1 pin から version 2 への DB migration は行わない。既存 run は historical snapshot
@@ -810,9 +854,7 @@ any active state -&gt; failed
       <code>api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry.ts</code>
     </li>
     <li>
-      <code
-        >api/modules/codingAgent/runtime/native-api-runner/native-api-run-route-preparation.ts</code
-      >
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-run-route-preparation.ts</code>
     </li>
     <li><code>api/services/worker-tools/dispatcher.ts</code></li>
     <li><code>api/services/worker-tools/mcp-call-tool.ts</code></li>
@@ -854,7 +896,8 @@ any active state -&gt; failed
     <li>status request は <code>projectPath</code> だけ。</li>
     <li>catalog request は <code>projectPath + focus</code> だけ。</li>
     <li>
-      <code>projectId</code>、<code>scanRunId</code>、<code>generationId</code>、<code
+      <code>projectId</code
+      >、<code>scanRunId</code>、<code>generationId</code>、<code
         >rootRef</code
       >
       を余剰入力すると拒否される。
@@ -1054,8 +1097,8 @@ bun run verify
   <h2 id="section-17-acceptance-criteria">17. Acceptance Criteria</h2>
   <ol>
     <li>
-      NightWorkers は <code>projectPath</code> 以外の vulnWorkbench internal ID を request
-      に含めない。
+      NightWorkers は <code>projectPath</code> 以外の vulnWorkbench internal ID
+      を request に含めない。
     </li>
     <li>
       初回 prepare は project を policy に従って解決し、必要な structure generation を開始する。
@@ -1072,7 +1115,9 @@ bun run verify
     <li>pending、failed、stale、degraded、coverage gap が区別される。</li>
     <li>MCP 未接続・timeout・contract failure 時は既存探索へ fail-open する。</li>
     <li>pilot は native API implementation lane に限定される。</li>
-    <li>focused test と両 repository の <code>bun run verify</code> が成功する。</li>
+    <li>
+      focused test と両 repository の <code>bun run verify</code> が成功する。
+    </li>
   </ol>
   <h2 id="section-18-reviewable-pr--change-slices">18. Reviewable PR / Change Slices</h2>
   <ol>

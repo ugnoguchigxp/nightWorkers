@@ -47,7 +47,10 @@
       <tr>
         <td>改修根拠として不成立</td>
         <td>1</td>
-        <td><code>m2</code>。数値観測だけを残し、600行上限の緩和や統合を行わない</td>
+        <td>
+          <code>m2</code
+          >。数値観測だけを残し、600行上限の緩和や統合を行わない
+        </td>
       </tr>
     </tbody>
   </table>
@@ -352,34 +355,64 @@
   <h2 id="section-5-implementation-waves">5. Implementation waves</h2>
   <h3 id="wave-0-baseline固定">Wave 0: Baseline固定</h3>
   <ul>
-    <li><code>git status --short --branch</code>、<code>git rev-parse HEAD</code>を保存する。</li>
+    <li>
+      <code>git status --short --branch</code
+      >、<code>git rev-parse HEAD</code>を保存する。
+    </li>
     <li>Areaごとに対象fileと既存未コミット差分の重複を確認する。</li>
     <li>security/state findingの失敗再現testを先に追加する。</li>
     <li>full coverageは同じreports directoryで並行実行しない。</li>
   </ul>
   <h3 id="wave-1-release-blockers">Wave 1: Release blockers</h3>
   <ul>
-    <li>Area A: <code>C1</code>、<code>C2</code>、<code>C3</code>。</li>
+    <li>
+      Area A:
+      <code>C1</code
+      >、<code>C2</code>、<code>C3</code>。
+    </li>
     <li>Area B: <code>C4</code>。</li>
     <li>blocker解消後、Area Aが定義したsecurity contractをArea CのCodex runtimeへ接続する。</li>
   </ul>
   <h3 id="wave-2-lifecycle--state-integrity">Wave 2: Lifecycle / state integrity</h3>
   <ul>
-    <li>Area B: <code>M5</code>、<code>M6</code>、<code>m9</code>、<code>M13</code>。</li>
-    <li>Area A: <code>M4</code>をArea Bのterminal transition hookへ接続する。</li>
-    <li>Area A: <code>M12</code>、<code>m5</code>。</li>
+    <li>
+      Area B:
+      <code>M5</code
+      >、<code>M6</code>、<code>m9</code>、<code>M13</code>。
+    </li>
+    <li>
+      Area A: <code>M4</code>をArea Bのterminal transition
+      hookへ接続する。
+    </li>
+    <li>
+      Area A:
+      <code>M12</code>、<code>m5</code>。
+    </li>
   </ul>
   <h3 id="wave-3-runtime--architecture">Wave 3: Runtime / architecture</h3>
   <ul>
-    <li>Area C: <code>M1</code>、<code>M14</code>、<code>m8</code>、<code>m10</code>。</li>
-    <li>その後に<code>M2</code>、<code>M3</code>のmodule boundary移行を行う。</li>
-    <li><code>M10</code>は観測・boundary testを先に行い、必要な場合だけestimatorを変更する。</li>
+    <li>
+      Area C:
+      <code>M1</code
+      >、<code>M14</code>、<code>m8</code>、<code>m10</code>。
+    </li>
+    <li>
+      その後に<code>M2</code>、<code>M3</code>のmodule
+      boundary移行を行う。
+    </li>
+    <li>
+      <code>M10</code>は観測・boundary
+      testを先に行い、必要な場合だけestimatorを変更する。
+    </li>
   </ul>
   <h3 id="wave-4-frontend--api--quality">Wave 4: Frontend / API / quality</h3>
   <ul>
     <li>Area DとArea Eは、server contractが確定した後に並行して実施できる。</li>
     <li><code>m1</code>は一括rewriteせず、対象画面ごとに移行する。</li>
-    <li><code>m4</code>はcoverage行数の削減を目的にせず、重要挙動の証明追加を目的にする。</li>
+    <li>
+      <code>m4</code
+      >はcoverage行数の削減を目的にせず、重要挙動の証明追加を目的にする。
+    </li>
   </ul>
   <h3 id="section-51-推奨実装順">5.1 推奨実装順</h3>
   <p>
@@ -405,46 +438,67 @@
       </tr>
       <tr>
         <td>1</td>
-        <td><code>A-T0</code>, <code>B-T0</code></td>
+        <td>
+          <code>A-T0</code>, <code>B-T0</code>
+        </td>
         <td>P0 defectを修正前に再現し、成功条件を固定する</td>
       </tr>
       <tr>
         <td>2</td>
-        <td><code>A-T1</code>, <code>A-T2</code>, <code>A-T3</code></td>
+        <td>
+          <code>A-T1</code>,
+          <code>A-T2</code>, <code>A-T3</code>
+        </td>
         <td>command、secret、SSRFのrelease blockerを先に閉じる</td>
       </tr>
       <tr>
         <td>3</td>
-        <td><code>B-T1</code>, <code>B-T2</code>, <code>B-T3</code></td>
+        <td>
+          <code>B-T1</code>,
+          <code>B-T2</code>, <code>B-T3</code>
+        </td>
         <td>Run terminal CASとprojection transactionを後続lifecycleの正本にする</td>
       </tr>
       <tr>
         <td>4</td>
         <td>
-          <code>B-T4</code>, <code>B-T5</code>, <code>B-T6</code>, <code>B-T7</code>,
+          <code>B-T4</code>,
+          <code>B-T5</code>,
+          <code>B-T6</code>,
+          <code>B-T7</code>,
           <code>A-T4</code>
         </td>
         <td>Queue lifecycleとRun-owned process cleanupを確定済みterminal hookへ接続する</td>
       </tr>
       <tr>
         <td>5</td>
-        <td><code>A-T5</code>, <code>A-T6</code></td>
+        <td>
+          <code>A-T5</code>, <code>A-T6</code>
+        </td>
         <td>独立したresource上限を追加し、Area Aを完了可能にする</td>
       </tr>
       <tr>
         <td>6</td>
-        <td><code>C-T0</code>, <code>C-T1</code></td>
+        <td>
+          <code>C-T0</code>, <code>C-T1</code>
+        </td>
         <td>Codex laneの安全性を実測し、Area Aのcontractへ接続する</td>
       </tr>
       <tr>
         <td>7</td>
-        <td><code>C-T7</code>, <code>C-T8</code>, <code>C-T10</code></td>
+        <td>
+          <code>C-T7</code>,
+          <code>C-T8</code>, <code>C-T10</code>
+        </td>
         <td>provider/tool failureとabortを小さい独立変更で先に安定させる</td>
       </tr>
       <tr>
         <td>8</td>
         <td>
-          <code>C-T2</code>, <code>C-T3</code>, <code>C-T4</code>, <code>C-T5</code>,
+          <code>C-T2</code>,
+          <code>C-T3</code>,
+          <code>C-T4</code>,
+          <code>C-T5</code>,
           <code>C-T6</code>
         </td>
         <td>port定義、adapter、caller移行、architecture guardの順でrole境界を移す</td>
@@ -457,22 +511,33 @@
       <tr>
         <td>10</td>
         <td>
-          <code>E-T1</code>, <code>E-T2</code>, <code>E-T3a</code>, <code>E-T3b</code>,
-          <code>E-T3c</code>, <code>E-T3d</code>, <code>E-T3e</code>
+          <code>E-T1</code>,
+          <code>E-T2</code>,
+          <code>E-T3a</code>,
+          <code>E-T3b</code>,
+          <code>E-T3c</code>,
+          <code>E-T3d</code>, <code>E-T3e</code>
         </td>
         <td>一般REST errorの正本とFrontend decoderを先に提供する</td>
       </tr>
       <tr>
         <td>11</td>
         <td>
-          <code>D-T0</code>, <code>D-T1</code>, <code>D-T2</code>, <code>D-T3</code>,
-          <code>D-T4</code>, <code>D-T5</code>, <code>D-T6</code>, <code>E-T5</code>
+          <code>D-T0</code>,
+          <code>D-T1</code>,
+          <code>D-T2</code>,
+          <code>D-T3</code>,
+          <code>D-T4</code>,
+          <code>D-T5</code>,
+          <code>D-T6</code>, <code>E-T5</code>
         </td>
         <td>Frontendをfeature単位で移行し、同じchange setでbehaviorを証明する</td>
       </tr>
       <tr>
         <td>12</td>
-        <td><code>E-T4</code>, <code>E-T6</code></td>
+        <td>
+          <code>E-T4</code>, <code>E-T6</code>
+        </td>
         <td>最新coverageに未達がある場合だけ補強し、600行guardを再確認する</td>
       </tr>
       <tr>
@@ -483,10 +548,13 @@
     </tbody>
   </table>
   <p>
-    <code>A-T1</code>〜<code>A-T3</code>と<code>B-T1</code>はproduction
+    <code>A-T1</code
+    >〜<code>A-T3</code>と<code>B-T1</code>はproduction
     fileが重ならない場合に限り並行実装できる。ただし
-    <code>A-T4</code>は<code>B-T3</code>完了前、<code>D-T1</code>はSettingsのaccepted
-    baseline確定前、<code>E-T4</code>は<code>E-T0</code>で未達が 再現する前に開始しない。
+    <code>A-T4</code
+    >は<code>B-T3</code>完了前、<code>D-T1</code>はSettingsのaccepted
+    baseline確定前、<code>E-T4</code>は<code>E-T0</code>で未達が
+    再現する前に開始しない。
   </p>
   <h3 id="section-52-terra実行プロトコル">5.2 Terra実行プロトコル</h3>
   <p>
@@ -495,7 +563,8 @@
   </p>
   <ol>
     <li>
-      <code>git rev-parse HEAD</code>と<code>git status --short</code>を記録し、ticketのwrite
+      <code>git rev-parse HEAD</code
+      >と<code>git status --short</code>を記録し、ticketのwrite
       setに既存差分があれば停止する。
     </li>
     <li>
@@ -509,8 +578,8 @@
     </li>
     <li>production codeを変更し、対象test、typecheck、architecture/lintの順で検証する。</li>
     <li>
-      <code>git diff --check</code>と<code>git diff --stat</code
-      >を確認し、変更file、test結果、未検証事項を報告する。
+      <code>git diff --check</code
+      >と<code>git diff --stat</code>を確認し、変更file、test結果、未検証事項を報告する。
     </li>
     <li>
       完了条件を一つでも満たせない場合は<code>完了</code>と報告せず、ticket記載のstop
@@ -531,7 +600,9 @@ bun run test:coverage
 node scripts/verify.mjs full
 </code></pre>
   <p>
-    <code>test:coverage</code>は単独で実行し、別processが同じ<code>coverage</code>
+    <code>test:coverage</code>は単独で実行し、別processが同じ<code
+      >coverage</code
+    >
     directoryを使用していないことを
     事前確認する。実行環境や外部service不足で実行できないgateは、未検証として記録し、passへ
     読み替えない。
@@ -539,13 +610,17 @@ node scripts/verify.mjs full
   <h2 id="section-7-program-completion-criteria">7. Program completion criteria</h2>
   <p>次をすべて満たしたときだけprogramを完了とする。</p>
   <ol>
-    <li><code>C1</code>〜<code>C4</code>の再現testが修正前に失敗し、修正後に成功している。</li>
+    <li>
+      <code>C1</code
+      >〜<code>C4</code>の再現testが修正前に失敗し、修正後に成功している。
+    </li>
     <li>
       Finding allocationで対象Areaを持つ27件について、実装結果または「観測のみで変更不要」の
       evidenceが各Area文書へ記録されている。
     </li>
     <li>
-      <code>m2</code>を理由に600行上限を緩和、削除、またはlarge-file baselineを拡大していない。
+      <code>m2</code>を理由に600行上限を緩和、削除、またはlarge-file
+      baselineを拡大していない。
     </li>
     <li>Run、Task、Queue、background processのterminal stateに矛盾がない。</li>
     <li>

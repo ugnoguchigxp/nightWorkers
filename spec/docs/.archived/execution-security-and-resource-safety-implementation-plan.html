@@ -13,8 +13,10 @@
       >
     </li>
     <li>
-      Findings: <code>C1</code>, <code>C2</code>, <code>C3</code>, <code>M4</code>,
-      <code>M12</code>, <code>m5</code>
+      Findings: <code>C1</code>,
+      <code>C2</code>, <code>C3</code>,
+      <code>M4</code>, <code>M12</code>,
+      <code>m5</code>
     </li>
     <li>Implementation authorization: not started</li>
   </ul>
@@ -27,11 +29,12 @@
   <ol>
     <li>許可されたcommandの後ろにshell operatorを追加して別commandを実行できない。</li>
     <li>
-      Project secretは<code>read_file</code>だけでなく、command subprocessからも取得できない。
+      Project secretは<code>read_file</code>だけでなく、command
+      subprocessからも取得できない。
     </li>
     <li>
-      <code>fetch_content</code>はloopback、private、link-local、metadata、redirect先のprivate
-      addressへ接続しない。
+      <code>fetch_content</code
+      >はloopback、private、link-local、metadata、redirect先のprivate addressへ接続しない。
     </li>
     <li>外部reader serviceへURLを無断送信しない。</li>
     <li>Run所有background processはRun終端時に停止する。</li>
@@ -44,41 +47,63 @@
     <li>任意のremote URLをdomain allowlistへ固定しない。</li>
     <li>OS再起動後にPIDだけを根拠として未知processをkillしない。</li>
     <li>Git merge、Review、Task完了の意味判断をこのAreaへ移さない。</li>
-    <li><code>read_file</code>の出力圧縮、digest、paging contractを削除しない。</li>
+    <li>
+      <code>read_file</code>の出力圧縮、digest、paging contractを削除しない。
+    </li>
   </ul>
   <h2 id="section-3-現行の確認済み不足">3. 現行の確認済み不足</h2>
   <h3 id="section-31-command-policy">3.1 Command policy</h3>
   <ul>
-    <li><code>hasUnsafeChain</code>は<code>&amp;&amp;</code>と<code>;</code>だけを拒否する。</li>
-    <li>実行はBash <code>-c</code>であり、pipe、OR、改行、redirectがshellとして評価される。</li>
     <li>
-      <code>echo ok | touch PWNED</code>、<code>echo ok || touch PWNED</code
-      >、改行、<code>&gt;</code>が<code>read_only</code>として受理される。
+      <code>hasUnsafeChain</code
+      >は<code>&amp;&amp;</code>と<code>;</code>だけを拒否する。
+    </li>
+    <li>
+      実行はBash
+      <code>-c</code
+      >であり、pipe、OR、改行、redirectがshellとして評価される。
+    </li>
+    <li>
+      <code>echo ok | touch PWNED</code
+      >、<code>echo ok || touch PWNED</code>、改行、<code>&gt;</code>が<code>read_only</code>として受理される。
     </li>
   </ul>
   <h3 id="section-32-secret-boundary">3.2 Secret boundary</h3>
   <ul>
     <li>
-      <code>project-secret-paths</code>は存在するが、<code>run_command</code>のpolicy
+      <code>project-secret-paths</code
+      >は存在するが、<code>run_command</code>のpolicy
       enforcementから参照されない。
     </li>
-    <li><code>cat .env</code>と<code>rg . .env</code>が許可される。</li>
+    <li>
+      <code>cat .env</code
+      >と<code>rg . .env</code>が許可される。
+    </li>
     <li>command引数だけを検査しても、scriptやchild process経由のreadを防げない。</li>
   </ul>
   <h3 id="section-33-outbound-fetch">3.3 Outbound fetch</h3>
   <ul>
-    <li>URL validationは<code>http:</code>/<code>https:</code>のみである。</li>
+    <li>
+      URL
+      validationは<code>http:</code>/<code>https:</code>のみである。
+    </li>
     <li>native fetchの自動redirect後にaddressを再検査しない。</li>
-    <li>127.0.0.1、localhost、169.254.169.254、<code>::1</code>が受理される。</li>
+    <li>
+      127.0.0.1、localhost、169.254.169.254、<code>::1</code>が受理される。
+    </li>
     <li>HTTP errorまたはlow-signal HTML時にJina Readerへ自動fallbackする。</li>
   </ul>
   <h3 id="section-34-process--file-resource">3.4 Process / file resource</h3>
   <ul>
     <li>background processはdetached process groupとして起動するが、Run単位の停止経路がない。</li>
     <li>
-      Git merge helperは<code>maxBuffer</code>を持つがtimeoutと統一された非対話環境を持たない。
+      Git merge
+      helperは<code>maxBuffer</code>を持つがtimeoutと統一された非対話環境を持たない。
     </li>
-    <li><code>read_file</code>は全内容をUTF-8として読み込んだ後に1,000行へ切り詰める。</li>
+    <li>
+      <code>read_file</code
+      >は全内容をUTF-8として読み込んだ後に1,000行へ切り詰める。
+    </li>
   </ul>
   <h2 id="section-4-target-invariants">4. Target invariants</h2>
   <ol>
@@ -170,18 +195,23 @@
       </ul>
     </li>
     <li>
-      <code>cat .env</code>、<code>rg . .env</code>、absolute secret
+      <code>cat .env</code
+      >、<code>rg . .env</code>、absolute secret
       path、symlink経由、script経由のreadを追加する。
     </li>
     <li>
-      <code>fetch_content</code>にIPv4/IPv6 private address、hostname解決、redirect chain、mixed
-      address record、 redirect limit、userinfo、Jina opt-inのtestを追加する。
+      <code>fetch_content</code>にIPv4/IPv6 private
+      address、hostname解決、redirect chain、mixed address record、 redirect limit、userinfo、Jina
+      opt-inのtestを追加する。
     </li>
     <li>Run終端時のbackground process cleanup、Git timeout、large/binary fileのtestを追加する。</li>
   </ul>
   <h4 id="acceptance">Acceptance</h4>
   <ul>
-    <li><code>C1</code>〜<code>C3</code>の既知caseがproduction code変更前に失敗する。</li>
+    <li>
+      <code>C1</code
+      >〜<code>C3</code>の既知caseがproduction code変更前に失敗する。
+    </li>
     <li>test内で実在Project secretを出力しない。fixture secretをisolated repositoryに作成する。</li>
   </ul>
   <h3 id="phase-a1-command-structureをfail-closeする">
@@ -196,8 +226,8 @@
     </li>
     <li>executableとargvをpolicy decisionへ渡し、先頭tokenだけでread-only判定しない。</li>
     <li>
-      <code>run_command</code>と<code>run_background_command</code>が同じparser/decision
-      contractを使用する。
+      <code>run_command</code
+      >と<code>run_background_command</code>が同じparser/decision contractを使用する。
     </li>
     <li>parse不能なcommandは<code>COMMAND_BLOCKED</code>とし、Bashへ渡さない。</li>
     <li>policy decisionに拒否した構造種別を保持するが、raw secretをlogへ保存しない。</li>
@@ -205,9 +235,14 @@
   <h4 id="migration">Migration</h4>
   <ul>
     <li>tool inputの<code>command: string</code>は互換期間中維持する。</li>
-    <li>内部では<code>ParsedCommand</code>へ変換し、実行層へraw commandだけを渡さない。</li>
     <li>
-      将来の<code>program</code>/<code>args</code>
+      内部では<code>ParsedCommand</code>へ変換し、実行層へraw
+      commandだけを渡さない。
+    </li>
+    <li>
+      将来の<code>program</code>/<code
+        >args</code
+      >
       contract化は別versionとして行い、本PhaseでAPIを二重化しない。
     </li>
   </ul>
@@ -222,7 +257,10 @@
   </h3>
   <h4 id="implementation-2">Implementation</h4>
   <ol>
-    <li><code>project-secret-paths</code>からcanonical deny pathを生成する共通関数を追加する。</li>
+    <li>
+      <code>project-secret-paths</code>からcanonical deny
+      pathを生成する共通関数を追加する。
+    </li>
     <li>parsed argvに現れるpathはrealpathとworkspace rootを基準に検査する。</li>
     <li>
       workspace confinement profileへsecret pathのread denyを追加し、script/child
@@ -230,8 +268,8 @@
     </li>
     <li>
       symlink、relative traversal、case
-      sensitivity、<code>.env.*</code>、<code>*.pem</code>、<code>*.key</code>、registry credential
-      fileを 既存catalogと同じ意味で扱う。
+      sensitivity、<code>.env.*</code>、<code>*.pem</code>、<code>*.key</code>、registry
+      credential fileを 既存catalogと同じ意味で扱う。
     </li>
     <li>confinementを要求するagent Runから、非confinement command executionへfallbackしない。</li>
     <li>deny時はfile内容を含まないtyped errorと監査eventを返す。</li>
@@ -239,11 +277,15 @@
   <h4 id="acceptance-2">Acceptance</h4>
   <ul>
     <li>
-      <code>read_file</code>、<code>search_files</code>、<code>run_command</code>、background
+      <code>read_file</code
+      >、<code>search_files</code>、<code>run_command</code>、background
       commandでsecret判定が一致する。
     </li>
     <li>shell script内からsecretを開くcaseもOS confinementで失敗する。</li>
-    <li><code>.env.example</code>など、catalog上secretでないfixtureの扱いを明示testする。</li>
+    <li>
+      <code>.env.example</code
+      >など、catalog上secretでないfixtureの扱いを明示testする。
+    </li>
   </ul>
   <h3 id="phase-a3-ssrf-safe-outbound-fetch">Phase A3: SSRF-safe outbound fetch</h3>
   <h4 id="implementation-3">Implementation</h4>
@@ -272,14 +314,16 @@
   <h4 id="implementation-4">Implementation</h4>
   <ol>
     <li>
-      <code>listRunningBackgroundProcessesForRun(runId)</code>と<code
-        >stopBackgroundProcessesForRun(runId, reason)</code
-      >を追加する。
+      <code>listRunningBackgroundProcessesForRun(runId)</code
+      >と<code>stopBackgroundProcessesForRun(runId, reason)</code>を追加する。
     </li>
     <li>managed process groupへSIGTERMを送り、猶予後も生存する場合だけSIGKILLする。</li>
     <li>DB rowのterminal updateをstatus CASにし、close eventとの競合をidempotentに扱う。</li>
     <li>Area Bのterminal transition成功後にcleanup portを呼ぶ。</li>
-    <li>API restart後にtrackingを失ったPIDはkillせず<code>lost</code>として記録する。</li>
+    <li>
+      API
+      restart後にtrackingを失ったPIDはkillせず<code>lost</code>として記録する。
+    </li>
   </ol>
   <h4 id="acceptance-4">Acceptance</h4>
   <ul>
@@ -299,7 +343,8 @@
     </li>
     <li>timeout、signal、output overflowをtyped resultへ変換する。</li>
     <li>
-      <code>read_file</code>はstatで上限を確認し、bounded prefixでbinary判定してからtextを読む。
+      <code>read_file</code>はstatで上限を確認し、bounded
+      prefixでbinary判定してからtextを読む。
     </li>
     <li>明示range readは必要範囲だけをstreamで読み、全fileのsplitを避ける。</li>
     <li>cache/digestを作る場合も最大read sizeを超えない。</li>
@@ -312,13 +357,16 @@
   </ul>
   <h2 id="section-7-terra実行チケット台帳">7. Terra実行チケット台帳</h2>
   <p>
-    以下は実装時の作業単位である。各ticketは単独でreview可能な差分にし、<code>write set</code
-    >外の変更が 必要なら停止して後続ticketを追加する。<code>A-T4</code>だけはArea Bのterminal
-    transition command完成後に行う。
+    以下は実装時の作業単位である。各ticketは単独でreview可能な差分にし、<code>write set</code>外の変更が
+    必要なら停止して後続ticketを追加する。<code>A-T4</code>だけはArea
+    Bのterminal transition command完成後に行う。
   </p>
   <h3 id="a-t0-p0-security-regressionを固定する">A-T0: P0 security regressionを固定する</h3>
   <ul>
-    <li>Findings: <code>C1</code>, <code>C2</code>, <code>C3</code></li>
+    <li>
+      Findings: <code>C1</code>,
+      <code>C2</code>, <code>C3</code>
+    </li>
     <li>
       Write set: 新規<code>tests/worker-tools/worker-tool-security-regression.test.ts</code>、新規
       <code>tests/worker-fetch-content-security.test.ts</code>
@@ -327,16 +375,19 @@
       Read-only参照:
       <code>command-policy.ts</code
       >、<code>run-command.ts</code>、<code>run-background-command.ts</code>、
-      <code>project-secret-paths.ts</code>、<code>workspace-process-confinement.ts</code>、<code
+      <code>project-secret-paths.ts</code
+      >、<code>workspace-process-confinement.ts</code>、<code
         >fetch-content.ts</code
       >
     </li>
     <li>
       実装: 一時repository内にmarkerとfixture
-      <code>.env</code>を作り、pipe/OR/改行/redirectでmarkerが作られないこと、
-      <code>cat</code>/<code>rg</code>/script/symlinkからfixture secretを読めないこと、private
-      addressとredirect先private addressへ requestしないことをtest化する。secret値はassertion
-      failure messageへ含めない。
+      <code>.env</code
+      >を作り、pipe/OR/改行/redirectでmarkerが作られないこと、
+      <code>cat</code
+      >/<code>rg</code>/script/symlinkからfixture
+      secretを読めないこと、private addressとredirect先private addressへ
+      requestしないことをtest化する。secret値はassertion failure messageへ含めない。
     </li>
     <li>
       Red確認: production codeを変える前に各suiteを個別実行し、少なくともoperator実行、secret read、
@@ -356,38 +407,36 @@
     <li>Findings: <code>C1</code></li>
     <li>
       Write set: <code>api/services/worker-tools/command-policy.ts</code>、
-      <code>api/services/worker-tools/tool-policy-enforcer.ts</code
-      >、<code>api/services/worker-tools/run-command.ts</code>、
-      <code>api/services/worker-tools/run-background-command.ts</code>、
-      <code>api/services/background-processes/index.ts</code>、
+      <code>api/services/worker-tools/tool-policy-enforcer.ts</code>、<code>api/services/worker-tools/run-command.ts</code>、
+      <code>api/services/worker-tools/run-background-command.ts</code>、 <code>api/services/background-processes/index.ts</code>、
       <code>api/services/execution/workspace-process-confinement.ts</code>、A-T0のcommand test、
-      <code>tests/services.workspace-process-confinement.test.ts</code
-      >、<code>tests/worker-tools/services-worker-tools-05.test.ts</code>、
+      <code>tests/services.workspace-process-confinement.test.ts</code>、<code>tests/worker-tools/services-worker-tools-05.test.ts</code>、
       <code>tests/worker-tools/services-worker-tools-06.test.ts</code>
     </li>
     <li>
       新規symbol:
       <code>parseSingleCommand(command): ParsedSingleCommandResult</code
       >。成功値は<code>program</code>と<code>args</code>を持ち、
-      execution層は<code>execFile</code>/<code>spawn</code>相当へこの値だけを渡す。<code
-        >/bin/bash -c</code
-      >へraw commandを渡さない。
+      execution層は<code>execFile</code>/<code>spawn</code>相当へこの値だけを渡す。<code>/bin/bash -c</code>へraw
+      commandを渡さない。
     </li>
     <li>
       実行主体:
       <code>run_background_command</code
       >は<code>background-processes</code>へ委譲するため、同serviceと confinement
-      adapterも<code>ParsedSingleCommand</code>を受け取るように変更する。wrapperだけを変更して raw
-      commandのshell実行を残さない。
+      adapterも<code>ParsedSingleCommand</code>を受け取るように変更する。wrapperだけを変更して
+      raw commandのshell実行を残さない。
     </li>
     <li>
       Parser contract:
       stateはunquoted/single-quoted/double-quoted/escapedを持つ。空文字、NUL、CR/LF、
-      unquotedの<code>|</code>, <code>||</code>, <code>&amp;</code>, <code>&amp;&amp;</code>,
-      <code>;</code>, <code>&lt;</code>, <code>&gt;</code>、subshell、command/process
-      substitution、先頭の environment assignmentを拒否する。single
-      quote内の文字はliteral、quoteはargvから除去する。 unclosed
-      quote/escapeは<code>parse_error</code>で拒否する。
+      unquotedの<code>|</code>,
+      <code>||</code>, <code>&amp;</code>,
+      <code>&amp;&amp;</code>, <code>;</code>,
+      <code>&lt;</code>,
+      <code>&gt;</code>、subshell、command/process substitution、先頭の
+      environment assignmentを拒否する。single quote内の文字はliteral、quoteはargvから除去する。
+      unclosed quote/escapeは<code>parse_error</code>で拒否する。
     </li>
     <li>
       Policy contract:
@@ -420,10 +469,8 @@
     <li>Depends on: <code>A-T1</code></li>
     <li>
       Write set: <code>api/services/security/project-secret-paths.ts</code>、
-      <code>api/services/execution/workspace-process-confinement.ts</code
-      >、<code>api/services/worker-tools/run-command.ts</code>、
-      <code>api/services/worker-tools/run-background-command.ts</code
-      >、<code>api/services/background-processes/index.ts</code>、
+      <code>api/services/execution/workspace-process-confinement.ts</code>、<code>api/services/worker-tools/run-command.ts</code>、
+      <code>api/services/worker-tools/run-background-command.ts</code>、<code>api/services/background-processes/index.ts</code>、
       <code>tests/services.project-secret-paths.test.ts</code>、A-T0のsecret test
     </li>
     <li>
@@ -442,17 +489,19 @@
     </li>
     <li>
       Caller contract: <code>api/modules/codingAgent/mcp/nightworkers-codex-mcp.ts</code>と
-      <code>native-api-tool-dispatcher.ts</code>の<code>confinementRequired: true</code
-      >を維持する。argv path検査は早期error用であり、 script/child processを防ぐsecurity
-      boundaryの代替にしない。
+      <code>native-api-tool-dispatcher.ts</code
+      >の<code>confinementRequired: true</code>を維持する。argv path検査は早期error用であり、
+      script/child processを防ぐsecurity boundaryの代替にしない。
     </li>
     <li>
       Stop: 対象OSでsecret denyをkernel境界に構成できない場合は、そのlaneをequivalentと報告しない。
       secret filenameや内容をerror payload/logへ出さず、採用可能なcontainment方式の再設計へ戻す。
     </li>
     <li>
-      Done: direct path、absolute path、symlink、<code>rg</code>、interpreter script、background
-      childの全caseが拒否され、 <code>.env.example</code>と通常fileは従来どおり読める。
+      Done: direct path、absolute
+      path、symlink、<code>rg</code>、interpreter script、background
+      childの全caseが拒否され、
+      <code>.env.example</code>と通常fileは従来どおり読める。
     </li>
   </ul>
   <h3 id="a-t3-dns-pinning付きsafe-outbound-httpへ置換する">
@@ -467,15 +516,14 @@
     </li>
     <li>
       新規contract:
-      <code>safeOutboundFetch({url, signal, timeoutMs, maxRedirects, maxResponseBytes})</code>。URL
-      credentials、
+      <code>safeOutboundFetch({url, signal, timeoutMs, maxRedirects, maxResponseBytes})</code>。URL credentials、
       非HTTP(S)、localhost/<code>.localhost</code>、loopback/private/link-local/unspecified/multicast/metadataのIPv4/IPv6を
       接続前に拒否する。
     </li>
     <li>
       Resolution:
-      <code>dns.promises.lookup(hostname, {all: true, verbatim: true})</code
-      >相当で全A/AAAAを取得し、1件でも non-publicならfail-closeする。Node <code>http</code>/<code
+      <code>dns.promises.lookup(hostname, {all: true, verbatim: true})</code>相当で全A/AAAAを取得し、1件でも
+      non-publicならfail-closeする。Node <code>http</code>/<code
         >https</code
       >
       requestの<code>lookup</code>へ検証済みaddressを固定し、Hostと TLS
@@ -517,22 +565,21 @@
     <li>Depends on: <code>B-T3</code></li>
     <li>
       Write set: <code>api/services/background-processes/index.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.background-process.service.ts</code>、Area
-      Bが確定したterminal hook adapter、
+      <code>api/modules/nightworkers/nightworkers.background-process.service.ts</code>、Area Bが確定したterminal hook adapter、
       <code>tests/background-processes.test.ts</code
       >、<code>tests/services.background-processes-unit.test.ts</code>、新規
       <code>tests/background-process-run-lifecycle.test.ts</code>
     </li>
     <li>
       新規symbol:
-      <code>stopBackgroundProcessesForRun(runId, reason)</code>。runId一致かつrunningのmanaged
-      process groupだけを 対象にし、SIGTERM、既存猶予時間、必要時SIGKILL、terminal
+      <code>stopBackgroundProcessesForRun(runId, reason)</code>。runId一致かつrunningのmanaged process
+      groupだけを 対象にし、SIGTERM、既存猶予時間、必要時SIGKILL、terminal
       row更新をidempotentに行う。
     </li>
     <li>
-      Hook contract: <code>B-T3</code>のRun/Task/Queue transactionがcommitした後、CAS
-      winnerだけがcleanupを呼ぶ。 CAS loser/stale callerはcleanupを起動せず最新terminal
-      snapshotを返す。
+      Hook contract: <code>B-T3</code>のRun/Task/Queue
+      transactionがcommitした後、CAS winnerだけがcleanupを呼ぶ。 CAS loser/stale
+      callerはcleanupを起動せず最新terminal snapshotを返す。
     </li>
     <li>
       Failure contract: cleanup失敗でRun terminal statusを戻さない。失敗process
@@ -552,9 +599,7 @@
     <li>
       Write set: <code>api/modules/gitworktree/gitworktree-cli.ts</code>、
       <code>api/modules/nightworkers/nightworkers.git-merge.service.ts</code>、
-      <code>tests/gitworktree/gitworktree-cli.test.ts</code>、<code
-        >tests/nightworkers-git-merge-extra-coverage.test.ts</code
-      >
+      <code>tests/gitworktree/gitworktree-cli.test.ts</code>、<code>tests/nightworkers-git-merge-extra-coverage.test.ts</code>
     </li>
     <li>
       Contract: merge
@@ -563,8 +608,9 @@
       MiB、<code>GIT_TERMINAL_PROMPT=0</code>と非対話環境を明示する。service内の<code>execFile</code>直呼出を0件にする。
     </li>
     <li>
-      Error mapping: timeout、signal、output overflowを既存<code>AppError</code>/merge
-      resultのmachine codeへ一度だけ写像し、 stderr本文とrepository stateを成功へ正規化しない。
+      Error mapping: timeout、signal、output
+      overflowを既存<code>AppError</code>/merge resultのmachine
+      codeへ一度だけ写像し、 stderr本文とrepository stateを成功へ正規化しない。
     </li>
     <li>
       Stop: 既存testの<code>child_process</code> module
@@ -591,8 +637,8 @@
       binaryは<code>UNSUPPORTED_FILE_TYPE</code>のtyped errorにする。
     </li>
     <li>
-      Range: public paging/digest/<code>totalLines</code> contractを変えないため、4
-      MiB以下は現行どおり全体を読み、 4
+      Range: public paging/digest/<code>totalLines</code>
+      contractを変えないため、4 MiB以下は現行どおり全体を読み、 4
       MiB超はrange指定があっても拒否する。超過fileを全readしてから切り詰めない。
     </li>
     <li>Cache: 拒否fileはcontent cache/digestへ保存せず、path/sizeだけを診断に含める。</li>
@@ -653,7 +699,10 @@ bun run lint
   </table>
   <h2 id="section-10-completion-criteria">10. Completion criteria</h2>
   <ol>
-    <li><code>C1</code>、<code>C2</code>、<code>C3</code>の全再現caseが拒否される。</li>
+    <li>
+      <code>C1</code
+      >、<code>C2</code>、<code>C3</code>の全再現caseが拒否される。
+    </li>
     <li>command parse不能時にshell processが起動しない。</li>
     <li>Project secretをagent subprocessから取得できない。</li>
     <li>private addressとredirect先private addressへ接続できない。</li>

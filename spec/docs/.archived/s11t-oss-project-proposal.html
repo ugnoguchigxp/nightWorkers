@@ -3,7 +3,8 @@
   <h2 id="status">Status</h2>
   <ul>
     <li>
-      Publication status: the runtime and CLI were published as <code>s11tnext@0.1.0</code> and
+      Publication status: the runtime and CLI were published as
+      <code>s11tnext@0.1.0</code> and
       <code>s11tnext-cli@0.1.0</code>
     </li>
     <li>
@@ -15,18 +16,21 @@
     <li>Created: 2026-07-21</li>
     <li>Project name: <code>S11t</code></li>
     <li>
-      Name origin: <code>SystemContext</code>の先頭<code>S</code>、中間11文字、末尾<code>t</code>
+      Name origin:
+      <code>SystemContext</code
+      >の先頭<code>S</code>、中間11文字、末尾<code
+        >t</code
+      >
     </li>
     <li>Tagline: <code>System Context as Code</code></li>
     <li>
-      Naming convention: brandと文書では<code>S11t</code>、repository・runtime package・CLIでは<code
-        >s11tnext</code
-      >
+      Naming convention:
+      brandと文書では<code>S11t</code>、repository・runtime
+      package・CLIでは<code>s11tnext</code>
     </li>
     <li>
-      Published packages: runtimeは<code>s11tnext</code>、authoring/build CLIは<code
-        >s11tnext-cli</code
-      >
+      Published packages: runtimeは<code>s11tnext</code>、authoring/build
+      CLIは<code>s11tnext-cli</code>
     </li>
     <li>
       Planned repository form: independent OSS in a dedicated Git repository, internally maintained
@@ -41,8 +45,11 @@
   </ul>
   <p>
     この文書は、多言語System prompt、runtime facts、Role規則、tool/output
-    contract等をSystemContextとしてTOMLで管理し、アプリケーションコードから短い<code>p()</code>
-    APIで利用できる独立OSS <code>S11t</code>のプロジェクト素案である。S11tはNightWorkers
+    contract等をSystemContextとしてTOMLで管理し、アプリケーションコードから短い<code
+      >p()</code
+    >
+    APIで利用できる独立OSS
+    <code>S11t</code>のプロジェクト素案である。S11tはNightWorkers
     repositoryの一部として作らず、専用repositoryで開始する。NightWorkersは最初の利用者・検証先として、公開npm
     packageまたはcanary packageを依存関係に追加する。
   </p>
@@ -116,7 +123,8 @@ await s11tAwareLlm.generate({
     通常のi18n libraryはkey lookup、locale
     fallback、interpolationには優れるが、promptの行動contract、評価、model差、experiment、promotionを所有しない。一方、prompt
     management platformはversionやtraceを提供しても、TOMLによるlocal-first
-    authoring、rule単位の多言語対応、短い<code>p()</code> APIを同時には提供しない。
+    authoring、rule単位の多言語対応、短い<code>p()</code>
+    APIを同時には提供しない。
   </p>
   <p>S11tは、この間を埋める小さなOSSを目指す。</p>
   <h3 id="section-21-s11tにおけるsystemcontext">2.1 S11tにおけるSystemContext</h3>
@@ -255,9 +263,8 @@ await s11tAwareLlm.generate({
     <li>output schema validation</li>
   </ul>
   <p>
-    S11tは各sectionに<code
-      >enforcement = &quot;prompt&quot; | &quot;schema&quot; | &quot;host&quot;</code
-    >を記録できるが、host enforcement自体を実装しない。
+    S11tは各sectionに<code>enforcement = &quot;prompt&quot; | &quot;schema&quot; | &quot;host&quot;</code>を記録できるが、host
+    enforcement自体を実装しない。
   </p>
   <h3 id="section-53-意味判断をhostの文字列分類へ移さない">
     5.3 意味判断をhostの文字列分類へ移さない
@@ -473,8 +480,8 @@ await s11tAwareLlm.generate({ system: systemContext });
   <pre><code class="language-ts">const repairPolicy = p(&quot;structuredOutput:repairPolicy&quot;);
 </code></pre>
   <p>
-    通常のapplication codeでは<code>p()</code>以外のSystemContext lookup
-    APIを必要としない。S11t-aware provider
+    通常のapplication codeでは<code>p()</code>以外のSystemContext
+    lookup APIを必要としない。S11t-aware provider
     adapterはInvocationからtextまたはmessagesを取得し、送信が受理された後にexposureをcommitする。
   </p>
   <p>
@@ -554,8 +561,10 @@ export type SystemContextOutputMap = {
 };
 </code></pre>
   <p>
-    <code>locales</code>と<code>sections</code>は同時に本文正本として使わない。simple
-    SystemContextは<code>locales</code>、sectioned SystemContextは<code>sections</code>を使用する。
+    <code>locales</code
+    >と<code>sections</code>は同時に本文正本として使わない。simple
+    SystemContextは<code>locales</code>、sectioned
+    SystemContextは<code>sections</code>を使用する。
   </p>
   <p>
     <code>appliesTo</code
@@ -581,18 +590,15 @@ export type SystemContextOutputMap = {
 };
 </code></pre>
   <p>
-    <code>untrusted</code>値を<code>severity = &quot;must&quot;</code>かつ<code
-      >optimizable = false</code
-    >のinstruction sectionへinline展開する定義、および<code>untrusted</code>と<code
-      >encoding = &quot;raw&quot;</code
-    >の組合せはlint
+    <code>untrusted</code
+    >値を<code>severity = &quot;must&quot;</code>かつ<code>optimizable = false</code>のinstruction
+    sectionへinline展開する定義、および<code>untrusted</code>と<code>encoding = &quot;raw&quot;</code>の組合せはlint
     errorにする。<code>json-string</code>はJSON文字列としてquoteし、<code>&lt;</code>、<code>&gt;</code>、<code>&amp;</code>もUnicode
     escapeしてdelimiterの構文的breakoutを防ぐ。
   </p>
   <p>
     encodingはprompt injectionそのものを無効化するsecurity
-    boundaryではない。強い分離が必要な値は<code>placement = &quot;separate-message&quot;</code
-    >と<code>output = &quot;messages&quot;</code>を使用する。text
+    boundaryではない。強い分離が必要な値は<code>placement = &quot;separate-message&quot;</code>と<code>output = &quot;messages&quot;</code>を使用する。text
     outputに<code>separate-message</code>変数を含める定義はcompile errorにする。
   </p>
   <h3 id="section-73-compiled-systemcontext">7.3 Compiled SystemContext</h3>
@@ -686,7 +692,8 @@ type SystemContextManifest = {
     <li>SystemContext IDを解決する。</li>
     <li>TOMLをschema検証する。</li>
     <li>
-      stable mappingまたはexperiment assignmentからexact <code>releaseDigest</code>を解決する。
+      stable mappingまたはexperiment assignmentからexact
+      <code>releaseDigest</code>を解決する。
     </li>
     <li>releaseに含まれるdefinition、compiler version、artifact matrixを検証する。</li>
     <li>instruction localeを解決する。</li>
@@ -722,7 +729,9 @@ type SystemContextManifest = {
       </tr>
       <tr>
         <td>CI</td>
-        <td>必須localeと全<code>must</code> sectionの欠落をerrorにする</td>
+        <td>
+          必須localeと全<code>must</code> sectionの欠落をerrorにする
+        </td>
       </tr>
       <tr>
         <td>production</td>
@@ -735,8 +744,8 @@ type SystemContextManifest = {
     </tbody>
   </table>
   <p>
-    <code>must</code>または<code>host</code> sectionについて、locale fallback自体を禁止するstrict
-    modeを提供する。
+    <code>must</code>または<code>host</code>
+    sectionについて、locale fallback自体を禁止するstrict modeを提供する。
   </p>
   <h3 id="section-82-model-profile">8.2 Model profile</h3>
   <p>
@@ -793,7 +802,8 @@ max_input_tokens = 16000
   <ul>
     <li>
       local開発:
-      <code>pnpm pack</code>で生成したtarball、または一時的なlinkを使用する。machine固有の<code
+      <code>pnpm pack</code
+      >で生成したtarball、または一時的なlinkを使用する。machine固有の<code
         >file:../...</code
       >
       dependencyはcommitしない。
@@ -862,17 +872,36 @@ max_input_tokens = 16000
   </p>
   <h3 id="section-93-package-boundaries">9.3 Package boundaries</h3>
   <ul>
-    <li><code>core</code>はNode filesystem、provider SDK、databaseへ依存しない。</li>
-    <li><code>toml</code>はsourceをcanonical SystemContext Definitionへ変換する。</li>
-    <li><code>node</code>はfilesystem I/Oとbuild-time cacheだけを所有する。</li>
-    <li><code>eval</code>は評価contractを所有し、特定providerのjudgeへ固定しない。</li>
     <li>
-      <code>experiments</code>は割当と結果contractを所有し、applicationのユーザーDBを所有しない。
+      <code>core</code>はNode filesystem、provider
+      SDK、databaseへ依存しない。
     </li>
-    <li><code>optimizer</code>はcandidate生成だけを所有し、promotionを実行しない。</li>
-    <li><code>cli</code>は各packageをcompositionするが、独自の意味contractを重複定義しない。</li>
     <li>
-      <code>adapters</code>には薄いportだけを置き、外部platformの内部modelをcoreへ漏らさない。
+      <code>toml</code>はsourceをcanonical SystemContext
+      Definitionへ変換する。
+    </li>
+    <li>
+      <code>node</code>はfilesystem I/Oとbuild-time cacheだけを所有する。
+    </li>
+    <li>
+      <code>eval</code
+      >は評価contractを所有し、特定providerのjudgeへ固定しない。
+    </li>
+    <li>
+      <code>experiments</code
+      >は割当と結果contractを所有し、applicationのユーザーDBを所有しない。
+    </li>
+    <li>
+      <code>optimizer</code
+      >はcandidate生成だけを所有し、promotionを実行しない。
+    </li>
+    <li>
+      <code>cli</code
+      >は各packageをcompositionするが、独自の意味contractを重複定義しない。
+    </li>
+    <li>
+      <code>adapters</code
+      >には薄いportだけを置き、外部platformの内部modelをcoreへ漏らさない。
     </li>
   </ul>
   <h2 id="section-10-evaluation-architecture">10. Evaluation Architecture</h2>
@@ -1212,8 +1241,8 @@ arm = allocation[bucket]
 </code></pre>
   <p>
     同じLLM requestのretryを重複exposureとして数えないよう、applicationはidempotency
-    keyを渡す。<code>p()</code>によるcompile時は未確定usageとして記録し、S11t-aware provider
-    adapterまたは明示commit APIが実際に送信したInvocationとprovider request
+    keyを渡す。<code>p()</code>によるcompile時は未確定usageとして記録し、S11t-aware
+    provider adapterまたは明示commit APIが実際に送信したInvocationとprovider request
     IDを確認して初めてExposureへ変換する。送信されなかったInvocationはexposureにしない。
   </p>
   <p>
@@ -1253,7 +1282,8 @@ arm = allocation[bucket]
     Outcome attribution
     windowを事前に定義し、experiment結果を見た後で都合よく変更しない。同じ<code>idempotencyKey</code>はexactly-onceで保存する。同じsource
     factが訂正された場合は既存recordを上書きせず、revisionを増やして<code>supersedesOutcomeId</code>を指定する。分析時はdata
-    cutoff以前の最新<code>final</code> revisionだけを採用し、retracted recordを除外する。
+    cutoff以前の最新<code>final</code> revisionだけを採用し、retracted
+    recordを除外する。
   </p>
   <h3 id="section-117-decision-rule">11.7 Decision rule</h3>
   <p>初期versionでは理解しやすいfixed-horizon判定を既定とする。</p>
@@ -1266,7 +1296,8 @@ arm = allocation[bucket]
     <li>maximum durationまたはplanned unit数到達時のdata cutoffで分析する。</li>
     <li>controlとの差、effect size、uncertainty intervalを報告する。</li>
     <li>
-      SRM、重大なmissing outcome、artifact不一致がある場合は<code>invalid_experiment</code>とする。
+      SRM、重大なmissing
+      outcome、artifact不一致がある場合は<code>invalid_experiment</code>とする。
     </li>
     <li>guardrailが悪化したcandidateはprimary metricが良くてもrejectする。</li>
     <li>有意な差がない場合は<code>no_winner</code>とする。</li>
@@ -1284,8 +1315,8 @@ arm = allocation[bucket]
     biasを結果へ明記する。
   </p>
   <p>
-    candidateが複数あるexperimentで<code>multipleComparisonCorrection = &quot;none&quot;</code
-    >を指定することはvalidation errorにする。missing
+    candidateが複数あるexperimentで<code>multipleComparisonCorrection = &quot;none&quot;</code>を指定することはvalidation
+    errorにする。missing
     outcomeの扱いと最低coverageをmetricごとに事前登録し、armごとの欠測率に大きな差がある場合はwinnerを出さない。
   </p>
   <h3 id="section-118-experiment-result">11.8 Experiment result</h3>
@@ -1324,9 +1355,9 @@ arm = allocation[bucket]
 </code></pre>
   <p>
     TOMLの<code>authoring_status</code>はsource
-    fileの編集状態だけを表す。<code>candidate</code>以降はSystemContext Release
-    registryの状態であり、source TOMLのfieldではない。runtimeのstable解決は、immutable release
-    digestとartifact matrixを指すPromotion Manifestを唯一の正本にする。
+    fileの編集状態だけを表す。<code>candidate</code>以降はSystemContext
+    Release registryの状態であり、source TOMLのfieldではない。runtimeのstable解決は、immutable
+    release digestとartifact matrixを指すPromotion Manifestを唯一の正本にする。
   </p>
   <pre><code class="language-toml">schema_version = 1
 
@@ -1684,14 +1715,19 @@ interface ExperimentStore {
   <ul>
     <li>schemaと<code>p()</code> contractのreviewが完了している。</li>
   </ul>
-  <h3 id="phase-1-core-catalog-and-p">Phase 1: Core Catalog and <code>p()</code></h3>
+  <h3 id="phase-1-core-catalog-and-p">
+    Phase 1: Core Catalog and <code>p()</code>
+  </h3>
   <p>成果物:</p>
   <ul>
     <li>TOML loader。</li>
     <li>Catalog registry。</li>
     <li>locale resolution。</li>
     <li>deterministic compiler。</li>
-    <li>request-scoped <code>bind()</code>と<code>p()</code>。</li>
+    <li>
+      request-scoped
+      <code>bind()</code>と<code>p()</code>。
+    </li>
     <li>SystemContext Invocation、manifest、usage token、exposure commit。</li>
     <li>in-memory、filesystem loader。</li>
   </ul>
@@ -1707,7 +1743,10 @@ interface ExperimentStore {
   <h3 id="phase-2-cli-and-type-generation">Phase 2: CLI and Type Generation</h3>
   <p>成果物:</p>
   <ul>
-    <li><code>lint</code>、<code>typegen</code>、<code>compile</code>、<code>diff</code>。</li>
+    <li>
+      <code>lint</code
+      >、<code>typegen</code>、<code>compile</code>、<code>diff</code>。
+    </li>
     <li>generated SystemContextKeyとvalues型。</li>
     <li>build-time compiled artifact。</li>
     <li>s11t.lock.toml。</li>
@@ -1790,7 +1829,10 @@ interface ExperimentStore {
     <li>生成candidateが通常のevalとpromotionを迂回できない。</li>
   </ul>
   <h2 id="section-20-initial-release-scope">20. Initial Release Scope</h2>
-  <p><code>v0.1</code>はPhase 0からPhase 2、および最小のStatic Evalを対象とする。</p>
+  <p>
+    <code>v0.1</code>はPhase 0からPhase 2、および最小のStatic
+    Evalを対象とする。
+  </p>
   <p>含める:</p>
   <ul>
     <li>NightWorkersと分離したpublic OSS repository。</li>
@@ -1818,7 +1860,10 @@ interface ExperimentStore {
   <h2 id="section-21-acceptance-criteria">21. Acceptance Criteria</h2>
   <p>プロジェクトの中核設計が成立したと判断する条件:</p>
   <ol>
-    <li>利用者がTOMLを追加し、型付き<code>p()</code>でSystemContext Invocationを取得できる。</li>
+    <li>
+      利用者がTOMLを追加し、型付き<code>p()</code>でSystemContext
+      Invocationを取得できる。
+    </li>
     <li>日本語と英語が同じSystemContext IDとsection IDへ対応する。</li>
     <li>
       実行SystemContextのversion、release digest、locale、artifact hash、compiler
@@ -1832,7 +1877,9 @@ interface ExperimentStore {
       A/B testが決定的割当、送信確定exposure、冪等なoutcome、randomization
       unit、guardrailを保持する。
     </li>
-    <li>改善が確認できない場合は<code>no_winner</code>または<code>keep_control</code>になる。</li>
+    <li>
+      改善が確認できない場合は<code>no_winner</code>または<code>keep_control</code>になる。
+    </li>
     <li>promotion後も以前のimmutable releaseへrollbackできる。</li>
     <li>optimizerがproduction stableを直接変更できない。</li>
     <li>libraryが特定provider、Agent runtime、hosted serviceを必須にしない。</li>
@@ -1945,7 +1992,9 @@ interface ExperimentStore {
   <ol>
     <li>TOMLでsimpleとsectioned SystemContextを同一fileに許可する最終schema。</li>
     <li>localeを同一fileに置く方式を既定としつつ、分割fileをいつ対応するか。</li>
-    <li>interpolation記法を<code>[[name]]</code>に固定するか、設定可能にするか。</li>
+    <li>
+      interpolation記法を<code>[[name]]</code>に固定するか、設定可能にするか。
+    </li>
     <li>TypeScript型生成を必須にするか、runtime-only利用もfirst-classにするか。</li>
     <li>fixed-horizon analyzerで最初に提供する統計手法。</li>
     <li>public benchmarkに含められるlicense済みdatasetの範囲。</li>
@@ -1956,7 +2005,9 @@ interface ExperimentStore {
   <p>初期実装を始める前の推奨判断:</p>
   <ul>
     <li>OSS licenseはApache-2.0。</li>
-    <li>正式なproject名は<code>S11t</code>、repository名とCLI名は<code>s11tnext</code>とする。</li>
+    <li>
+      正式なproject名は<code>S11t</code>、repository名とCLI名は<code>s11tnext</code>とする。
+    </li>
     <li>NightWorkersとは別のpublic Git repositoryで開始し、S11t内部はmonorepoにする。</li>
     <li>
       NightWorkersはcopyや内部workspace importではなく、exact versionのnpm packageを利用する。
@@ -1964,15 +2015,21 @@ interface ExperimentStore {
     <li>TypeScriptをreference implementationにする。</li>
     <li>TOML parser、schema validator、i18n engineは交換可能な内部依存として包む。</li>
     <li>
-      <code>p()</code>を通常利用の唯一のlookup facadeにし、primitive stringではなくSystemContext
-      Invocationを返す。
+      <code>p()</code>を通常利用の唯一のlookup facadeにし、primitive
+      stringではなくSystemContext Invocationを返す。
     </li>
-    <li><code>p()</code>はrun/requestへbindし、global mutable localeを持たない。</li>
+    <li>
+      <code>p()</code>はrun/requestへbindし、global mutable
+      localeを持たない。
+    </li>
     <li>1 SystemContext IDを1 TOML fileとする。</li>
     <li>source localeとtranslationを同一fileに置く。</li>
     <li>simple textとsectioned SystemContextの両方を許可する。</li>
     <li>Production stableはimmutable release digestとartifact matrixへpinする。</li>
-    <li><code>v0.1</code>はauthoring、compile、manifest、lint、typegenまでに限定する。</li>
+    <li>
+      <code>v0.1</code
+      >はauthoring、compile、manifest、lint、typegenまでに限定する。
+    </li>
     <li>Eval、A/B、optimizerのschemaは早期に定義するが、runtime実装は段階導入する。</li>
     <li>
       A/Bの既定判定はrandomization unit単位のfixed horizonとし、単発hard safety

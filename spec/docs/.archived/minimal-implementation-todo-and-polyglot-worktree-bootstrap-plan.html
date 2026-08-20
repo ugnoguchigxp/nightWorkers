@@ -147,8 +147,8 @@
   </ul>
   <p>
     MarkdownからTodoをparseしない。TodoからMarkdownを再生成して正本を上書きしない。artifact
-    metadataにはserver生成の<code>schemaVersion</code>、digest、source message ID、adoption
-    revisionを保存するが、これらをmodel生成schemaへ含めない。
+    metadataにはserver生成の<code>schemaVersion</code>、digest、source message
+    ID、adoption revisionを保存するが、これらをmodel生成schemaへ含めない。
   </p>
   <h3 id="section-23-見落とし防止">2.3 見落とし防止</h3>
   <p>field追加ではなくPlan Reviewで見落としを防ぐ。</p>
@@ -277,7 +277,8 @@
   <p>
     Plan Mode handoff
     Runでは<code>todo_plan</code>を呼ばせず、採用済みplanの先頭Todoから開始する。Mission
-    Pilotが停止中の直接Runでは、最初のmodel actionを<code>todo_plan</code>に限定する。
+    Pilotが停止中の直接Runでは、最初のmodel
+    actionを<code>todo_plan</code>に限定する。
   </p>
   <h3 id="section-26-system-contextの所有権">2.6 System Contextの所有権</h3>
   <p>
@@ -341,13 +342,17 @@
   <p>責務は次に限定する。</p>
   <ul>
     <li>
-      <code>detect</code>: manifest、lockfile、明示設定からcomponent rootとmanagerを判定する。
+      <code>detect</code>: manifest、lockfile、明示設定からcomponent
+      rootとmanagerを判定する。
     </li>
     <li>
-      <code>fingerprint</code>: lockfile、dependency manifest、manager config、tool
-      version、platformをhash化する。
+      <code>fingerprint</code>: lockfile、dependency manifest、manager
+      config、tool version、platformをhash化する。
     </li>
-    <li><code>plan</code>: 固定executableとargv、許可env、timeout class、cache/env pathを返す。</li>
+    <li>
+      <code>plan</code>: 固定executableとargv、許可env、timeout
+      class、cache/env pathを返す。
+    </li>
     <li>
       <code>validate</code>:
       install後の環境がworktreeまたはNightWorkers管理envから利用可能かを検証する。
@@ -377,25 +382,35 @@
       <tr>
         <td>JavaScript / TypeScript</td>
         <td>
-          <code>packageManager</code>、<code>bun.lock</code> /
-          <code>bun.lockb</code>、<code>package-lock.json</code>、<code>pnpm-lock.yaml</code>、<code
+          <code>packageManager</code>、<code
+            >bun.lock</code
+          >
+          /
+          <code>bun.lockb</code
+          >、<code>package-lock.json</code>、<code>pnpm-lock.yaml</code>、<code
             >yarn.lock</code
           >
         </td>
         <td>
-          <code>bun install --frozen-lockfile</code>、<code>npm ci</code>、<code
-            >pnpm install --frozen-lockfile</code
-          >、Yarn versionに応じたimmutable/frozen install
+          <code>bun install --frozen-lockfile</code
+          >、<code>npm ci</code>、<code>pnpm install --frozen-lockfile</code>、Yarn
+          versionに応じたimmutable/frozen install
         </td>
       </tr>
       <tr>
         <td>Python / uv</td>
-        <td><code>pyproject.toml</code> + <code>uv.lock</code></td>
+        <td>
+          <code>pyproject.toml</code> +
+          <code>uv.lock</code>
+        </td>
         <td><code>uv sync --frozen</code></td>
       </tr>
       <tr>
         <td>Python / Poetry</td>
-        <td><code>pyproject.toml</code> + <code>poetry.lock</code></td>
+        <td>
+          <code>pyproject.toml</code> +
+          <code>poetry.lock</code>
+        </td>
         <td>installed Poetry versionに対応する非対話sync/install</td>
       </tr>
       <tr>
@@ -405,22 +420,34 @@
       </tr>
       <tr>
         <td>Ruby</td>
-        <td><code>Gemfile</code> + <code>Gemfile.lock</code></td>
+        <td>
+          <code>Gemfile</code> +
+          <code>Gemfile.lock</code>
+        </td>
         <td><code>bundle install</code>をfrozen deployment設定で実行</td>
       </tr>
       <tr>
         <td>PHP</td>
-        <td><code>composer.json</code> + <code>composer.lock</code></td>
+        <td>
+          <code>composer.json</code> +
+          <code>composer.lock</code>
+        </td>
         <td><code>composer install --no-interaction</code></td>
       </tr>
       <tr>
         <td>Go</td>
-        <td><code>go.mod</code> + <code>go.sum</code></td>
+        <td>
+          <code>go.mod</code> +
+          <code>go.sum</code>
+        </td>
         <td><code>go mod download</code></td>
       </tr>
       <tr>
         <td>Rust</td>
-        <td><code>Cargo.toml</code> + <code>Cargo.lock</code></td>
+        <td>
+          <code>Cargo.toml</code> +
+          <code>Cargo.lock</code>
+        </td>
         <td><code>cargo fetch --locked</code></td>
       </tr>
       <tr>
@@ -430,7 +457,9 @@
       </tr>
       <tr>
         <td>JVM / Maven</td>
-        <td><code>pom.xml</code> + lock/effective reproducibility policy</td>
+        <td>
+          <code>pom.xml</code> + lock/effective reproducibility policy
+        </td>
         <td>batch dependency restore</td>
       </tr>
       <tr>
@@ -441,7 +470,8 @@
     </tbody>
   </table>
   <p>
-    <code>--production</code>相当のoptionは付けない。test、型検査、lint、buildで必要なdev
+    <code>--production</code
+    >相当のoptionは付けない。test、型検査、lint、buildで必要なdev
     dependencyを含む完全な開発環境を作る。
   </p>
   <p>
@@ -487,8 +517,14 @@
 └── logs/&lt;workspaceId&gt;/
 </code></pre>
   <ul>
-    <li>全directoryをrepository外に置き、mode <code>0700</code>で作成する。</li>
-    <li><code>TMPDIR</code>、<code>TMP</code>、<code>TEMP</code>はattempt固有tmpへ設定する。</li>
+    <li>
+      全directoryをrepository外に置き、mode
+      <code>0700</code>で作成する。
+    </li>
+    <li>
+      <code>TMPDIR</code
+      >、<code>TMP</code>、<code>TEMP</code>はattempt固有tmpへ設定する。
+    </li>
     <li>package manager cacheはadapterごとのNightWorkers管理cacheへ設定する。</li>
     <li>
       Python virtualenv、Ruby bundle path、NuGet packages、Cargo home/target、Go module/build
@@ -497,7 +533,8 @@
     </li>
     <li>
       ecosystemがworktree内の配置を前提とする<code>node_modules</code>、Composer
-      <code>vendor</code>等はworktree自身へ作成する。親checkoutや別worktreeからsymlinkしない。
+      <code>vendor</code
+      >等はworktree自身へ作成する。親checkoutや別worktreeからsymlinkしない。
     </li>
     <li>
       bootstrap成功、失敗、cancelの後にattempt
@@ -567,7 +604,8 @@
     <li>environment/dependency rootが存在し、root symlink禁止条件に違反しない。</li>
   </ol>
   <p>
-    JavaScript系ではworktree-local <code>node_modules</code>がdirectoryであり、root
+    JavaScript系ではworktree-local
+    <code>node_modules</code>がdirectoryであり、root
     dependencyの直接かつ非optionalなentryがworktreeから解決できることを検証する。Pythonは保存済みinterpreterとenvironment、Go/Rust/.NET/JVMはinjectするcache/env
     pathとmanager固有metadataを検証する。単にdirectoryが存在するだけではskipしない。
   </p>
@@ -579,8 +617,8 @@
       Settingsで安全な上下限内だけ変更できるようにする。
     </li>
     <li>
-      Queue cancel、Task cancel、application shutdownの<code>AbortSignal</code>をprocess
-      runnerまで伝播する。
+      Queue cancel、Task cancel、application
+      shutdownの<code>AbortSignal</code>をprocess runnerまで伝播する。
     </li>
     <li>
       cancel/timeout時はprocess groupへ<code>SIGTERM</code>を送り、grace
@@ -612,8 +650,8 @@
       bootstrapへ渡したsecret env値をexact valueとして登録し、十分な長さを持つ値を出力から置換する。
     </li>
     <li>
-      Bearer credential、registryの<code>_authToken</code>、URL userinfo、既知package manager
-      token形式をfallback patternでmaskする。
+      Bearer credential、registryの<code>_authToken</code>、URL
+      userinfo、既知package manager token形式をfallback patternでmaskする。
     </li>
     <li>
       stream chunk境界を跨いだsecretも漏れないよう、bounded overlap bufferを持ってredactする。
@@ -639,9 +677,10 @@
     </li>
   </ul>
   <p>
-    現在のCodex SDK envのように<code>process.env</code>をほぼ全量copyする経路は廃止し、allowlist +
-    明示的provider credentialへ変更する。<code>TMPDIR</code>とadapter runtime envはCoding
-    Agentへ渡すが、registry tokenは渡さない。
+    現在のCodex SDK
+    envのように<code>process.env</code>をほぼ全量copyする経路は廃止し、allowlist
+    + 明示的provider credentialへ変更する。<code>TMPDIR</code>とadapter
+    runtime envはCoding Agentへ渡すが、registry tokenは渡さない。
   </p>
   <h3 id="section-310-lifecycleとrun-admission">3.10 lifecycleとRun admission</h3>
   <p>workspace statusを次へ変更する。</p>
@@ -655,7 +694,10 @@ provisioning -&gt; provision_failed
 initializing -&gt; initialization_failed
 </code></pre>
   <ul>
-    <li>Git worktree作成後は<code>initializing</code>へ遷移し、まだ<code>ready</code>にしない。</li>
+    <li>
+      Git
+      worktree作成後は<code>initializing</code>へ遷移し、まだ<code>ready</code>にしない。
+    </li>
     <li>
       <code>initialization_failed</code>からのretryは既存worktreeを再利用し、Git
       worktreeを作り直さない。
@@ -721,7 +763,8 @@ DEPENDENCY_STATE_INVALID
     <figcaption>4. Target Flowの図</figcaption>
   </figure>
   <p>
-    直接Coding Agent Runでは、Plan Modeの代わりに最初の<code>todo_plan</code>がB〜Eを担う。worktree
+    直接Coding Agent Runでは、Plan
+    Modeの代わりに最初の<code>todo_plan</code>がB〜Eを担う。worktree
     bootstrapはmodel起動より前に行うため、直接Runでも環境失敗をAgentへ解決させない。
   </p>
   <h2 id="section-5-file-and-ownership-disposition">5. File and Ownership Disposition</h2>
@@ -731,7 +774,10 @@ DEPENDENCY_STATE_INVALID
     <li>
       <code>api/modules/specification/feature-plan-content.ts</code>
       <ul>
-        <li>Feature Plan structured outputへ最小<code>implementationPlan</code>を追加する。</li>
+        <li>
+          Feature Plan structured
+          outputへ最小<code>implementationPlan</code>を追加する。
+        </li>
       </ul>
     </li>
     <li>
@@ -783,9 +829,7 @@ DEPENDENCY_STATE_INVALID
       </ul>
     </li>
     <li>
-      <code
-        >api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector.ts</code
-      >
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector.ts</code>
       <ul>
         <li>全Todo再投影をやめ、progress/current/nextだけを返す。</li>
       </ul>
@@ -851,8 +895,8 @@ DEPENDENCY_STATE_INVALID
       <code>shared/schemas/git-integration.schema.ts</code>
       <ul>
         <li>
-          <code>initializing</code>、<code>initialization_failed</code>、version付きbootstrap
-          evidenceを追加する。
+          <code>initializing</code
+          >、<code>initialization_failed</code>、version付きbootstrap evidenceを追加する。
         </li>
       </ul>
     </li>
@@ -894,9 +938,9 @@ DEPENDENCY_STATE_INVALID
     </li>
   </ul>
   <p>
-    adapterは<code>gitworktree</code> moduleが所有するworkspace初期化実装であり、Coding Agent
-    moduleへpackage manager分岐を置かない。Coding Agentは初期化済みworkspaceとsanitized runtime
-    envだけを受け取る。
+    adapterは<code>gitworktree</code>
+    moduleが所有するworkspace初期化実装であり、Coding Agent moduleへpackage
+    manager分岐を置かない。Coding Agentは初期化済みworkspaceとsanitized runtime envだけを受け取る。
   </p>
   <h2 id="section-6-implementation-phases">6. Implementation Phases</h2>
   <h3 id="phase-0-baselineとcontract-characterization">
@@ -928,7 +972,9 @@ DEPENDENCY_STATE_INVALID
   <p>実施:</p>
   <ol>
     <li><code>steps[].title/systemContext</code>だけの共有schemaを追加する。</li>
-    <li>Feature Plan structured contractへ<code>implementationPlan</code>を追加する。</li>
+    <li>
+      Feature Plan structured contractへ<code>implementationPlan</code>を追加する。
+    </li>
     <li>
       Feature Plan本文からmodel生成の「実装計画」sectionを除き、server
       rendererで同sectionを追加する。
@@ -950,7 +996,10 @@ DEPENDENCY_STATE_INVALID
   <ol>
     <li>server operational stateとmodel-generated stepを別schemaへ分離する。</li>
     <li>Plan採用/handoffのdigest検証後、stepsからTodoをtransaction生成する。</li>
-    <li>直接Run用<code>todo_plan</code>とcurrent基準のcomplete/block/replan toolを追加する。</li>
+    <li>
+      直接Run用<code>todo_plan</code>とcurrent基準のcomplete/block/replan
+      toolを追加する。
+    </li>
     <li>model-facing tool argsから通常操作のID、seq、revision、冗長fieldを削除する。</li>
     <li>tool resultをprogress/current/nextへ縮小する。</li>
     <li>Codex SDKとNative APIへ同じcurrent Todo Contextを注入する。</li>
@@ -977,7 +1026,10 @@ DEPENDENCY_STATE_INVALID
     <li>
       completion contractは品質ゲートTodoの証跡と完了報告Todoの候補を照合し、Todoを暗黙更新しない。
     </li>
-    <li>LLM生成<code>systemContext</code>をruntime inputとしてdelimiter付き注入する。</li>
+    <li>
+      LLM生成<code>systemContext</code>をruntime
+      inputとしてdelimiter付き注入する。
+    </li>
     <li>TOML、catalog JSON、generated TypeScriptを一括再生成する。</li>
     <li>
       legacy <code>ImplementationTodoInput</code>のPlan Mode
@@ -989,7 +1041,8 @@ DEPENDENCY_STATE_INVALID
     <li>model-generated Todo ContextがS11t catalogへ入らない。</li>
     <li>fixed instructionの重複builderが残らない。</li>
     <li>
-      <code>s11tnext:lint</code>、<code>s11tnext:build</code>、<code>s11tnext:check</code>がgreen。
+      <code>s11tnext:lint</code
+      >、<code>s11tnext:build</code>、<code>s11tnext:check</code>がgreen。
     </li>
   </ul>
   <h3 id="phase-4-workspace-bootstrap-coreとlifecycle">
@@ -998,7 +1051,8 @@ DEPENDENCY_STATE_INVALID
   <p>実施:</p>
   <ol>
     <li>
-      <code>initializing</code>、<code>initialization_failed</code>、version付きevidence schemaとDB
+      <code>initializing</code
+      >、<code>initialization_failed</code>、version付きevidence schemaとDB
       migrationを追加する。
     </li>
     <li>
@@ -1008,22 +1062,30 @@ DEPENDENCY_STATE_INVALID
     <li>runtimeRoot配下のtmp/cache/environment/log pathとpermissionを追加する。</li>
     <li>timeout、AbortSignal、process group停止、bounded outputを共通runnerへ実装する。</li>
     <li>
-      Git worktree作成後にbootstrapを実行し、全component成功時だけ<code>ready</code>へ遷移する。
+      Git
+      worktree作成後にbootstrapを実行し、全component成功時だけ<code>ready</code>へ遷移する。
     </li>
     <li>Queue releaseとprovider launchに二重のreadiness checkを追加する。</li>
     <li><code>initialization_failed</code> retryでは既存worktreeを再利用する。</li>
   </ol>
   <p>Exit criteria:</p>
   <ul>
-    <li>dependency manifestがあるのにadapter未実行のworkspaceは<code>ready</code>にならない。</li>
+    <li>
+      dependency
+      manifestがあるのにadapter未実行のworkspaceは<code>ready</code>にならない。
+    </li>
     <li>bootstrap失敗時のmodel call数が0である。</li>
     <li>cancel/timeout後にchild processとpartial success stampが残らない。</li>
   </ul>
   <h3 id="phase-5-javascript--python-adapters">Phase 5: JavaScript / Python adapters</h3>
   <p>実施:</p>
   <ol>
-    <li>Bun、npm、pnpm、Yarnをlockfileと<code>packageManager</code>から構造判定する。</li>
-    <li><code>--production</code>を付けず、frozen/immutable installを実行する。</li>
+    <li>
+      Bun、npm、pnpm、Yarnをlockfileと<code>packageManager</code>から構造判定する。
+    </li>
+    <li>
+      <code>--production</code>を付けず、frozen/immutable installを実行する。
+    </li>
     <li>worktree root dependencyのsymlink policyとvalidationを実装する。</li>
     <li>uv、Poetry、hash付きpip lock adapterを追加する。</li>
     <li>worktree外virtual environmentとCoding Agent runtime env injectionを接続する。</li>
@@ -1053,7 +1115,10 @@ DEPENDENCY_STATE_INVALID
   <p>Exit criteria:</p>
   <ul>
     <li>対応するfixture repositoryがAgent起動前にrestore済みになる。</li>
-    <li>unsupported/ambiguous componentを<code>not_required</code>として通過させない。</li>
+    <li>
+      unsupported/ambiguous
+      componentを<code>not_required</code>として通過させない。
+    </li>
     <li>arbitrary shell commandを設定または実行できない。</li>
   </ul>
   <h3 id="phase-7-secret-redactionとenv-isolation">Phase 7: secret redactionとenv isolation</h3>
@@ -1062,7 +1127,10 @@ DEPENDENCY_STATE_INVALID
     <li>重複しているsecret sanitizerを共通redaction utilityへ統合する。</li>
     <li>exact secret、構造的key、fallback pattern、chunk境界redactionをtestする。</li>
     <li>bootstrap envとAgent runtime envを別builderにする。</li>
-    <li>Codex SDK/Native providerの<code>process.env</code>全量copyをallowlistへ置き換える。</li>
+    <li>
+      Codex SDK/Native
+      providerの<code>process.env</code>全量copyをallowlistへ置き換える。
+    </li>
     <li>raw stdout/stderr、env、auth configを永続化しないことをrepository境界で強制する。</li>
     <li>UI/APIにはredacted bounded excerptだけを返す。</li>
   </ol>
@@ -1079,7 +1147,9 @@ DEPENDENCY_STATE_INVALID
       Plan Modeからbootstrap、Todo execution、quality gate、completion reportまでのdeterministic
       E2Eを追加する。
     </li>
-    <li>直接Coding Agent Runの初回<code>todo_plan</code>経路をE2E検証する。</li>
+    <li>
+      直接Coding Agent Runの初回<code>todo_plan</code>経路をE2E検証する。
+    </li>
     <li>internal/devの代表polyglot repositoriesでcanaryする。</li>
     <li>
       init duration、cache hit、stamp skip、失敗code、model起動前停止、Todo payload
@@ -1111,7 +1181,10 @@ DEPENDENCY_STATE_INVALID
     <li>直接RunでTodo作成前のworkspace tool拒否。</li>
     <li>current completeとnext startのatomicity。</li>
     <li>concurrent mutation時にserver CASが整合性を守り、通常引数にrevisionを要求しない。</li>
-    <li><code>passed</code>と<code>skipped</code>をUI progressのterminal countへ含める。</li>
+    <li>
+      <code>passed</code>と<code>skipped</code>をUI
+      progressのterminal countへ含める。
+    </li>
     <li>full Todo listがmodel tool resultへ含まれない。</li>
     <li>quality gate失敗がTodoを暗黙更新しない。</li>
     <li>Native API/Codex SDKで同じcurrent Todo Contextになる。</li>
@@ -1126,13 +1199,18 @@ DEPENDENCY_STATE_INVALID
     <li>retryはworktreeを再作成しない。</li>
     <li>provider launch直前のstale/invalid evidence拒否。</li>
     <li>timeout、cancel、SIGTERM/SIGKILL、orphan process不存在。</li>
-    <li>tmp/cache/environmentがrepository外かつpermission <code>0700</code>。</li>
+    <li>
+      tmp/cache/environmentがrepository外かつpermission
+      <code>0700</code>。
+    </li>
     <li>output byte上限とpartial stamp不存在。</li>
   </ul>
   <h3 id="section-73-adapter">7.3 adapter</h3>
   <ul>
     <li>Bun/npm/pnpm/Yarnでdev dependencyが解決できる。</li>
-    <li><code>--production</code>相当optionが全JavaScript adapterに存在しない。</li>
+    <li>
+      <code>--production</code>相当optionが全JavaScript adapterに存在しない。
+    </li>
     <li>root <code>node_modules</code>がworktree-local directoryである。</li>
     <li>provenance不明のroot dependency symlinkをfail-closeする。</li>
     <li>uv/Poetry/pip environmentがAgent commandから利用できる。</li>
@@ -1147,7 +1225,8 @@ DEPENDENCY_STATE_INVALID
   <h3 id="section-74-security">7.4 security</h3>
   <ul>
     <li>
-      Bearer token、Basic/URL userinfo、npm <code>_authToken</code>、generic secret envのmask。
+      Bearer token、Basic/URL userinfo、npm <code>_authToken</code>、generic
+      secret envのmask。
     </li>
     <li>stdout/stderr chunk境界を跨ぐtokenのmask。</li>
     <li>command failure、timeout、cancelの全error pathでmask。</li>
@@ -1190,7 +1269,8 @@ bun run verify
   <ul>
     <li>新規workspaceは最初から<code>initializing</code>を通る。</li>
     <li>
-      既存<code>ready</code>で未使用のworkspaceにbootstrap evidenceがない場合、次回Queue
+      既存<code>ready</code>で未使用のworkspaceにbootstrap
+      evidenceがない場合、次回Queue
       claim前に<code>initializing</code>へ戻して初期化する。
     </li>
     <li>
@@ -1219,7 +1299,9 @@ bun run verify
     <li>typed failure codeとretry成功率。</li>
     <li>bootstrap失敗後のmodel call数。目標<code>0</code>。</li>
     <li>secret redaction violation。目標<code>0</code>。</li>
-    <li>parent checkout dependency symlink利用。目標<code>0</code>。</li>
+    <li>
+      parent checkout dependency symlink利用。目標<code>0</code>。
+    </li>
     <li>Run内でAgentがinstallを実行した回数。</li>
     <li>Todo model-visible bytes/turn。</li>
     <li>Todo mutation validation/revision failure率。</li>
@@ -1263,10 +1345,7 @@ bun run verify
     <li>install cache hitとstamp skipによるwall time。</li>
   </ul>
   <p>
-    cache入力はprovider課金・速度上の意味が非cache入力と異なるため、UIでは<code>input</code>、<code
-      >cached input</code
-    >、<code>non-cached input</code>を分けて表示する。<code>cached input</code
-    >を別途加算した独自の「総使用量」を作らず、providerが返すtotal定義を正本として併記する。
+    cache入力はprovider課金・速度上の意味が非cache入力と異なるため、UIでは<code>input</code>、<code>cached input</code>、<code>non-cached input</code>を分けて表示する。<code>cached input</code>を別途加算した独自の「総使用量」を作らず、providerが返すtotal定義を正本として併記する。
   </p>
   <h2 id="section-10-non-goals">10. Non-Goals</h2>
   <ul>
@@ -1284,7 +1363,10 @@ bun run verify
   <h2 id="section-11-definition-of-done">11. Definition of Done</h2>
   <p>本計画は次をすべて満たした時に完了とする。</p>
   <ol>
-    <li>model生成の実装step fieldが<code>title</code>と<code>systemContext</code>だけである。</li>
+    <li>
+      model生成の実装step
+      fieldが<code>title</code>と<code>systemContext</code>だけである。
+    </li>
     <li>Plan Modeで実装計画を一度だけ生成し、SpecとTodoが同じstructured planを参照する。</li>
     <li>Markdown parse、別Todo生成、keyword/regex工程分類がproduction pathに存在しない。</li>
     <li>Plan ReviewがTask/設計に対するstep不足を意味的に検出できる。</li>
@@ -1305,10 +1387,16 @@ bun run verify
     <li>exact stampとvalidationが一致する場合だけbootstrapをskipする。</li>
     <li>timeout、cancel、process cleanup、structured errorが全adapterで共通に働く。</li>
     <li>registry credentialとsecretがlog、DB、event、API、UIへ漏れない。</li>
-    <li>bootstrap失敗時にworkspaceが<code>ready</code>にならず、model callが0回である。</li>
+    <li>
+      bootstrap失敗時にworkspaceが<code>ready</code>にならず、model
+      callが0回である。
+    </li>
     <li>Coding Agentが環境初期化失敗をTodoとして解決させられない。</li>
     <li>role module境界とS11t生成物更新規則を守る。</li>
-    <li>focused test、architecture/docs check、<code>bun run verify</code>がgreenである。</li>
+    <li>
+      focused test、architecture/docs
+      check、<code>bun run verify</code>がgreenである。
+    </li>
   </ol>
   <h2 id="section-12-canonical-implementation-todo">12. Canonical Implementation Todo</h2>
   <p>

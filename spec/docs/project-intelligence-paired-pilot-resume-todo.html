@@ -7,7 +7,10 @@
     <li>Owner: NightWorkers（評価実行・計測・provider routing）</li>
     <li>Producer: vulnWorkbench（Project Exploration Catalog V2）</li>
     <li>Default activation: OFF のまま</li>
-    <li>Namespace cleanup: rollout が <code>GO</code> になるまで実施しない</li>
+    <li>
+      Namespace cleanup: rollout が
+      <code>GO</code> になるまで実施しない
+    </li>
   </ul>
   <h2 id="再開時の重要ルール">再開時の重要ルール</h2>
   <ol>
@@ -36,22 +39,38 @@
   <h2 id="section-2026-08-10-時点の到達点">2026-08-10 時点の到達点</h2>
   <p>Project Exploration用のnative API互換化は実装・コミット済みである。</p>
   <ul>
-    <li><code>dedf41cd</code> — Project ExplorationのGit revision pinning修正</li>
+    <li>
+      <code>dedf41cd</code> — Project ExplorationのGit revision pinning修正
+    </li>
     <li><code>bb70606d</code> — Project catalog tool引数のflat化</li>
     <li><code>b26c949e</code> — flat Todo tool profileの追加</li>
     <li><code>0e500d56</code> — multiline edit引数のJSON文字列化</li>
-    <li><code>7a97a17b</code> — compatible route向け<code>run_check</code> schemaの安定化</li>
+    <li>
+      <code>7a97a17b</code> — compatible route向け<code
+        >run_check</code
+      >
+      schemaの安定化
+    </li>
   </ul>
   <p>
     LAN内OpenAI互換endpointに対する実接続smokeでは、catalog、Todo、multiline
-    edit、<code>run_check</code>のtool parser互換性を確認した。関連focused test
-    43件、typecheck、対象Biome checkは完了済みである。
+    edit、<code>run_check</code>のtool parser互換性を確認した。関連focused
+    test 43件、typecheck、対象Biome checkは完了済みである。
   </p>
   <p>中断したformal pilot v2は次のpartial状態だった。</p>
   <ul>
-    <li>p01: baseline <code>completed</code>、catalog <code>failed</code></li>
-    <li>p02: baseline <code>completed</code>、catalog <code>completed</code></li>
-    <li>p03: baseline <code>needs_human</code>（30分上限）、catalog実行中にユーザー指示で中断</li>
+    <li>
+      p01: baseline <code>completed</code>、catalog
+      <code>failed</code>
+    </li>
+    <li>
+      p02: baseline <code>completed</code>、catalog
+      <code>completed</code>
+    </li>
+    <li>
+      p03: baseline
+      <code>needs_human</code>（30分上限）、catalog実行中にユーザー指示で中断
+    </li>
     <li>p04-p10: 未実行</li>
   </ul>
   <p>
@@ -162,7 +181,8 @@
       failureへの波及がないことを確認する。
     </li>
     <li>
-      <input disabled="" type="checkbox" /> <code>GO</code> / <code>NO-GO</code> /
+      <input disabled="" type="checkbox" /> <code>GO</code> /
+      <code>NO-GO</code> /
       <code>INSUFFICIENT_EVIDENCE</code>をmetric付きで記録する。
     </li>
     <li>
@@ -170,8 +190,9 @@
       decision、roadmapをformal reportへ合わせて更新する。
     </li>
     <li>
-      <input disabled="" type="checkbox" /> <code>GO</code>以外ではfeature
-      flagをOFFのままにし、namespace cleanupを行わない。
+      <input disabled="" type="checkbox" />
+      <code>GO</code>以外ではfeature flagをOFFのままにし、namespace
+      cleanupを行わない。
     </li>
   </ul>
   <h3 id="p3-最終検証とcleanup">P3: 最終検証とcleanup</h3>

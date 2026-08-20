@@ -7,7 +7,8 @@
     <li>Concept status: <code>locked</code></li>
     <li>Plan status: <code>implemented</code></li>
     <li>
-      Implementation status: <code>complete</code> (Phase 0-8 cutover and verification complete)
+      Implementation status: <code>complete</code> (Phase 0-8 cutover and
+      verification complete)
     </li>
     <li>Document created: 2026-07-17</li>
     <li>
@@ -15,8 +16,8 @@
     </li>
     <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
     <li>
-      Baseline HEAD: <code>f21999f7</code> plus the pre-existing tracked and untracked working-tree
-      changes present when implementation starts
+      Baseline HEAD: <code>f21999f7</code> plus the pre-existing tracked and
+      untracked working-tree changes present when implementation starts
     </li>
     <li>
       Working-tree policy: preserve all pre-existing changes and do not fold unrelated edits into
@@ -60,8 +61,8 @@
       facadeを実装し、UI routeとMission Pilot tool adapterを同じhandlerへ接続した。
     </li>
     <li>
-      Coding Agent start/resumeを<code>agentsShare</code>のrequester-neutral portへ統一し、request
-      provenanceをaudit associationだけへ保存した。
+      Coding Agent start/resumeを<code>agentsShare</code>のrequester-neutral
+      portへ統一し、request provenanceをaudit associationだけへ保存した。
     </li>
     <li>
       Mission Pilot provider tool surfaceを7個のgeneric toolへ縮小し、conversation、tool
@@ -116,17 +117,23 @@
       Pilot専用runtime optionを注入する。
     </li>
     <li>
-      Coding Agent System Contextが<code>user</code>と<code>mission_pilot</code>で分岐し、Mission
+      Coding Agent System
+      Contextが<code>user</code>と<code>mission_pilot</code>で分岐し、Mission
       Pilotへの返却、判断待ち、handoff正本化を指示する。
     </li>
     <li>
-      Implementation QueueとRun associationがMission Pilotの現在の<code>playing</code>状態をCoding
+      Implementation QueueとRun associationがMission
+      Pilotの現在の<code>playing</code>状態をCoding
       Agent開始条件として扱う。
     </li>
     <li>
-      UIに存在する<code>needs_human</code> Todoのresume操作がMission Pilot action catalogにない。
+      UIに存在する<code>needs_human</code> Todoのresume操作がMission Pilot
+      action catalogにない。
     </li>
-    <li><code>questionnaire.submit</code>がMission Pilotというroleを理由に静的禁止されている。</li>
+    <li>
+      <code>questionnaire.submit</code>がMission
+      Pilotというroleを理由に静的禁止されている。
+    </li>
     <li>Task完了がMission Pilot-owned Runに限定され、ユーザー操作と意味が異なる。</li>
     <li>
       Play時に既存のユーザー可視timelineを読む代わりに、疑似的な<code
@@ -191,10 +198,12 @@
   <ul>
     <li>
       Coding Agent production code、System Context、tool contract、Todo Context、completion
-      ruleに<code>mission_pilot</code>、Mission Pilot handoff、Mission Pilotへの返却先を含めない。
+      ruleに<code>mission_pilot</code>、Mission Pilot handoff、Mission
+      Pilotへの返却先を含めない。
     </li>
     <li>
-      人間ユーザーとMission Pilotは同じ<code>StartCodingAgentRun</code> application commandを呼ぶ。
+      人間ユーザーとMission Pilotは同じ<code>StartCodingAgentRun</code> application
+      commandを呼ぶ。
     </li>
     <li>
       requester provenanceは監査と外側のevent associationにだけ保存し、Coding
@@ -211,7 +220,8 @@
     </li>
     <li>
       Coding Agentの開始、継続、resume、closeoutはMission Pilot
-      sessionの存在、<code>playing</code>状態、phase、context revisionに依存しない。
+      sessionの存在、<code>playing</code>状態、phase、context
+      revisionに依存しない。
     </li>
     <li>
       Mission Pilot停止後も、受理済みCoding Agent
@@ -378,7 +388,9 @@ src/modules/
     refへ投影するだけとする。
   </p>
   <p>
-    Coding Agent TodoはCoding Agent固有のproduction modelであるため、Agent非依存の<code>todo</code>
+    Coding Agent TodoはCoding Agent固有のproduction modelであるため、Agent非依存の<code
+      >todo</code
+    >
     domain moduleへ移さない。UIまたはTask
     OperatorがTodoを読む・resumeする場合は<code>agentsShare</code>の中立contract／portを介し、実装と正本mutationは<code
       >codingAgent</code
@@ -445,7 +457,8 @@ src/modules/
         <td><code>codingAgent</code></td>
         <td>Coding Agent System Context、Todo、runtime、repository作業</td>
         <td>
-          <code>StartCodingAgentRunPort</code>と<code>ResumeCodingAgentRunPort</code>のhandler
+          <code>StartCodingAgentRunPort</code
+          >と<code>ResumeCodingAgentRunPort</code>のhandler
         </td>
         <td>Mission Pilot role分岐</td>
       </tr>
@@ -470,8 +483,8 @@ src/modules/
     </tbody>
   </table>
   <p>
-    各module外からは<code>index.ts</code>のpublic APIだけをimportする。route adapter、Task
-    Operator、他domainが内部repository、内部service、深いfile
+    各module外からは<code>index.ts</code>のpublic APIだけをimportする。route
+    adapter、Task Operator、他domainが内部repository、内部service、深いfile
     pathをimportしない。循環依存を解消するためにpublic
     indexへ内部実装を再exportして境界を迂回してはならない。
   </p>
@@ -595,8 +608,9 @@ type TaskOperatorProjectionV1 = {
 };
 </code></pre>
   <p>
-    すべてのobject schemaは<code>.strict()</code>とする。<code>unknown</code>、open record、raw
-    table
+    すべてのobject
+    schemaは<code>.strict()</code>とする。<code>unknown</code>、open
+    record、raw table
     rowを含めない。<code>BoundedTextRef.truncated=true</code>の場合、全文は同じrevisionとdigestを指定してdetail
     queryから取得する。Task Goalを無言で切り捨ててはならない。
   </p>
@@ -702,7 +716,8 @@ type TaskOperatorCommandContext = {
     keyを要求しない。mutationだけがrequest IDとidempotency keyを持つ。
   </p>
   <p>
-    <code>principal.kind</code>は監査と明示grantの解決に使用する。Taskの意味、Coding
+    <code>principal.kind</code
+    >は監査と明示grantの解決に使用する。Taskの意味、Coding
     Agentのmode、command結果の意味を分岐させない。idempotencyはactorの能力ではなくcommand
     deliveryの性質として扱う。
   </p>
@@ -752,7 +767,8 @@ type TaskOperatorCommandContext = {
       <tr>
         <td><code>specification</code>系</td>
         <td>
-          <code>UpdatePlanRouting</code>、<code>GeneratePlanArtifact</code>、<code
+          <code>UpdatePlanRouting</code
+          >、<code>GeneratePlanArtifact</code>、<code
             >RegeneratePlanArtifact</code
           >
         </td>
@@ -788,14 +804,22 @@ type TaskOperatorCommandContext = {
         </td>
       </tr>
       <tr>
-        <td><code>codingAgent</code> via <code>agentsShare</code> port</td>
-        <td><code>StartCodingAgentRun</code>、<code>ResumeCodingAgentRunTodo</code></td>
+        <td>
+          <code>codingAgent</code> via
+          <code>agentsShare</code> port
+        </td>
+        <td>
+          <code>StartCodingAgentRun</code>、<code
+            >ResumeCodingAgentRunTodo</code
+          >
+        </td>
       </tr>
     </tbody>
   </table>
   <p>
-    <code>taskOperator</code>はこれらを再実装しない。queryからcommand availabilityを合成し、UI
-    routeまたはMission Pilot toolから受けた入力を正本commandへdispatchする。複数domainを更新するuse
+    <code>taskOperator</code>はこれらを再実装しない。queryからcommand
+    availabilityを合成し、UI routeまたはMission Pilot
+    toolから受けた入力を正本commandへdispatchする。複数domainを更新するuse
     caseだけ、明示的なapplication orchestrationとして所有する。
   </p>
   <p>
@@ -804,7 +828,8 @@ type TaskOperatorCommandContext = {
   </p>
   <p>
     <code>StartVerification</code
-    >、<code>StartReview</code>、<code>StartReworkRun</code>等の意味別Coding Agent commandはtarget
+    >、<code>StartReview</code>、<code>StartReworkRun</code>等の意味別Coding
+    Agent commandはtarget
     architectureに含めない。検証、review、reworkが必要なら、目的、参照、完了条件を通常の<code>StartCodingAgentRun</code>へ渡す。既存のTest／Review開始routeを互換維持する期間は、同じrequest
     contractへ変換する薄いadapterとし、専用runtime mode、専用System Context、専用tool
     setを選ばない。
@@ -1016,8 +1041,8 @@ type TaskOperatorCommandContext = {
     </li>
   </ul>
   <p>
-    <code>api/modules/codingAgent</code>内の<code>mission_pilot</code>と<code>Mission Pilot</code
-    >参照を0件にする。
+    <code>api/modules/codingAgent</code
+    >内の<code>mission_pilot</code>と<code>Mission Pilot</code>参照を0件にする。
   </p>
   <h3 id="section-72-startcodingagentrun-command">7.2 StartCodingAgentRun command</h3>
   <p>人間ユーザーとMission Pilotは同じcommandを使う。</p>
@@ -1038,11 +1063,12 @@ type TaskOperatorCommandContext = {
 };
 </code></pre>
   <p>
-    <code>requestProvenance</code>はRun associationまたはauditへ保存し、Coding Agent System
-    Contextへ渡さない。
+    <code>requestProvenance</code>はRun associationまたはauditへ保存し、Coding Agent
+    System Contextへ渡さない。
   </p>
   <p>
-    Mission PilotはCoding AgentのTodoを注入または更新しない。<code>initialTodos</code>、Mission
+    Mission PilotはCoding
+    AgentのTodoを注入または更新しない。<code>initialTodos</code>、Mission
     Pilot固有rework Todo、Mission Pilot runtime envelopeをCoding Agent requestから除去する。
   </p>
   <h3 id="section-73-queueとassociation">7.3 Queueとassociation</h3>
@@ -1057,7 +1083,8 @@ type TaskOperatorCommandContext = {
     </li>
     <li>Queueへ受理されたrequestはimmutableにする。</li>
     <li>
-      dequeue、Run作成、Run association時にMission Pilotの<code>playing</code>状態を再検査しない。
+      dequeue、Run作成、Run association時にMission
+      Pilotの<code>playing</code>状態を再検査しない。
     </li>
     <li>association失敗をCoding Agent開始失敗にしない。監査associationは再試行可能にする。</li>
   </ul>
@@ -1113,7 +1140,8 @@ type TaskOperatorCommandContext = {
     <li>新規Task、既存Task、backfill Taskをすべてagent runtimeへ統一する。</li>
     <li>legacy sessionにはagent session rowをadditive migrationで作成する。</li>
     <li>
-      移行時はMission Pilotを<code>stopped</code>にし、ユーザーの明示Playなしにprovider
+      移行時はMission
+      Pilotを<code>stopped</code>にし、ユーザーの明示Playなしにprovider
       callまたはmutationを開始しない。
     </li>
     <li>
@@ -1121,7 +1149,8 @@ type TaskOperatorCommandContext = {
       readに必要なfieldだけ残し、production entryから削除する。
     </li>
     <li>
-      <code>MissionPilotRuntimeOwnership</code>の<code>legacy</code>分岐を最終Phaseで削除する。
+      <code>MissionPilotRuntimeOwnership</code
+      >の<code>legacy</code>分岐を最終Phaseで削除する。
     </li>
   </ul>
   <h3 id="section-84-off-invariant">8.4 Off invariant</h3>
@@ -1187,7 +1216,8 @@ type TaskOperatorCommandContext = {
       APIを各<code>modules/[domain]/index.ts</code>へ定義する。
     </li>
     <li>
-      Coding Agent start/resumeの中立contractとportを<code>agentsShare</code>へ定義し、handler
+      Coding Agent
+      start/resumeの中立contractとportを<code>agentsShare</code>へ定義し、handler
       ownershipを<code>codingAgent</code>へ固定する。
     </li>
     <li><code>shared/modules/taskOperator</code>へstrict schemaを追加する。</li>
@@ -1227,7 +1257,10 @@ type TaskOperatorCommandContext = {
     <li>
       Artifact revision、Questionnaire revision、Queue revision、Run revisionを正本domainから読む。
     </li>
-    <li><code>currentView</code>のようなfrontend local stateをdomain authorityから除外する。</li>
+    <li>
+      <code>currentView</code>のようなfrontend local stateをdomain
+      authorityから除外する。
+    </li>
     <li>head Artifactをlatest-by-kindへ限定し、全indexをpagingする。</li>
     <li>Task Goalのbounded textと再取得refを実装する。</li>
     <li>paging、digest、token estimateを追加する。</li>
@@ -1236,7 +1269,8 @@ type TaskOperatorCommandContext = {
   <ul>
     <li>同一Task revisionでUI queryとMission Pilot queryのsource digestが一致する。</li>
     <li>
-      provider入力にraw row、<code>metadataJson</code>、<code>contextSnapshot</code>が含まれない。
+      provider入力にraw
+      row、<code>metadataJson</code>、<code>contextSnapshot</code>が含まれない。
     </li>
     <li>省略した情報をsource refから再取得できる。</li>
     <li>Task Operatorがdomain repositoryまたはdeep internal pathをimportしていない。</li>
@@ -1257,8 +1291,8 @@ type TaskOperatorCommandContext = {
     <li>available commandを各domain policyから合成する。</li>
     <li><code>questionnaire.submit</code>のrole固定禁止を削除する。</li>
     <li>
-      <code>ResumeCodingAgentRunTodo</code>を<code>agentsShare</code> port経由でMission
-      Pilotへ公開する。
+      <code>ResumeCodingAgentRunTodo</code>を<code>agentsShare</code>
+      port経由でMission Pilotへ公開する。
     </li>
     <li>Task completeのMission Pilot-owned Run限定を削除する。</li>
     <li>
@@ -1266,7 +1300,8 @@ type TaskOperatorCommandContext = {
       executorから除去する。
     </li>
     <li>
-      <code>StartVerification</code>、<code>StartReview</code>等の意味別開始を通常の<code
+      <code>StartVerification</code
+      >、<code>StartReview</code>等の意味別開始を通常の<code
         >StartCodingAgentRun</code
       >
       requestへ変換し、専用runtime選択を削除する。
@@ -1389,8 +1424,9 @@ type TaskOperatorCommandContext = {
   <ul>
     <li>既存Task message、Run、Artifact、Questionnaire、tool call、usage rowを削除しない。</li>
     <li>
-      historical <code>codingAgentInvocation</code>、<code>missionPilotAgent</code>等はread-only
-      auditとして残せる。
+      historical
+      <code>codingAgentInvocation</code
+      >、<code>missionPilotAgent</code>等はread-only auditとして残せる。
     </li>
     <li>新規Runではrole-specific behavior fieldを書かない。</li>
     <li>destructive migrationは別承認がない限り行わない。</li>
@@ -1426,7 +1462,8 @@ type TaskOperatorCommandContext = {
     <li><code>TaskOperatorProjectionV1</code>がstrict schemaである。</li>
     <li>raw DB fieldを追加したfixtureがparse失敗する。</li>
     <li>
-      <code>metadataJson</code>、<code>contextSnapshot</code>、raw Queue row、raw Questionnaire
+      <code>metadataJson</code
+      >、<code>contextSnapshot</code>、raw Queue row、raw Questionnaire
       rowがprovider projectionに存在しない。
     </li>
     <li>Artifact、Questionnaire、Run、Todoのrevisionとdigestが正本と一致する。</li>
@@ -1442,8 +1479,13 @@ type TaskOperatorCommandContext = {
       revision conflict、permission、confirmation、resource ownership、domain
       preconditionが同じtyped errorになる。
     </li>
-    <li><code>questionnaire.submit</code>をMission Pilotが通常のauthorization内で実行できる。</li>
-    <li><code>ResumeCodingAgentRunTodo</code>をUIとMission Pilotが同じcontractで実行できる。</li>
+    <li>
+      <code>questionnaire.submit</code>をMission
+      Pilotが通常のauthorization内で実行できる。
+    </li>
+    <li>
+      <code>ResumeCodingAgentRunTodo</code>をUIとMission Pilotが同じcontractで実行できる。
+    </li>
     <li>Task completeがrequester provenanceで拒否されない。</li>
   </ul>
   <h3 id="section-113-coding-agent-boundary-tests">11.3 Coding Agent boundary tests</h3>
@@ -1458,7 +1500,8 @@ type TaskOperatorCommandContext = {
     <li>Mission Pilot停止中でもCoding Agentをユーザーが開始できる。</li>
     <li>Mission Pilot停止後も受理済みCoding Agent Runが継続する。</li>
     <li>
-      Coding Agent blockerはTask Runの<code>needs_human</code>として終端し、Mission Pilot
+      Coding Agent blockerはTask
+      Runの<code>needs_human</code>として終端し、Mission Pilot
       wait状態を作らない。
     </li>
   </ul>
@@ -1494,9 +1537,8 @@ type TaskOperatorCommandContext = {
   <p>静的検査で次を禁止する。</p>
   <ul>
     <li>
-      <code>api/modules/codingAgent</code>内の<code>mission_pilot</code>または<code
-        >Mission Pilot</code
-      >。
+      <code>api/modules/codingAgent</code
+      >内の<code>mission_pilot</code>または<code>Mission Pilot</code>。
     </li>
     <li>Mission PilotからCoding Agent internal moduleへのimport。</li>
     <li>Mission Pilot Task read/action adapterからdomain DB schemaへのimport。</li>
@@ -1507,20 +1549,26 @@ type TaskOperatorCommandContext = {
     <li>domain moduleからTask Operatorへの逆依存。</li>
     <li>module外からのdeep importまたは内部実装のpublic index経由re-export。</li>
     <li>Task Operatorとdomain moduleに重複したcommand handlerまたはbusiness precondition。</li>
-    <li>Agent非依存<code>todo</code> moduleへのCoding Agent Todo正本の移動。</li>
+    <li>
+      Agent非依存<code>todo</code> moduleへのCoding Agent
+      Todo正本の移動。
+    </li>
     <li>
       <code>CodingAgentInvocationSource</code
       >または<code>codingAgentInvocationSource</code>のproduction use。
     </li>
     <li>
-      <code>StartVerification</code>、<code>StartReview</code>等による意味別Coding Agent
-      runtime選択。
+      <code>StartVerification</code
+      >、<code>StartReview</code>等による意味別Coding Agent runtime選択。
     </li>
     <li><code>questionnaire.submit</code>のMission Pilot role固定禁止。</li>
     <li>legacy runtimeのproduction activation。</li>
   </ul>
   <h3 id="section-117-verification-commands">11.7 Verification commands</h3>
-  <p>実装時に現在の<code>package.json</code> scriptsを再確認したうえで、少なくとも次を実行する。</p>
+  <p>
+    実装時に現在の<code>package.json</code>
+    scriptsを再確認したうえで、少なくとも次を実行する。
+  </p>
   <pre><code class="language-bash">bun run typecheck
 bun run lint
 bun run test
@@ -1544,7 +1592,8 @@ bun run check:docs
     <li>provider cachingを正しさの前提にすること。</li>
     <li>既存Artifact、Questionnaire、Run historyを破壊的に変換すること。</li>
     <li>
-      <code>nightworkers</code>等に残る全機能を今回一括で移動すること。今回のprojection、command
+      <code>nightworkers</code
+      >等に残る全機能を今回一括で移動すること。今回のprojection、command
       parity、Agent境界で触る責務だけを正本domainへ移し、残りは別計画で扱う。
     </li>
     <li>

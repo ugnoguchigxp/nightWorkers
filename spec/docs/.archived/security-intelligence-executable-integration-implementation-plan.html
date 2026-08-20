@@ -14,7 +14,8 @@
     <li>Plan status: Code implemented; rollout default OFF; pilot evidence pending</li>
     <li>Last updated: 2026-08-15</li>
     <li>
-      Applies to: <code>vulnWorkbench</code>, <code>NightWorkers</code>, <code>contextStill</code>
+      Applies to: <code>vulnWorkbench</code>,
+      <code>NightWorkers</code>, <code>contextStill</code>
     </li>
     <li>
       Source concept:
@@ -39,8 +40,8 @@
   <ol>
     <li>
       <code>vulnWorkbench</code>が既に返せるrevision-bound
-      assessmentを、<code>NightWorkers</code>がstrictに解釈し、scan開始時のproject / revision /
-      digestへ結び付けて保存する。
+      assessmentを、<code>NightWorkers</code>がstrictに解釈し、scan開始時のproject
+      / revision / digestへ結び付けて保存する。
     </li>
     <li>
       <code>NightWorkers</code>がSecurity ContractをTask /
@@ -52,8 +53,11 @@
       Contractを参照する場合だけ、そのconditionを完了評価へ渡す。hostは本文から必要性や合否を推測しない。
     </li>
     <li>
-      <code>contextStill</code>のPostgreSQL、TypeScript SQLite、Rust native SQLiteでcandidate
-      lifecycleを揃え、登録直後のcandidateを<code>active</code> Knowledgeにしない。
+      <code>contextStill</code>のPostgreSQL、TypeScript SQLite、Rust native
+      SQLiteでcandidate lifecycleを揃え、登録直後のcandidateを<code
+        >active</code
+      >
+      Knowledgeにしない。
     </li>
     <li>
       NightWorkersからcontextStillへのmutationはdurable
@@ -123,11 +127,9 @@
         <td>B-01</td>
         <td>vulnWorkbench</td>
         <td>
-          <code
-            >GET
-            /api/integrations/nightworkers/security-intelligence/v1/scans/:scanRunRef/assessment</code
-          >、strict bundle schema、auth、owner/project binding、target/evidence
-          binding、payload上限、default OFF flagが実装済み
+          <code>GET
+            /api/integrations/nightworkers/security-intelligence/v1/scans/:scanRunRef/assessment</code>、strict bundle schema、auth、owner/project
+          binding、target/evidence binding、payload上限、default OFF flagが実装済み
         </td>
         <td>NightWorkers consumerが未実装。Security Intelligence専用capability responseも未実装</td>
       </tr>
@@ -137,8 +139,9 @@
         <td>Security Scan preview/start/status/findings/report clientとbinding履歴がある</td>
         <td>
           <code>shared/schemas/security-scan.schema.ts</code
-          >のbindingは<code>scanRunRef</code>、input selection/target、createdAtだけで、provider
-          project ref、resolved source revision、resolved target digestを保持しない
+          >のbindingは<code>scanRunRef</code>、input
+          selection/target、createdAtだけで、provider project ref、resolved source
+          revision、resolved target digestを保持しない
         </td>
       </tr>
       <tr>
@@ -167,14 +170,16 @@
         <td>NightWorkers</td>
         <td>security scan binding履歴をapplication settingsへ保存する</td>
         <td>
-          <code>api/modules/securityScan/security-scan-settings.service.ts</code
-          >でrepositoryごと20件に切られるため、Task / Run evidenceの正本にはできない
+          <code>api/modules/securityScan/security-scan-settings.service.ts</code>でrepositoryごと20件に切られるため、Task /
+          Run evidenceの正本にはできない
         </td>
       </tr>
       <tr>
         <td>B-06</td>
         <td>NightWorkers</td>
-        <td>standard Run prompt snapshotに既存<code>securityOracle</code>設定がある</td>
+        <td>
+          standard Run prompt snapshotに既存<code>securityOracle</code>設定がある
+        </td>
         <td>Security Contractとassessment referenceがCoding Agent contextへ渡らない</td>
       </tr>
       <tr>
@@ -185,17 +190,19 @@
           result、queueへ登録し、finalizeでKnowledgeを<code>draft</code>にする
         </td>
         <td>
-          TypeScript SQLite経路だけembedding後にKnowledgeを<code>active</code>で直接insertする
+          TypeScript
+          SQLite経路だけembedding後にKnowledgeを<code>active</code>で直接insertする
         </td>
       </tr>
       <tr>
         <td>B-08</td>
         <td>contextStill</td>
-        <td>desktopで使用するRust native MCPに<code>register_candidates</code>がある</td>
         <td>
-          Rust native SQLite経路もKnowledgeを<code>active</code>で直接insertし、返却値だけ<code
-            >next: distillation_pipeline</code
-          >としている
+          desktopで使用するRust native MCPに<code>register_candidates</code>がある
+        </td>
+        <td>
+          Rust native
+          SQLite経路もKnowledgeを<code>active</code>で直接insertし、返却値だけ<code>next: distillation_pipeline</code>としている
         </td>
       </tr>
       <tr>
@@ -231,8 +238,8 @@
         <td>B-12</td>
         <td>NightWorkers / vulnWorkbench</td>
         <td>
-          Security Scanの既定transportに<code>local_cli</code>があり、HTTP transportとは別のscan
-          lifecycleを持つ
+          Security Scanの既定transportに<code>local_cli</code>があり、HTTP
+          transportとは別のscan lifecycleを持つ
         </td>
         <td>
           Security Intelligence bundleを取得するlocal CLI consumer contractはない。Tranche
@@ -243,8 +250,8 @@
   </table>
   <p>
     既存実装として完了しているvulnWorkbench
-    producerを作り直さない。<code>vulnWorkbench/spec/security-intelligence-initial-implementation-roadmap.md</code>のPR
-    1からPR 3、およびPR 4 producer部分をbaselineとして利用する。
+    producerを作り直さない。<code>vulnWorkbench/spec/security-intelligence-initial-implementation-roadmap.md</code>のPR 1からPR 3、およびPR 4
+    producer部分をbaselineとして利用する。
   </p>
   <h2 id="section-4-target-lifecycle">4. Target lifecycle</h2>
   <pre><code class="language-text">pre-implementation Security Scan preview
@@ -354,8 +361,8 @@ type SecurityIntelligenceBindingProofV1 = {
       responseの<code>project.ref</code>から取得する。
     </li>
     <li>
-      <code>resolvedTarget</code>はpreview/start responseのprovider観測値から作り、request
-      selectorで代用しない。
+      <code>resolvedTarget</code>はpreview/start
+      responseのprovider観測値から作り、request selectorで代用しない。
     </li>
     <li>
       v1 wire identityとSecurity Intelligence v1
@@ -379,7 +386,9 @@ type SecurityIntelligenceBindingProofV1 = {
         <td>project</td>
         <td>raw provider UUID/ref</td>
         <td><code>project:&lt;raw-ref&gt;</code></td>
-        <td><code>identityMappingVersion: 1</code>のadapterでprefixを1回だけ付与・除去する</td>
+        <td>
+          <code>identityMappingVersion: 1</code>のadapterでprefixを1回だけ付与・除去する
+        </td>
       </tr>
       <tr>
         <td>scan run</td>
@@ -435,15 +444,17 @@ type SecurityIntelligenceBindingProofV1 = {
     </li>
     <li>
       binding proofのsemantic canonical
-      payloadは<code>proofRef</code>と<code>proofDigest</code>を除外し、<code
-        >proofRef = sibp:v1:&lt;proof digest hex&gt;</code
-      >とする。同じscan refへ異なるproof digestを返した場合はintegrity conflictとする。
+      payloadは<code>proofRef</code>と<code>proofDigest</code>を除外し、<code>proofRef = sibp:v1:&lt;proof digest hex&gt;</code>とする。同じscan
+      refへ異なるproof digestを返した場合はintegrity conflictとする。
     </li>
     <li>
       start前previewのdigestとstart
       responseのdigestが一致しない場合はbindingを作らず、scanをTaskへ関連付けない。
     </li>
-    <li><code>bindingDigest</code>はversionを含むcanonical payloadから決定的に算出する。</li>
+    <li>
+      <code>bindingDigest</code>はversionを含むcanonical
+      payloadから決定的に算出する。
+    </li>
     <li>
       binding作成後に同じ<code>scanRunRef</code>へ異なるdigestを登録した場合はconflictとする。
     </li>
@@ -485,16 +496,17 @@ type SecurityIntelligenceBindingProofV1 = {
     <li>bundle、各assessment、各evidence refのproject / scan / target bindingを再検証する。</li>
     <li>
       raw scan binding、producer binding
-      proof、bundleの比較は5.1の<code>identityMappingVersion</code>を通す。normalized targetをscan
-      v1 fieldへ直接文字列比較しない。
+      proof、bundleの比較は5.1の<code>identityMappingVersion</code>を通す。normalized
+      targetをscan v1 fieldへ直接文字列比較しない。
     </li>
     <li>
       producer側strict schemaをruntime packageとして共有しない。wire fixture、JSON
       Schema相当の契約、canonical hashをrepositoryごとに検証する。
     </li>
     <li>
-      同じ<code>bundleRef</code>、同じprovider binding proof digest、同じpayload
-      digestの再取得はreplayとして扱う。いずれかが異なる場合はintegrity conflictとする。
+      同じ<code>bundleRef</code>、同じprovider binding proof
+      digest、同じpayload digestの再取得はreplayとして扱う。いずれかが異なる場合はintegrity
+      conflictとする。
     </li>
     <li>
       source本文、raw scanner artifact、absolute pathをNightWorkersへ複製しない。既存bundleのbounded
@@ -607,8 +619,8 @@ type RequestPostSecurityAssessmentResultV1 =
     </li>
     <li>
       post scan preview /
-      startはpathではなく<code>grantRef</code>を受け、grantのProject、expiry、single workspace
-      stateを再検証する。previewはgrantを消費せずtarget digestを固定し、startはexpected
+      startはpathではなく<code>grantRef</code>を受け、grantのProject、expiry、single
+      workspace stateを再検証する。previewはgrantを消費せずtarget digestを固定し、startはexpected
       digestとidempotency keyを検証してCAS consumeする。同じstart
       replayは同じscanを返し、異なるrequestでの再consumeをrejectする。既存strict scan
       v1へfieldを追加せず、Security Intelligence route rootの独立version contractとする。
@@ -643,7 +655,8 @@ type RequestPostSecurityAssessmentResultV1 =
       receiptへ収束し、異なるworkspace stateを同じattemptとして再利用しない。
     </li>
     <li>
-      明示要求後に対象変更がない場合はcommandがtyped <code>not_applicable</code>を、transport /
+      明示要求後に対象変更がない場合はcommandがtyped
+      <code>not_applicable</code>を、transport /
       capability不足では<code>unavailable</code>を返し、同じruntime
       laneのcontextへ戻す。hostがsuccessへ正規化しない。
     </li>
@@ -695,7 +708,8 @@ type RequestPostSecurityAssessmentResultV1 =
       <code>supersedesContractRef</code>で行う。
     </li>
     <li>
-      <code>version</code>はwire/schema version、<code>contractRevision</code>はTask revision
+      <code>version</code>はwire/schema
+      version、<code>contractRevision</code>はTask revision
       snapshot内の単調増加revisionであり、混同しない。
     </li>
     <li>
@@ -705,14 +719,11 @@ type RequestPostSecurityAssessmentResultV1 =
       conflictとして自動mergeしない。
     </li>
     <li>
-      初回createは<code>expectedCurrentContractRef = null</code>、<code
-        >expectedHeadRevision = 0</code
-      >だけを許可する。既存headがあるTask Revision
-      Snapshotへcreateを再実行した場合はupdateへ暗黙変換しない。
+      初回createは<code>expectedCurrentContractRef = null</code>、<code>expectedHeadRevision = 0</code>だけを許可する。既存headがあるTask
+      Revision Snapshotへcreateを再実行した場合はupdateへ暗黙変換しない。
     </li>
     <li>
-      <code>security_contract_heads.task_revision_snapshot_id</code
-      >をuniqueにし、同じ親Contractから複数のcurrent
+      <code>security_contract_heads.task_revision_snapshot_id</code>をuniqueにし、同じ親Contractから複数のcurrent
       successorを作らない。競合後の本文mergeと再提案はLLMまたはUserへ戻す。
     </li>
     <li>
@@ -802,18 +813,18 @@ type RequestPostSecurityAssessmentResultV1 =
       revisionを参照する新conditionをCAS付きcommandで採用し、旧conditionを<code>supersedesConditionRef</code>で置き換える。
     </li>
     <li>
-      <code>task_completion_condition_heads</code>は<code
-        >taskRevisionSnapshotId + conditionKey</code
-      >をuniqueにし、update commandはexpected condition ref / head revisionを検証する。同じcondition
-      keyのcurrent successorを分岐させない。
+      <code>task_completion_condition_heads</code
+      >は<code>taskRevisionSnapshotId + conditionKey</code>をuniqueにし、update commandはexpected
+      condition ref / head revisionを検証する。同じcondition keyのcurrent successorを分岐させない。
     </li>
     <li>
-      condition初回createもexpected ref <code>null</code> / head revision
+      condition初回createもexpected ref <code>null</code> / head
+      revision
       <code>0</code>を要求し、既存headがある場合は暗黙updateしない。
     </li>
     <li>
-      conditionを外す場合もrow削除やhost観測による暗黙削除を行わず、<code>state = revoked</code
-      >の新revisionを明示commandで作る。final judgmentのexpected setにはcurrent
+      conditionを外す場合もrow削除やhost観測による暗黙削除を行わず、<code>state = revoked</code>の新revisionを明示commandで作る。final
+      judgmentのexpected setにはcurrent
       headが<code>adopted</code>のconditionだけを含める。
     </li>
     <li>
@@ -877,9 +888,9 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
   <p>Rules:</p>
   <ul>
     <li>
-      <code>RuntimeLaneResult</code>へoptional <code>securityFinalJudgment</code>を追加し、native
-      API laneとCodex laneで同じstrict schemaを使用する。adopted
-      conditionが1件以上ある場合だけrequiredとする。
+      <code>RuntimeLaneResult</code>へoptional
+      <code>securityFinalJudgment</code>を追加し、native API laneとCodex laneで同じstrict
+      schemaを使用する。adopted conditionが1件以上ある場合だけrequiredとする。
     </li>
     <li>
       runtimeはcondition evaluationをtool / structured resultとして返す。final
@@ -895,8 +906,8 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
       set、assessment attempt / subject binding、evidence subject bindingを再検証する。
     </li>
     <li>
-      final judgment保存と<code>run.final_judgment_created</code> event appendをterminal status
-      publishより先に同一closeout transactionで完了する。CAS conflictまたはinvalid
+      final judgment保存と<code>run.final_judgment_created</code> event appendをterminal
+      status publishより先に同一closeout transactionで完了する。CAS conflictまたはinvalid
       resultではterminal化せず、同じruntime laneへtyped continuationを返す。
     </li>
     <li>conditionなしのRunではfieldを省略でき、Security固有のevaluationやgateを追加しない。</li>
@@ -949,7 +960,10 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
       UTF-8 byteでtitle 512 bytes、body 16 KiB、limitations合計8 KiB、1 item 32 KiB、batch全体256
       KiBを上限とする。<code>evidenceRefs</code>は1 itemあたり1から20件とする。
     </li>
-    <li><code>evidenceRefs</code>を最低1件要求する。LLM explanationだけのcandidateは拒否する。</li>
+    <li>
+      <code>evidenceRefs</code>を最低1件要求する。LLM
+      explanationだけのcandidateは拒否する。
+    </li>
     <li>
       bodyからproject固有identifierを除く。ただしsource project / revisionはprovenance
       metadataとして保持する。
@@ -959,22 +973,25 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
       characterを拒否する。redactionで意味が変わる場合は自動修復せずitem rejectとする。
     </li>
     <li>
-      item <code>payloadDigest</code>は当該itemから<code>payloadDigest</code>を除いたstrict
-      canonical JSONのSHA-256とする。
+      item
+      <code>payloadDigest</code
+      >は当該itemから<code>payloadDigest</code>を除いたstrict canonical
+      JSONのSHA-256とする。
     </li>
     <li>
       <code>fingerprint</code>はversion
       prefix付きとし、<code>type</code>、<code>polarity</code>、generalized
-      <code>title / body</code>、canonical applicabilityから算出する。evidence、project / run
+      <code>title / body</code>、canonical
+      applicabilityから算出する。evidence、project / run
       correlation、confidenceはfingerprintへ含めず、duplicate itemでは既存candidate
       refへ新しいprovenanceをappendする。
     </li>
     <li>
       <code>batchPayloadDigest</code
       >は<code>idempotencyKey</code>、<code>batchRef</code>、<code>batchPayloadDigest</code>を除くsemantic
-      batch payloadのstrict canonical JSONから算出する。<code>batchRef</code>は<code
-        >skcb:v1:&lt;batch digest hex&gt;</code
-      >とし、同じsemantic payloadから決定的に再計算できるようにする。
+      batch payloadのstrict canonical
+      JSONから算出する。<code>batchRef</code>は<code>skcb:v1:&lt;batch digest hex&gt;</code>とし、同じsemantic
+      payloadから決定的に再計算できるようにする。
     </li>
     <li>
       idempotency keyのscopeはauthenticated producer principal + endpoint + contract
@@ -984,7 +1001,8 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
     </li>
     <li>
       同じsemantic batchを別idempotency keyで送った場合は新request receiptを作れるが、item
-      fingerprint / payload digestによって各itemを<code>duplicate</code>とし、candidate
+      fingerprint / payload
+      digestによって各itemを<code>duplicate</code>とし、candidate
       pipelineを再enqueueしない。
     </li>
     <li>
@@ -992,9 +1010,7 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
       successはcandidateのtransactional受領を意味し、Knowledgeの<code>active</code>化を意味しない。
     </li>
     <li>
-      contextStill内部では、receiptの<code>accepted</code>を既存<code
-        >distillation_target_states.status = pending</code
-      >、<code>find_candidate_results.status = selected</code>、対応queue
+      contextStill内部では、receiptの<code>accepted</code>を既存<code>distillation_target_states.status = pending</code>、<code>find_candidate_results.status = selected</code>、対応queue
       rowへ写像する。この境界をquarantine相当とし、新しいKnowledge statusは増やさない。
     </li>
   </ul>
@@ -1024,9 +1040,11 @@ type SubmitSecurityFinalJudgmentCommandV1 = {
     </li>
     <li>
       初回valid batchはpartial / all-rejectedを含めHTTP 201とreceipt、idempotent replayはHTTP
-      200、same-key different-digestはHTTP 409と<code>idempotency_conflict</code>を返す。authは401 /
-      403、top-level schemaは400、oversizeは413、feature / token未設定は503
-      <code>integration_unavailable</code>とし、item validation errorをHTTP errorへ昇格させない。
+      200、same-key different-digestはHTTP
+      409と<code>idempotency_conflict</code>を返す。authは401 / 403、top-level
+      schemaは400、oversizeは413、feature / token未設定は503
+      <code>integration_unavailable</code>とし、item validation errorをHTTP
+      errorへ昇格させない。
     </li>
   </ul>
   <p>Response:</p>
@@ -1119,9 +1137,10 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       helperを再利用する。
     </li>
     <li>
-      <code>eventRef</code>はcontract version、event type、correlation、knowledge ref /
-      revision、outcome、evidence refsから決定的に算出し、別idempotency
-      keyで同じeventを再送してもappend-only event rowを重複させない。
+      <code>eventRef</code>はcontract version、event
+      type、correlation、knowledge ref / revision、outcome、evidence
+      refsから決定的に算出し、別idempotency keyで同じeventを再送してもappend-only event
+      rowを重複させない。
     </li>
     <li>
       NightWorkers producerとcontextStill ingressの双方がevent ref、batch digest /
@@ -1150,8 +1169,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       evaluation arrayはschemaで明示した順を保持する。
     </li>
     <li>
-      digest fieldはすべて<code>sha256:&lt;64 lowercase hex&gt;</code
-      >、refへdigestを埋める場合はcontractごとの固定prefixを要求する。raw
+      digest
+      fieldはすべて<code>sha256:&lt;64 lowercase hex&gt;</code>、refへdigestを埋める場合はcontractごとの固定prefixを要求する。raw
       hexとの境界は5.1だけに限定する。
     </li>
   </ul>
@@ -1168,28 +1187,49 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
     <tbody>
       <tr>
         <td>Provider Scan Binding</td>
-        <td><code>bindingRef</code>、<code>bindingDigest</code>、<code>createdAt</code></td>
+        <td>
+          <code>bindingRef</code
+          >、<code>bindingDigest</code>、<code
+            >createdAt</code
+          >
+        </td>
       </tr>
       <tr>
         <td>Binding Proof</td>
-        <td><code>proofRef</code>、<code>proofDigest</code></td>
+        <td>
+          <code>proofRef</code>、<code
+            >proofDigest</code
+          >
+        </td>
       </tr>
       <tr>
         <td>Assessment Receipt payload</td>
-        <td>receipt metadata全体。strict producer <code>payload</code>だけをdigestする</td>
+        <td>
+          receipt metadata全体。strict producer
+          <code>payload</code>だけをdigestする
+        </td>
       </tr>
       <tr>
         <td>Workspace Target Grant</td>
-        <td><code>grantRef</code>、<code>grantDigest</code>。<code>expiresAt</code>は含める</td>
+        <td>
+          <code>grantRef</code
+          >、<code>grantDigest</code>。<code>expiresAt</code>は含める
+        </td>
       </tr>
       <tr>
         <td>Assessment Subject Binding</td>
-        <td><code>bindingRef</code>、<code>bindingDigest</code>、<code>createdAt</code></td>
+        <td>
+          <code>bindingRef</code
+          >、<code>bindingDigest</code>、<code
+            >createdAt</code
+          >
+        </td>
       </tr>
       <tr>
         <td>Security Contract</td>
         <td>
-          <code>contractRef</code>、<code>contractDigest</code>、<code>createdAt</code>、<code
+          <code>contractRef</code
+          >、<code>contractDigest</code>、<code>createdAt</code>、<code
             >authorPrincipalRef</code
           >
         </td>
@@ -1197,14 +1237,19 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       <tr>
         <td>Completion Condition</td>
         <td>
-          <code>conditionRef</code>、<code>conditionDigest</code>、<code>recordedAt</code>、<code
+          <code>conditionRef</code
+          >、<code>conditionDigest</code>、<code>recordedAt</code>、<code
             >authorPrincipalRef</code
           >
         </td>
       </tr>
       <tr>
         <td>Security Final Judgment</td>
-        <td><code>judgmentDigest</code>、<code>createdAt</code></td>
+        <td>
+          <code>judgmentDigest</code>、<code
+            >createdAt</code
+          >
+        </td>
       </tr>
       <tr>
         <td>Candidate / Feedback Batch</td>
@@ -1227,8 +1272,9 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       Final Judgmentは128 KiBを上限とする。
     </li>
     <li>
-      Security Contractの各ref配列は1,000件、<code>unknowns</code>は200件、final judgmentのcondition
-      evaluationはcurrent condition setとexactly同じ件数・ref集合を要求する。
+      Security
+      Contractの各ref配列は1,000件、<code>unknowns</code>は200件、final
+      judgmentのcondition evaluationはcurrent condition setとexactly同じ件数・ref集合を要求する。
     </li>
     <li>
       limit変更は同じcontract versionのdeployment config差にせず、新capabilityまたは新contract
@@ -1253,14 +1299,18 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       <tr>
         <td><code>security_scan_bindings</code></td>
         <td>Provider Scan Binding v2の正本</td>
-        <td>unique <code>scan_run_ref</code>、unique <code>binding_digest</code>、repository FK</td>
+        <td>
+          unique <code>scan_run_ref</code>、unique
+          <code>binding_digest</code>、repository FK
+        </td>
       </tr>
       <tr>
         <td><code>security_assessment_receipts</code></td>
         <td>strict producer bundleと受領binding</td>
         <td>
-          unique <code>bundle_ref</code>、unique <code>payload_digest</code>、scan binding
-          FK、provider binding proof ref / digest
+          unique <code>bundle_ref</code>、unique
+          <code>payload_digest</code>、scan binding FK、provider binding proof ref
+          / digest
         </td>
       </tr>
       <tr>
@@ -1283,8 +1333,9 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
         <td><code>security_contracts</code></td>
         <td>immutable Task-scoped Contract revision</td>
         <td>
-          unique <code>contract_ref</code> / <code>contract_digest</code>、task revision snapshot
-          FK、unique non-null supersedes ref
+          unique <code>contract_ref</code> /
+          <code>contract_digest</code>、task revision snapshot FK、unique non-null
+          supersedes ref
         </td>
       </tr>
       <tr>
@@ -1337,13 +1388,14 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   <ul>
     <li>schema: <code>api/db/security-intelligence-schema.ts</code></li>
     <li>bootstrap: <code>api/db/security-intelligence-schema-bootstrap.ts</code></li>
-    <li>export / startup registration: <code>api/db/schema.ts</code>、既存bootstrap composition</li>
+    <li>
+      export / startup registration: <code>api/db/schema.ts</code>、既存bootstrap
+      composition
+    </li>
     <li>migration: 実装開始時点のlatest migration番号を再確認し、Drizzle migrationを生成する</li>
     <li>
       domain schema / application command / query / repository:
-      <code>shared/schemas/security-intelligence*.ts</code>、<code
-        >api/modules/securityIntelligence/</code
-      >
+      <code>shared/schemas/security-intelligence*.ts</code>、<code>api/modules/securityIntelligence/</code>
     </li>
     <li>
       existing scan start connection:
@@ -1353,16 +1405,12 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
     </li>
     <li>
       Run snapshot connection:
-      <code>api/modules/nightworkers/run-orchestration/start-task-run-*.ts</code>と既存<code
-        >evidence_subject_snapshots</code
-      >
+      <code>api/modules/nightworkers/run-orchestration/start-task-run-*.ts</code>と既存<code>evidence_subject_snapshots</code>
     </li>
     <li>
       final judgment connection:
-      <code>api/modules/codingAgent/runtime/shared/contracts.ts</code>、native /
-      Codex各laneのstructured result
-      adapter、<code>api/modules/nightworkers/run-orchestration/runtime-execution.ts</code>のterminal
-      publish前closeout
+      <code>api/modules/codingAgent/runtime/shared/contracts.ts</code>、native / Codex各laneのstructured result
+      adapter、<code>api/modules/nightworkers/run-orchestration/runtime-execution.ts</code>のterminal publish前closeout
     </li>
     <li>
       Mission Pilot connection:
@@ -1370,8 +1418,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       >または<code>src/composition/mission-pilot</code>のhost port implementation
     </li>
     <li>
-      Coding Agent connection: <code>api/modules/codingAgent</code>の既存runtime context / final
-      judgment adapter。全Coding Agent Runで同じcontractを使う。
+      Coding Agent connection: <code>api/modules/codingAgent</code>の既存runtime context /
+      final judgment adapter。全Coding Agent Runで同じcontractを使う。
     </li>
   </ul>
   <p>Migration policy:</p>
@@ -1383,7 +1431,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
     </li>
     <li>migration後に作られたscanだけをv2 eligibleとする。</li>
     <li>
-      history queryはv2 rowを優先し、legacy rowは<code>legacy_unverifiable</code>表示に限定する。
+      history queryはv2 rowを優先し、legacy
+      rowは<code>legacy_unverifiable</code>表示に限定する。
     </li>
     <li>migration failure時に既存Security Scan v1が使用不能にならない順序で導入する。</li>
     <li>
@@ -1395,8 +1444,7 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   <ul>
     <li>
       PostgreSQL:
-      <code>src/modules/registerCandidate/register-candidate.service.ts</code
-      >の現行pipelineを基準にする。
+      <code>src/modules/registerCandidate/register-candidate.service.ts</code>の現行pipelineを基準にする。
     </li>
     <li>
       TypeScript SQLite: direct
@@ -1406,13 +1454,12 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
     <li>
       Rust native SQLite:
       <code>crates/context-stilld/src/domains/mcp_lifecycle/native_knowledge.rs</code>のdirect
-      <code>knowledge_items(status = &#39;active&#39;)</code> insertを削除し、同じlogical candidate
-      rowsとqueue eventをtransactionalに作る。
+      <code>knowledge_items(status = &#39;active&#39;)</code> insertを削除し、同じlogical candidate rowsとqueue
+      eventをtransactionalに作る。
     </li>
     <li>
-      finalize: 現行<code>src/modules/finalizeDistille/domain.ts</code>の<code
-        >status: &quot;draft&quot;</code
-      >を維持する。
+      finalize:
+      現行<code>src/modules/finalizeDistille/domain.ts</code>の<code>status: &quot;draft&quot;</code>を維持する。
     </li>
     <li>
       candidate ingress receipt / idempotency tableとfeedback ingress receipt / append-only event
@@ -1484,7 +1531,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       Aでは既存HTTP(S) integration routeをassessment取得の対象とし、NightWorkersの<code
         >local_cli</code
       >
-      scanはSecurity Intelligence assessment <code>unavailable</code>とする。通常のlocal CLI
+      scanはSecurity Intelligence assessment
+      <code>unavailable</code>とする。通常のlocal CLI
       scanは維持し、receiptやconditionを暗黙生成しない。
     </li>
     <li>
@@ -1517,21 +1565,19 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       primary bridgeはversioned JSONを受ける専用local HTTP endpointとし、MCP mutation
       toolはcross-product bridgeにしない。
     </li>
+    <li>endpoint例: <code>POST /api/integrations/security-intelligence/v1/candidate-batches</code>。</li>
     <li>
-      endpoint例: <code>POST /api/integrations/security-intelligence/v1/candidate-batches</code>。
-    </li>
-    <li>
-      feedback endpointは<code
-        >POST /api/integrations/security-intelligence/v1/feedback-batches</code
-      >とし、candidate ingressと別のscopeを要求する。
+      feedback endpointは<code>POST /api/integrations/security-intelligence/v1/feedback-batches</code>とし、candidate
+      ingressと別のscopeを要求する。
     </li>
     <li>
       scope名はcandidateを<code>security-intelligence:candidates:write</code>、feedbackを<code>security-intelligence:feedback:write</code>として固定し、token
       principal、scope、endpointをauditへ残す。token値は残さない。
     </li>
     <li>
-      <code>api/app.ts</code>のAPI認証をcentral dispatcherへ整理し、public health、Security
-      Intelligence integration path、general admin APIを明示分岐する。integration pathではpath /
+      <code>api/app.ts</code>のAPI認証をcentral dispatcherへ整理し、public
+      health、Security Intelligence integration path、general admin APIを明示分岐する。integration
+      pathではpath /
       scope限定token、その他の<code>/api/*</code>では既存admin
       keyを要求し、どのpathも認証middlewareの外へ置かない。
     </li>
@@ -1752,8 +1798,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       version、response byte上限を追加する。
     </li>
     <li>
-      <code>GET .../scans/:scanRunRef/binding-proof</code>を追加し、scanのpersisted
-      bindingから5.1のraw / canonical identity、base / assessed
+      <code>GET .../scans/:scanRunRef/binding-proof</code>を追加し、scanのpersisted bindingから5.1のraw /
+      canonical identity、base / assessed
       revision、digestを返す。assessmentと同じauthorization、owner / project binding、payload
       limitを適用する。
     </li>
@@ -1762,7 +1808,10 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   <ul>
     <li>flag OFF時にavailabilityを誤advertiseしない。</li>
     <li>unauthorized / wrong scope / response size testが通る。</li>
-    <li><code>full</code>または<code>local_cli</code>を未対応のままavailableとadvertiseしない。</li>
+    <li>
+      <code>full</code
+      >または<code>local_cli</code>を未対応のままavailableとadvertiseしない。
+    </li>
     <li>
       start response、binding proof、assessment fixtureの三者でidentity mapping golden
       vectorが成立し、wrong owner / project / scanではproofを返さない。
@@ -1828,7 +1877,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   <p>Changes:</p>
   <ol>
     <li>
-      <code>security_scan_bindings</code> schema、bootstrap、migration、repositoryを追加する。
+      <code>security_scan_bindings</code>
+      schema、bootstrap、migration、repositoryを追加する。
     </li>
     <li>
       capabilitiesで得たprovider project ref、identity mapping version、preview/startで得たresolved
@@ -1847,9 +1897,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       targetDigestで一意に再読できる。
     </li>
     <li>
-      working-tree bindingは<code>sourceRevisionRole = base_revision</code>、full bindingは<code
-        >sourceRevisionRole = snapshot_revision</code
-      >となり、roleなしのrevisionを保存しない。
+      working-tree bindingは<code>sourceRevisionRole = base_revision</code>、full
+      bindingは<code>sourceRevisionRole = snapshot_revision</code>となり、roleなしのrevisionを保存しない。
     </li>
     <li>restart後もbindingが残る。</li>
     <li>legacy bindingをassessmentへ使わない。</li>
@@ -1866,8 +1915,8 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   <ol>
     <li>
       Security Intelligence capabilities / binding proof / assessment
-      clientを<code>api/modules/securityScan</code>のprovider adapterから分離したagent-neutral
-      integration moduleへ追加する。
+      clientを<code>api/modules/securityScan</code>のprovider
+      adapterから分離したagent-neutral integration moduleへ追加する。
     </li>
     <li>
       response byte limit後にstrict parseし、5.1のidentity adapterでstart binding、producer binding
@@ -1898,10 +1947,7 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   </ul>
   <p>Pilot gate:</p>
   <ul>
-    <li>
-      <code>vulnWorkbench/spec/security-intelligence-pr4-nightworkers-pilot-plan.md</code>の1-pair
-      smokeとrollback drillを実行する。
-    </li>
+    <li><code>vulnWorkbench/spec/security-intelligence-pr4-nightworkers-pilot-plan.md</code>の1-pair smokeとrollback drillを実行する。</li>
     <li>integrity STOP条件が0件の場合だけ10件以上のpaired sampleへ進む。</li>
   </ul>
   <h3 id="si-nw-03-prepost-subject-binding-security-contract-and-run-integration">
@@ -1992,9 +2038,13 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
   <p>Changes:</p>
   <ol>
     <li>
-      TypeScript SQLite <code>registerCandidate</code>を既存candidate pipeline enqueueへ変更する。
+      TypeScript SQLite <code>registerCandidate</code>を既存candidate pipeline
+      enqueueへ変更する。
     </li>
-    <li>Rust native <code>register_candidates</code>を同じlogical pipeline enqueueへ変更する。</li>
+    <li>
+      Rust native <code>register_candidates</code>を同じlogical pipeline
+      enqueueへ変更する。
+    </li>
     <li>
       PostgreSQL、TypeScript SQLite、Rust nativeのcontract testを同じfixture tableで実行する。
     </li>
@@ -2010,7 +2060,9 @@ type SecurityKnowledgeFeedbackBatchResponseV1 = {
       3 backend / runtimeで登録直後に<code>knowledge_items.status = active</code>のrowが作られない。
     </li>
     <li>enqueue transaction失敗時にpartial candidate / active Knowledgeが残らない。</li>
-    <li>finalize後もinitial Knowledge statusは<code>draft</code>である。</li>
+    <li>
+      finalize後もinitial Knowledge statusは<code>draft</code>である。
+    </li>
     <li>
       embedding serviceが停止していてもcandidate受領自体は成立し、後段failureとして観測できる。
     </li>
@@ -2228,10 +2280,9 @@ git diff --check
   <ul>
     <li>capability flag OFF / ON</li>
     <li>
-      capability target / transport support (<code>working_tree</code> HTTP available、<code
-        >full</code
-      >
-      / <code>local_cli</code> unavailable)
+      capability target / transport support (<code>working_tree</code> HTTP
+      available、<code>full</code> /
+      <code>local_cli</code> unavailable)
     </li>
     <li>wrong auth scope</li>
     <li>assessment endpoint contract non-regression</li>
@@ -2776,7 +2827,8 @@ git diff --check
       >とし、設定復旧後の明示rerunを旧unavailable結果へ固定しない。grant作成、preview、scan開始をadditive
       migrationで永続checkpoint化し、restart後は同じrequest digestとprovider idempotency
       keyで再開する。checkpointは<code>grant_created</code>、<code>previewed</code>、<code>started</code>の順にだけ進み、同時retryの古い書込みで後退しない。retryableなprovider
-      409 / 422は固定failureへ変換せず、明示rerun可能な<code>unavailable</code>として保持する。
+      409 /
+      422は固定failureへ変換せず、明示rerun可能な<code>unavailable</code>として保持する。
     </li>
     <li>
       Task OperatorはSecurity Intelligence内部repositoryやDBへ直接依存せず、role moduleのpublic

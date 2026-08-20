@@ -6,9 +6,7 @@
     <li>Created: 2026-07-19</li>
     <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
     <li>Incident repository: <code>/Users/y.noguchi/Code/todolist</code></li>
-    <li>
-      Related plan: <code>spec/docs/coding-agent-runtime-reliability-recovery-plan.html</code>
-    </li>
+    <li>Related plan: <code>spec/docs/coding-agent-runtime-reliability-recovery-plan.html</code></li>
     <li>
       Primary scope: Coding Agent completion readiness、verification reconciliation、Codex / Native
       runtime closeout
@@ -37,9 +35,9 @@
       compaction時のdigest・paging相当情報・構造化readiness保持を実装済み。
     </li>
     <li>
-      Phase 5: targeted 36件、全Vitest、<code>bun run verify</code>、<code
-        >bun run check:architecture</code
-      >が成功。両laneのreadiness scenarioは3回以上連続成功。
+      Phase 5: targeted
+      36件、全Vitest、<code>bun run verify</code>、<code>bun run check:architecture</code>が成功。両laneのreadiness
+      scenarioは3回以上連続成功。
     </li>
   </ul>
   <h2 id="section-1-結論">1. 結論</h2>
@@ -68,7 +66,8 @@
   <p>
     現行<code>RunFinalizeController</code>は、Todo
     planが存在し、<code>pending</code>、<code>running</code>、<code>needs_human</code>が残っていなければ<code>FINALIZE_ALLOWED</code>を返す。Taskにactive
-    verification documentがあっても、<code>runCompletionCheck</code>の結果は参照しない。
+    verification
+    documentがあっても、<code>runCompletionCheck</code>の結果は参照しない。
   </p>
   <p>
     そのためtodolist Runでは、必須条件8件がすべてunknown、active test discoveryなし、successful test
@@ -202,9 +201,13 @@
       <code>reconcile</code>:
       修正可能な不足または矛盾がある。Runをterminalにせず、packetを次turnへ返す。
     </li>
-    <li><code>needs_human</code>: LLMがTodo mutationで明示した外部判断待ちを維持する。</li>
     <li>
-      <code>failed</code>: runtime障害またはLLMが自力完結不能と判断した既存failure経路を維持する。
+      <code>needs_human</code>: LLMがTodo
+      mutationで明示した外部判断待ちを維持する。
+    </li>
+    <li>
+      <code>failed</code>:
+      runtime障害またはLLMが自力完結不能と判断した既存failure経路を維持する。
     </li>
   </ul>
   <h2 id="section-6-実装フェーズ">6. 実装フェーズ</h2>
@@ -212,8 +215,8 @@
   <h4 id="実装">実装</h4>
   <ol>
     <li>
-      Todoをすべて<code>passed</code>にするが、active verification documentのrequired
-      conditionがunknownのfixtureを追加する。
+      Todoをすべて<code>passed</code>にするが、active verification
+      documentのrequired conditionがunknownのfixtureを追加する。
     </li>
     <li>
       <code>completion_check.ok = false</code
@@ -243,23 +246,23 @@
   <h3 id="phase-1-readiness-projection-service">Phase 1: Readiness projection service</h3>
   <h4 id="実装-1">実装</h4>
   <ol>
-    <li>
-      <code>api/modules/codingAgent/application/completion-readiness.service.ts</code>を追加する。
-    </li>
+    <li><code>api/modules/codingAgent/application/completion-readiness.service.ts</code>を追加する。</li>
     <li>
       Task / Run authority、Todo snapshot、workspace source snapshot、active verification
-      document、<code>runCompletionCheck</code>結果、candidate revisionを一度に取得する。
+      document、<code>runCompletionCheck</code>結果、candidate
+      revisionを一度に取得する。
     </li>
     <li>
       DB rowやtool名を直接LLMへ並べず、共通recovery guidance形式のobservation、discrepancy、raw
       refへ正規化する。
     </li>
     <li>
-      同じ<code>sourceStateHash</code>に対応しないinventory、mapping、test evidence、full
-      verifyはstale observationとして示す。
+      同じ<code>sourceStateHash</code>に対応しないinventory、mapping、test
+      evidence、full verifyはstale observationとして示す。
     </li>
     <li>
-      verification documentがない場合は<code>not_configured</code>とし、Hostが要求を追加しない。
+      verification
+      documentがない場合は<code>not_configured</code>とし、Hostが要求を追加しない。
     </li>
   </ol>
   <h4 id="主な対象-1">主な対象</h4>
@@ -282,13 +285,12 @@
   <h4 id="実装-2">実装</h4>
   <ol>
     <li>
-      Coding Agent固有のfinalize
-      controllerを<code>api/modules/codingAgent/application</code>へ置く。
+      Coding Agent固有のfinalize controllerを<code>api/modules/codingAgent/application</code>へ置く。
     </li>
     <li>既存のTodo / revision precondition判定後、readiness projectionを評価する。</li>
     <li>
-      active verification documentがあり<code>completion_check.ok = false</code
-      >なら、<code>FINALIZE_RECONCILIATION_REQUIRED</code>とsnapshotを返す。
+      active verification
+      documentがあり<code>completion_check.ok = false</code>なら、<code>FINALIZE_RECONCILIATION_REQUIRED</code>とsnapshotを返す。
     </li>
     <li>
       現在sourceに対応したinventory、test execution、full verify、required condition
@@ -386,8 +388,8 @@
   <h4 id="rollout条件">Rollout条件</h4>
   <ul>
     <li>
-      active verification document付きRunで、<code>completion_check.ok = false</code
-      >かつ<code>completed</code>となる件数が0。
+      active verification
+      document付きRunで、<code>completion_check.ok = false</code>かつ<code>completed</code>となる件数が0。
     </li>
     <li>verification documentなしの質問・read-only Taskに回帰がない。</li>
     <li>reconciliationから追加の人手介入なしで復旧できる。</li>
@@ -495,8 +497,8 @@
     <li>verification documentがないTaskへ新しい固定workflowを適用しない。</li>
     <li>Codex SDK / Native APIの両laneが同じcompletion contractを使う。</li>
     <li>
-      targeted test、<code>bun run verify</code>、<code>bun run check:architecture</code
-      >が成功する。
+      targeted
+      test、<code>bun run verify</code>、<code>bun run check:architecture</code>が成功する。
     </li>
     <li>todolist相当の統合scenarioが3回連続で正しくreconciliationから完了へ収束する。</li>
   </ul>

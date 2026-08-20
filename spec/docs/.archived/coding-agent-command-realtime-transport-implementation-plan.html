@@ -88,7 +88,9 @@
       <tr>
         <td><code>run.todo.resume</code></td>
         <td>
-          <code>runId</code>, <code>todoId</code>, <code>expectedTodoRevision</code>,
+          <code>runId</code>,
+          <code>todoId</code>,
+          <code>expectedTodoRevision</code>,
           <code>userContext</code>
         </td>
         <td><code>implementation</code></td>
@@ -140,10 +142,12 @@
     <li>command response は command の成否と receipt を表す。</li>
     <li>run の最新状態は Run query、Task の最新状態は Task Operator projection を正本とする。</li>
     <li>
-      <code>task_event_created</code> の再生 cursor は <code>runId + persisted seq</code> とする。
+      <code>task_event_created</code> の再生 cursor は
+      <code>runId + persisted seq</code> とする。
     </li>
     <li>
-      broker の memory replay と自動採番 <code>seq</code> は persisted run cursor として扱わない。
+      broker の memory replay と自動採番 <code>seq</code> は persisted
+      run cursor として扱わない。
     </li>
     <li>
       notification 受信後は既存 React Query cache を更新または invalidate し、正本 query
@@ -251,15 +255,23 @@
   <ul>
     <li><code>requestId</code>: UUID</li>
     <li><code>idempotencyKey</code>: 1〜256文字</li>
-    <li><code>taskId</code>、<code>runId</code>、<code>todoId</code>: UUID</li>
+    <li>
+      <code>taskId</code
+      >、<code>runId</code>、<code>todoId</code>:
+      UUID
+    </li>
     <li>revision: 0以上の整数</li>
     <li><code>request</code>: trim 後1〜20,000文字</li>
     <li><code>userContext</code>: trim 後1〜20,000文字</li>
-    <li>各 <code>arguments</code>: <code>.strict()</code></li>
+    <li>
+      各 <code>arguments</code>:
+      <code>.strict()</code>
+    </li>
     <li>union 全体: <code>.strict()</code></li>
   </ul>
   <p>
-    <code>run.implementation.start</code> の <code>request</code> を省略した場合は、server が現在の
+    <code>run.implementation.start</code> の
+    <code>request</code> を省略した場合は、server が現在の
     <code>startHumanTaskImplementation</code> と同じ規則で request を解決する。
   </p>
   <ol>
@@ -289,23 +301,26 @@
 };
 </code></pre>
   <ul>
-    <li><code>receipt.commandId</code> は server が既存 command receipt 作成時に発行する。</li>
+    <li>
+      <code>receipt.commandId</code> は server が既存 command receipt
+      作成時に発行する。
+    </li>
     <li>
       <code>receipt.replayed</code> は同一 idempotency delivery の再取得時に
       <code>true</code> とする。
     </li>
     <li>REST と WebSocket は同じ response encoder を使う。</li>
     <li>
-      REST は PR 1 で共通化する <code>TaskOperatorFailure</code> の status mapping で HTTP status
-      を返す。
+      REST は PR 1 で共通化する <code>TaskOperatorFailure</code> の status mapping で
+      HTTP status を返す。
     </li>
     <li>
       WebSocket は接続を閉じず、<code>coding_agent.command.result</code> の
       <code>result.ok: false</code> を返す。
     </li>
     <li>
-      command response に TaskRun 全体を埋め込まない。client は <code>runId</code> で Run query
-      を再取得する。
+      command response に TaskRun 全体を埋め込まない。client は
+      <code>runId</code> で Run query を再取得する。
     </li>
     <li>
       新 REST endpoint の success は HTTP 200、failure は共通 converter の status code
@@ -331,15 +346,17 @@
     <li>UI intent 開始時に request を1回だけ構築する。</li>
     <li>
       画面の action availability 判定に使用した Task Operator projection から
-      <code>expectedTaskRevision</code> を設定する。command 直前に revision だけを裏で再取得しない。
+      <code>expectedTaskRevision</code> を設定する。command 直前に revision
+      だけを裏で再取得しない。
     </li>
     <li>
-      <code>requestId</code> と <code>idempotencyKey</code> を生成し、request object を pending map
+      <code>requestId</code> と
+      <code>idempotencyKey</code> を生成し、request object を pending map
       に保存する。
     </li>
     <li>
-      WebSocket が open かつ <code>coding_agent.command.v1</code> を advertise している場合は
-      WebSocket へ送る。
+      WebSocket が open かつ <code>coding_agent.command.v1</code> を advertise
+      している場合は WebSocket へ送る。
     </li>
     <li>WebSocket response を10秒待つ。</li>
     <li>
@@ -347,13 +364,13 @@
       <code>POST /api/coding-agent/commands</code> へ送る。
     </li>
     <li>
-      success 時は <code>data.runId</code> で Run query を取得し、既存 mutation の cache update
-      を実行する。
+      success 時は <code>data.runId</code> で Run query を取得し、既存
+      mutation の cache update を実行する。
     </li>
     <li>
       <code>TASK_OPERATOR_COMMAND_IN_PROGRESS</code> または
-      <code>TASK_OPERATOR_COMMAND_OUTCOME_UNKNOWN</code> の場合は新しい key で再実行せず、Task
-      Operator projection と Run list を invalidate する。
+      <code>TASK_OPERATOR_COMMAND_OUTCOME_UNKNOWN</code> の場合は新しい key で再実行せず、Task Operator
+      projection と Run list を invalidate する。
     </li>
     <li>
       revision conflict の場合は projection を refetch し、ユーザーの再操作を待つ。自動的に新
@@ -365,9 +382,9 @@
     </li>
   </ol>
   <p>
-    pending map の key は <code>requestId</code> とし、response 受信、REST fallback の
-    <code>finally</code>、client dispose のいずれかで必ず削除する。command cancellation はこの
-    client の責務に含めない。
+    pending map の key は <code>requestId</code> とし、response 受信、REST
+    fallback の <code>finally</code>、client dispose
+    のいずれかで必ず削除する。command cancellation はこの client の責務に含めない。
   </p>
   <h2 id="section-6-実装順序">6. 実装順序</h2>
   <h3 id="pr-1-共通-contractapplication-servicerest-endpoint">
@@ -405,13 +422,15 @@
       <code>{ requestId?: string; idempotencyKey?: string }</code> に変更する。<code
         >requestId</code
       >
-      は <code>input.requestId ?? crypto.randomUUID()</code>、<code>idempotencyKey</code> は
-      <code>input.idempotencyKey ?? requestId</code> で決定する。
+      は <code>input.requestId ?? crypto.randomUUID()</code>、<code
+        >idempotencyKey</code
+      >
+      は <code>input.idempotencyKey ?? requestId</code> で決定する。
     </li>
     <li>
       Task module に
-      <code>readLatestTaskUserMessageAfter({ taskId, after })</code> を追加し、該当する最後の user
-      message の完全な canonical content を返す。
+      <code>readLatestTaskUserMessageAfter({ taskId, after })</code> を追加し、該当する最後の user message の完全な
+      canonical content を返す。
     </li>
     <li>
       Run module に <code>readLatestTaskRunReference(taskId)</code> を追加し、<code
@@ -421,18 +440,29 @@
     </li>
     <li>
       <code>task-operator-command-failure.ts</code> に AppError から
-      <code>{ failure: TaskOperatorFailure, statusCode }</code> への変換を抽出し、command receipt
-      保存と REST/WS response encoder から共用する。少なくとも次の code mapping を固定する。
+      <code>{ failure: TaskOperatorFailure, statusCode }</code> への変換を抽出し、command receipt 保存と REST/WS
+      response encoder から共用する。少なくとも次の code mapping を固定する。
       <ul>
-        <li><code>TASK_OPERATOR_PERMISSION_DENIED</code> -&gt; <code>permission_denied</code></li>
-        <li><code>TASK_REVISION_CONFLICT</code> -&gt; <code>revision_conflict</code></li>
-        <li><code>TASK_RESOURCE_OWNERSHIP_MISMATCH</code> -&gt; <code>ownership_mismatch</code></li>
         <li>
-          <code>TASK_OPERATOR_IDEMPOTENCY_CONFLICT</code> -&gt; <code>idempotency_conflict</code>
+          <code>TASK_OPERATOR_PERMISSION_DENIED</code> -&gt;
+          <code>permission_denied</code>
+        </li>
+        <li>
+          <code>TASK_REVISION_CONFLICT</code> -&gt;
+          <code>revision_conflict</code>
+        </li>
+        <li>
+          <code>TASK_RESOURCE_OWNERSHIP_MISMATCH</code> -&gt;
+          <code>ownership_mismatch</code>
+        </li>
+        <li>
+          <code>TASK_OPERATOR_IDEMPOTENCY_CONFLICT</code> -&gt;
+          <code>idempotency_conflict</code>
         </li>
         <li>
           <code>TASK_OPERATOR_SCHEMA_VALIDATION</code> /
-          <code>TASK_OPERATOR_ARGUMENT_REQUIRED</code> -&gt; <code>schema_validation</code>
+          <code>TASK_OPERATOR_ARGUMENT_REQUIRED</code> -&gt;
+          <code>schema_validation</code>
         </li>
         <li>HTTP 404 -&gt; <code>not_found</code></li>
         <li>HTTP 429 -&gt; <code>resource_limit</code></li>
@@ -452,7 +482,8 @@
       </ul>
     </li>
     <li>
-      <code>POST /coding-agent/commands</code> を <code>codingAgentRouter</code> に追加する。app の
+      <code>POST /coding-agent/commands</code> を
+      <code>codingAgentRouter</code> に追加する。app の
       <code>/api</code> mount により公開 path は
       <code>POST /api/coding-agent/commands</code> とする。
     </li>
@@ -462,22 +493,24 @@
         <li>既存 handler は path parameter と body を新 contract へ変換する。</li>
         <li>
           compatibility request の <code>requestId</code> は毎回
-          <code>crypto.randomUUID()</code>、<code>idempotencyKey</code> は
-          <code>Idempotency-Key</code> header、header がない場合は同じ
+          <code>crypto.randomUUID()</code>、<code
+            >idempotencyKey</code
+          >
+          は <code>Idempotency-Key</code> header、header がない場合は同じ
           <code>requestId</code> を使用する。
         </li>
         <li>
           legacy handler は current Task revision を取得して compatibility request に設定する。
         </li>
         <li>
-          legacy handler は <code>runId</code> から既存 TaskRun を再取得し、現在の HTTP response
-          shape/status を維持する。
+          legacy handler は <code>runId</code> から既存 TaskRun
+          を再取得し、現在の HTTP response shape/status を維持する。
         </li>
       </ul>
     </li>
     <li>
-      <code>startHumanTaskImplementation</code> にある request 解決ロジックを application service
-      へ移し、重複実装を残さない。
+      <code>startHumanTaskImplementation</code> にある request 解決ロジックを application
+      service へ移し、重複実装を残さない。
     </li>
   </ol>
   <h4 id="test">Test</h4>
@@ -538,22 +571,31 @@
       </ul>
     </li>
     <li>
-      <code>api/app.ts</code> の <code>onMessage</code> から adapter を呼ぶ。Task Operator、Run
-      service、message repository を <code>api/app.ts</code> から直接呼ばない。
+      <code>api/app.ts</code> の
+      <code>onMessage</code> から adapter を呼ぶ。Task Operator、Run
+      service、message repository を
+      <code>api/app.ts</code> から直接呼ばない。
     </li>
     <li>
-      <code>connected.capabilities</code> に <code>coding_agent.command.v1</code> を追加する。
+      <code>connected.capabilities</code> に
+      <code>coding_agent.command.v1</code> を追加する。
     </li>
     <li>binary payload、128 KiB 上限、Origin allowlist、invalid JSON の既存 policy を維持する。</li>
     <li>
-      <code>api/app.ts</code> の parse 前 log から <code>rawPreview</code> を削除し、<code
+      <code>api/app.ts</code> の parse 前 log から
+      <code>rawPreview</code> を削除し、<code
         >rawBytes</code
       >
       だけを記録する。parse 後の command log は
-      <code>requestId</code>、<code>actionId</code>、<code>taskId</code>、result code、latency
-      に限定し、<code>request</code> と <code>userContext</code> を記録しない。
+      <code>requestId</code
+      >、<code>actionId</code>、<code>taskId</code>、result
+      code、latency に限定し、<code>request</code> と
+      <code>userContext</code> を記録しない。
     </li>
-    <li>このPRでは <code>chat_submit</code> を残し、frontend 切替前の挙動を変えない。</li>
+    <li>
+      このPRでは <code>chat_submit</code> を残し、frontend
+      切替前の挙動を変えない。
+    </li>
   </ol>
   <h4 id="test-1">Test</h4>
   <p><code>tests/websocket-security.test.ts</code>:</p>
@@ -598,8 +640,8 @@
   <h4 id="作業-2">作業</h4>
   <ol>
     <li>
-      <code>taskOperatorQueries.ts</code> に React Query options factory を追加する。action button
-      は同 query の projection から availability と revision を表示し、click 時はその表示済み
+      <code>taskOperatorQueries.ts</code> に React Query options factory を追加する。action
+      button は同 query の projection から availability と revision を表示し、click 時はその表示済み
       revision を request に使う。cache に projection がない場合は action を送らず query
       を取得してから button を有効化する。
     </li>
@@ -624,16 +666,20 @@
       経由へ変更する。
     </li>
     <li>
-      Coding Agent mutation hook が success response の <code>runId</code> で
-      <code>GET /api/runs/:id</code> を呼び、現在の mutation success handler へ TaskRun を渡す。
+      Coding Agent mutation hook が success response の
+      <code>runId</code> で
+      <code>GET /api/runs/:id</code> を呼び、現在の mutation success handler へ
+      TaskRun を渡す。
     </li>
     <li>
-      <code>TaskConsolePage</code> も Task Operator projection を読み、表示済み revision で command
-      client を使用する。共有 WebSocket connection がない場合は自動的に REST を使用する。
+      <code>TaskConsolePage</code> も Task Operator projection を読み、表示済み
+      revision で command client を使用する。共有 WebSocket connection がない場合は自動的に REST
+      を使用する。
     </li>
     <li>connection reconnect 時に pending command を再送する既定動作を追加しない。</li>
     <li>
-      command 実行中の button disable は <code>requestId</code> 単位とし、realtime Run status
+      command 実行中の button disable は
+      <code>requestId</code> 単位とし、realtime Run status
       だけから暗黙解除しない。
     </li>
   </ol>
@@ -691,16 +737,16 @@
       </ul>
     </li>
     <li>
-      <code>pendingChatRunIdRef</code>、<code>pendingAssistantTaskIdRef</code>、<code
-        >pendingChatAbortControllerRef</code
-      >
+      <code>pendingChatRunIdRef</code
+      >、<code>pendingAssistantTaskIdRef</code>、<code>pendingChatAbortControllerRef</code>
       は REST の <code>sendWorkbenchMessage</code> と assistant response
-      追跡で使用しているため削除しない。<code>ChatActionsInput.wsRef</code> だけを削除し、<code
-        >chatSubmitTransportRef</code
-      >
-      から <code>&quot;websocket&quot;</code> 分岐を削除する。
+      追跡で使用しているため削除しない。<code>ChatActionsInput.wsRef</code>
+      だけを削除し、<code>chatSubmitTransportRef</code> から
+      <code>&quot;websocket&quot;</code> 分岐を削除する。
     </li>
-    <li>Workbench の <code>sendWorkbenchMessage</code> は既存 REST route のまま維持する。</li>
+    <li>
+      Workbench の <code>sendWorkbenchMessage</code> は既存 REST route のまま維持する。
+    </li>
     <li>
       host-owned server message の discriminated union を
       <code>shared/schemas/nightworkers/realtime.schema.ts</code> に定義する。
@@ -721,18 +767,17 @@
             >planModeRoutingChangedRealtimePayloadSchema</code
           >
           を再利用する。<code>task_llm_delta.payload.event</code> だけは既存 provider debug event
-          が共通 schema を持たないため <code>z.record(z.unknown())</code> とし、UI が使用する
-          <code>text</code> は必須 string とする。
+          が共通 schema を持たないため <code>z.record(z.unknown())</code> とし、UI
+          が使用する <code>text</code> は必須 string とする。
         </li>
       </ul>
     </li>
     <li>
       Coding Agent command response は
-      <code>shared/modules/codingAgent/coding-agent-command-contract.ts</code>、Mission Pilot event
-      は
-      <code>packages/mission-pilot/src/contracts/realtime.ts</code> を正本として維持し、host-owned
-      schema へ複製しない。frontend composition で host、Coding Agent、Mission Pilot の3 schema
-      を順に parse する。
+      <code>shared/modules/codingAgent/coding-agent-command-contract.ts</code>、Mission Pilot event は
+      <code>packages/mission-pilot/src/contracts/realtime.ts</code> を正本として維持し、host-owned schema
+      へ複製しない。frontend composition で host、Coding Agent、Mission Pilot の3 schema を順に
+      parse する。
     </li>
     <li>
       <code>nightWorkersRealtimeProjector.ts</code> に message type ごとの React Query
@@ -743,8 +788,8 @@
     </li>
     <li>
       parse failure と未知 message type は黙って破棄せず、payload 本文を含めずに type と byte size
-      を <code>console.warn</code> へ記録し、active Task の次を invalidate する。既存 host / Mission
-      Pilot event に新しい version field は追加しない。
+      を <code>console.warn</code> へ記録し、active Task の次を invalidate
+      する。既存 host / Mission Pilot event に新しい version field は追加しない。
       <ul>
         <li>Task Operator projection</li>
         <li>Task messages</li>
@@ -753,8 +798,8 @@
       </ul>
     </li>
     <li>
-      <code>task_event_created</code> だけが persisted <code>seq</code> を run cursor
-      として更新する。
+      <code>task_event_created</code> だけが persisted
+      <code>seq</code> を run cursor として更新する。
     </li>
     <li>
       memory replay の duplicate は既存 message identity、Run event identity、resource revision
@@ -779,7 +824,8 @@
       <code>chat_submit_enqueued</code> が消える。
     </li>
     <li>
-      <code>useNightWorkersRealtime.ts</code> に message type ごとの cache mutation が残らない。
+      <code>useNightWorkersRealtime.ts</code> に message type ごとの cache mutation
+      が残らない。
     </li>
     <li>malformed realtime payload が UI crash や無限 reconnect を起こさない。</li>
   </ul>
@@ -798,9 +844,11 @@
       を記載する。
     </li>
     <li>
-      <code>tests/coding-agent-command-http.test.ts</code> で <code>codingAgentRouter</code> の
-      OpenAPI document を生成し、<code>POST /coding-agent/commands</code> の request、success
-      response、error response schema を検証する。
+      <code>tests/coding-agent-command-http.test.ts</code> で
+      <code>codingAgentRouter</code> の OpenAPI document を生成し、<code
+        >POST /coding-agent/commands</code
+      >
+      の request、success response、error response schema を検証する。
     </li>
     <li>
       browser、Tauri dev、packaged desktop で次を実行する。
@@ -826,12 +874,12 @@
   <ul>
     <li>UI の Play / Stop は既存 REST command を使う。</li>
     <li>
-      <code>mission_pilot.updated</code> と <code>mission_pilot.plan_progress_updated</code> は
-      package-owned WebSocket schema を使う。
+      <code>mission_pilot.updated</code> と
+      <code>mission_pilot.plan_progress_updated</code> は package-owned WebSocket schema を使う。
     </li>
     <li>
-      runtime action は <code>mission-pilot-action-command-executor.ts</code> から delegated Task
-      Operator command を実行する。
+      runtime action は <code>mission-pilot-action-command-executor.ts</code> から delegated Task Operator
+      command を実行する。
     </li>
     <li>
       Mission Pilot runtime から <code>POST /api/coding-agent/commands</code> や
@@ -839,8 +887,7 @@
     </li>
     <li>
       <code>tests/mission-pilot-package-host-ports.test.ts</code> と
-      <code>tests/mission-pilot-delegated-authorization.test.ts</code> を全PRで regression test
-      として実行する。
+      <code>tests/mission-pilot-delegated-authorization.test.ts</code> を全PRで regression test として実行する。
     </li>
   </ul>
   <p>
@@ -977,7 +1024,8 @@ bun run verify:fast
   <ul>
     <li>
       <input checked="" disabled="" type="checkbox" />
-      <code>run.implementation.start</code>、<code>run.stop</code>、<code>run.todo.resume</code> の
+      <code>run.implementation.start</code
+      >、<code>run.stop</code>、<code>run.todo.resume</code> の
       shared request/response schema がある
     </li>
     <li>
@@ -1018,8 +1066,8 @@ bun run verify:fast
     </li>
     <li>
       <input checked="" disabled="" type="checkbox" />
-      <code>chat_submit</code>、<code>chat_submit_enqueued</code>、関連 pending/replay state
-      が削除されている
+      <code>chat_submit</code>、<code>chat_submit_enqueued</code>、関連
+      pending/replay state が削除されている
     </li>
     <li>
       <input checked="" disabled="" type="checkbox" /> host-owned realtime message が shared schema
@@ -1052,8 +1100,8 @@ bun run verify:fast
     <li>Playwright browser smoke: 2 tests passed</li>
     <li><code>bun run verify:base</code>: passed</li>
     <li>
-      <code>bun run verify:desktop</code>: Tauri build、sidecar smoke、packaged desktop smoke を含め
-      passed
+      <code>bun run verify:desktop</code>: Tauri build、sidecar smoke、packaged desktop
+      smoke を含め passed
     </li>
     <li>frontend/backend production build と bundle budget: passed</li>
   </ul>

@@ -7,7 +7,10 @@
     <li>状態: Proposed</li>
     <li>作成日: 2026-08-16</li>
     <li>対象リポジトリ: <code>nightWorkers</code></li>
-    <li>対象指摘: <code>M11</code>, <code>m3</code>, <code>m4</code></li>
+    <li>
+      対象指摘: <code>M11</code>,
+      <code>m3</code>, <code>m4</code>
+    </li>
     <li>関連する非改修判定: <code>m2</code></li>
     <li>
       位置づけ: <a href="./codebase-review-remediation-program-index.html">改修プログラム索引</a>の
@@ -31,8 +34,8 @@
       の再計測なしに追加修正を開始しない。
     </li>
     <li>
-      <code>m3</code>: global error、route 固有 error、Coding Agent command response で error shape
-      が異なり、consumer に個別分岐が生じる。
+      <code>m3</code>: global error、route 固有 error、Coding Agent
+      command response で error shape が異なり、consumer に個別分岐が生じる。
     </li>
     <li>
       <code>m4</code>: 一部の Frontend test が module mock
@@ -40,8 +43,9 @@
     </li>
   </ul>
   <p>
-    <code>m2</code> の 600 行超 file 数と巨大 file の存在自体は事実だが、それが critical coverage
-    failure の原因だという因果は裏づけられなかった。そのため本計画では file-size
+    <code>m2</code> の 600 行超 file 数と巨大 file
+    の存在自体は事実だが、それが critical coverage failure
+    の原因だという因果は裏づけられなかった。そのため本計画では file-size
     制限を緩めず、分割を数値目標にも設定しない。
   </p>
   <h2 id="section-2-非目標">2. 非目標</h2>
@@ -58,8 +62,7 @@
   <p>
     前回評価時には、coverage 対象 133 file、約 60,461 行、全体約 167,585 行という規模と、一部
     critical target の branch gate failure が観測された。一方、既存の
-    <code>quality-and-tauri-distribution-readiness-implementation-plan.md</code> は coverage
-    改善項目を完了扱いとしている。
+    <code>quality-and-tauri-distribution-readiness-implementation-plan.md</code> は coverage 改善項目を完了扱いとしている。
   </p>
   <p>
     したがって、上記の数値・失敗対象は実装 backlog ではなく履歴的観測として扱う。最新 baseline
@@ -75,8 +78,10 @@
   <ol>
     <li>一般 REST endpoint の error response は、共有 schema と serializer から生成する。</li>
     <li>
-      error payload は安定した machine-readable <code>code</code> と利用者/開発者向け
-      <code>message</code> を持ち、任意の <code>details</code> を明示 schema で表す。
+      error payload は安定した machine-readable
+      <code>code</code> と利用者/開発者向け
+      <code>message</code> を持ち、任意の
+      <code>details</code> を明示 schema で表す。
     </li>
     <li>HTTP status と error code の対応を route ごとに独自解釈しない。</li>
     <li>Coding Agent command protocol の typed failure は一般 REST envelope と混同しない。</li>
@@ -116,10 +121,14 @@
   </ul>
   <h2 id="section-6-実装フェーズ">6. 実装フェーズ</h2>
   <h3 id="e0-排他的-baseline-再計測">E0. 排他的 baseline 再計測</h3>
-  <p>対象: <code>M11</code>, <code>m4</code></p>
+  <p>
+    対象: <code>M11</code>,
+    <code>m4</code>
+  </p>
   <ol>
     <li>
-      作業開始時の commit、<code>git status --short</code>、runtime/dependency version を記録する。
+      作業開始時の commit、<code>git status --short</code>、runtime/dependency version
+      を記録する。
     </li>
     <li>
       coverage process が並行実行されていないことを確認し、run 固有 output directory
@@ -143,16 +152,16 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
   <ul>
     <li>coverage generation と gate の run identity が一致する。</li>
     <li>
-      最新 gate が全件 pass なら <code>M11</code> の追加 test 実装は行わず、再計測 evidence のみで
-      close する。
+      最新 gate が全件 pass なら <code>M11</code> の追加 test
+      実装は行わず、再計測 evidence のみで close する。
     </li>
     <li>failure がある場合だけ、file、metric、閾値、未達 branch を backlog 化する。</li>
   </ul>
   <h3 id="e1-一般-rest-error-contract-の確定">E1. 一般 REST error contract の確定</h3>
   <p>対象: <code>m3</code></p>
   <p>
-    候補正本は次の形とし、既存 <code>AppError</code>、global handler、OpenAPI helper、consumer
-    を調査して採用可否を決める。
+    候補正本は次の形とし、既存 <code>AppError</code>、global
+    handler、OpenAPI helper、consumer を調査して採用可否を決める。
   </p>
   <pre><code class="language-ts">type ApiErrorEnvelope = {
   error: {
@@ -259,8 +268,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       network/API boundary は mock してよいが、対象 component 自体と主要 child を全置換しない。
     </li>
     <li>
-      <code>toBeTruthy()</code> だけでなく、role、name、text、disabled/busy state、callback/request
-      payload を具体的に検証する。
+      <code>toBeTruthy()</code> だけでなく、role、name、text、disabled/busy
+      state、callback/request payload を具体的に検証する。
     </li>
     <li>
       implementation detail の hook 呼出し回数より、利用者に見える結果と公開 request contract
@@ -276,7 +285,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     <li>優先対象画面ごとに success/error/action の behavior test がある。</li>
     <li>module 全 mock + 存在確認だけの test が critical behavior の唯一の防波堤ではない。</li>
   </ul>
-  <h3 id="e5-m2-の非改修判定を-guard-する">E5. <code>m2</code> の非改修判定を guard する</h3>
+  <h3 id="e5-m2-の非改修判定を-guard-する">
+    E5. <code>m2</code> の非改修判定を guard する
+  </h3>
   <p>対象: <code>m2</code>（実装対象外）</p>
   <ol>
     <li>既存の file-size architecture check と 600 行制限を維持する。</li>
@@ -302,7 +313,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     <li>Findings: <code>M11</code></li>
     <li>Write set: なし。read-only計測と実行記録だけ。</li>
     <li>
-      Current conflict/stop: planning開始時点で<code>bun.lock</code>、<code>package.json</code>、
+      Current conflict/stop:
+      planning開始時点で<code>bun.lock</code>、<code>package.json</code>、
       <code>scripts/coverage/coverage-policy.ts</code
       >、<code>scripts/run-vitest.mjs</code>、<code>vitest.backend.config.ts</code>、
       <code>vitest.frontend.config.ts</code
@@ -311,14 +323,13 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       >ほかcoverage関連user差分がある。これらをrestore、stage、上書きしない。
     </li>
     <li>
-      Preconditions: 差分所有者が完了したaccepted baseline、HEAD、<code>git status --short</code
-      >、Bun/Node versionを記録し、 coverage processが他にないこととoutput
-      directoryがrun固有/排他的であることを確認する。
+      Preconditions: 差分所有者が完了したaccepted
+      baseline、HEAD、<code>git status --short</code>、Bun/Node versionを記録し、
+      coverage processが他にないこととoutput directoryがrun固有/排他的であることを確認する。
     </li>
     <li>
-      Command: accepted baselineの<code>package.json</code>を再読後、<code
-        >bun run test:coverage</code
-      >を単独で1回実行する。現在のscriptは
+      Command: accepted
+      baselineの<code>package.json</code>を再読後、<code>bun run test:coverage</code>を単独で1回実行する。現在のscriptは
       backend/frontend生成、combine、global、criticalを含むため、同じartifactを消す別coverage
       commandを続けて実行しない。
     </li>
@@ -327,7 +338,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       pctを保存する。
     </li>
     <li>
-      Decision: 全gate passなら<code>M11=no code change</code>。missing/unmeasured/below
+      Decision: 全gate
+      passなら<code>M11=no code change</code>。missing/unmeasured/below
       thresholdのときだけE-T4を作業可能にする。
     </li>
     <li>
@@ -349,9 +361,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     </li>
     <li>
       Schema:
-      <code>ApiErrorEnvelope = {error:{code:string;message:string;details?:unknown}}</code
-      >。OpenAPI/runtime/frontendが同じ Zod schema/typeをimportする。<code>stack</code>やflat
-      top-level detailをschemaへ追加しない。
+      <code>ApiErrorEnvelope = {error:{code:string;message:string;details?:unknown}}</code>。OpenAPI/runtime/frontendが同じ Zod
+      schema/typeをimportする。<code>stack</code>やflat top-level
+      detailをschemaへ追加しない。
     </li>
     <li>
       Serializer result:
@@ -359,11 +371,12 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       >。<code>AppError</code>はstatus/code/message/detailsを保持、
       <code>HTTPException</code>はstable
       code/statusへmap、unknownは500/<code>INTERNAL_SERVER_ERROR</code>/固定公開messageとし、raw
-      error/stackは request-scoped loggerだけへ渡す。<code>X-Request-Id</code> headerは既存logger
-      middlewareを正本としbodyへ重複追加しない。
+      error/stackは request-scoped loggerだけへ渡す。<code>X-Request-Id</code>
+      headerは既存logger middlewareを正本としbodyへ重複追加しない。
     </li>
     <li>
-      Provider/LLM: 公開を許可したtyped <code>AppError</code>本文は保持し、unknown provider
+      Provider/LLM: 公開を許可したtyped
+      <code>AppError</code>本文は保持し、unknown provider
       errorを固定公開messageへ変える処理と
       LLM本文の永続保持を混同しない。secret/path/stackをdetailsへ自動copyしない。
     </li>
@@ -380,11 +393,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     <li>Depends on: <code>E-T1</code></li>
     <li>
       Write set: <code>api/middleware/error-handler.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.route-utils.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.route-handlers.ts</code>、
-      <code>tests/nightworkers-routes-extra-coverage.test.ts</code>、<code
-        >tests/server-extra-coverage.test.ts</code
-      >
+      <code>api/modules/nightworkers/nightworkers.route-utils.ts</code>、 <code>api/modules/nightworkers/nightworkers.route-handlers.ts</code>、
+      <code>tests/nightworkers-routes-extra-coverage.test.ts</code>、<code>tests/server-extra-coverage.test.ts</code>
     </li>
     <li>
       Wrapper:
@@ -394,7 +404,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       errorのmessageを500 responseへ直接返さない。
     </li>
     <li>
-      Not found: <code>routeNotFound</code>は<code>NotFoundError</code>またはserializerのtyped
+      Not found:
+      <code>routeNotFound</code
+      >は<code>NotFoundError</code>またはserializerのtyped
       inputを使い、404もcanonical nested envelopeにする。
     </li>
     <li>
@@ -414,10 +426,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     <li>Depends on: <code>E-T1</code></li>
     <li>Write set: 新規<code>src/lib/api-error.ts</code>、新規decoder unit test</li>
     <li>
-      Exports: <code>ApiResponseError</code>（status/code/details/requestId header保持）、<code
-        >readJsonResponse&lt;T&gt;(response, schema?)</code
-      >。 2xxでもJSON/schema parse失敗はtyped failure、非2xxはcanonical
-      envelopeをparseしてthrowする。
+      Exports: <code>ApiResponseError</code>（status/code/details/requestId
+      header保持）、<code>readJsonResponse&lt;T&gt;(response, schema?)</code>。 2xxでもJSON/schema
+      parse失敗はtyped failure、非2xxはcanonical envelopeをparseしてthrowする。
     </li>
     <li>
       Temporary compatibility: canonical nestedに加え、既知のlegacy
@@ -439,7 +450,10 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
   </h3>
   <ul>
     <li>Findings: <code>m3</code></li>
-    <li>Depends on: <code>E-T2</code>, <code>E-T3a</code></li>
+    <li>
+      Depends on: <code>E-T2</code>,
+      <code>E-T3a</code>
+    </li>
     <li>
       Server write set:
       <code>api/routes/settings.ts</code>、<code>api/routes/settings-route-definitions.ts</code>、
@@ -447,8 +461,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       <code>api/modules/nightworkers/routes/repository-routes.ts</code>、関連definition/handler
     </li>
     <li>
-      Frontend write set: <code>src/modules/settings/settingsCommands.ts</code>、D-T1 query
-      module、D-T0 repository query module、 <code>src/routes/repositories.tsx</code>
+      Frontend write set: <code>src/modules/settings/settingsCommands.ts</code>、D-T1 query module、D-T0
+      repository query module、 <code>src/routes/repositories.tsx</code>
     </li>
     <li>
       Method: moduleごとにerror response schema、runtime error、consumer decoder、route/component
@@ -456,8 +470,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       Settingsの保存成功bodyはD-T1がcacheへ使える正規化済み値か、明示204/再取得のどちらかに固定する。
     </li>
     <li>
-      Tests: <code>tests/routes.settings-general.test.ts</code>、settings command/panel
-      suite、repository route suite。
+      Tests: <code>tests/routes.settings-general.test.ts</code>、settings command/panel suite、repository
+      route suite。
     </li>
     <li>Done: 対象server fileのflat producerと対象consumerの独自error parserが0件。</li>
   </ul>
@@ -480,9 +494,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       >、<code>src/modules/nightworkers/components/project-detail/data.ts</code>、D-T2 TaskConsole
     </li>
     <li>
-      Exclusion: Coding Agent WebSocket/HTTP commandのtyped <code>ok/failure</code> envelope、MCP
-      tool result、terminal event payloadは 一般REST errorへ変更しない。route
-      pathではなく公開schemaで区別する。
+      Exclusion: Coding Agent WebSocket/HTTP commandのtyped
+      <code>ok/failure</code> envelope、MCP tool result、terminal event
+      payloadは 一般REST errorへ変更しない。route pathではなく公開schemaで区別する。
     </li>
     <li>
       Tests: NightWorkers route suites、queue route/command suites、Coding Agent command
@@ -501,9 +515,7 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     <li>Depends on: <code>E-T3c</code></li>
     <li>
       Server write set: <code>api/modules/project-evaluation/project-evaluation.routes.ts</code>、
-      <code>api/modules/quality/quality.routes.ts</code>、<code
-        >api/modules/gitworktree/gitworktree.routes.ts</code
-      >
+      <code>api/modules/quality/quality.routes.ts</code>、<code>api/modules/gitworktree/gitworktree.routes.ts</code>
     </li>
     <li>
       Frontend write set:
@@ -513,7 +525,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       <code>src/modules/gitworktree/api/gitworktreeCommands.ts</code>
     </li>
     <li>
-      Method: <code>parseJsonResponse</code>と<code>payload.error</code>のroute固有分岐をE-T3a
+      Method:
+      <code>parseJsonResponse</code
+      >と<code>payload.error</code>のroute固有分岐をE-T3a
       decoderへ置換する。long-running evaluationの activity success schema/polling
       cursorは変更しない。
     </li>
@@ -537,10 +551,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     </li>
     <li>
       Frontend write set: <code>src/modules/securityScan/securityScanCommands.ts</code>、
-      <code>useSecurityScanController.ts</code
-      >、<code>SettingsVulnerabilityScanProviderPanel.tsx</code>、
-      <code>useSecurityTaskCandidateController.ts</code
-      >、<code>src/modules/taskGeneration/api/taskGenerationCommands.ts</code>、 E-T3a decoder/test
+      <code>useSecurityScanController.ts</code>、<code>SettingsVulnerabilityScanProviderPanel.tsx</code>、
+      <code>useSecurityTaskCandidateController.ts</code>、<code>src/modules/taskGeneration/api/taskGenerationCommands.ts</code>、
+      E-T3a decoder/test
     </li>
     <li>
       Method: 3個以上あるlocal <code>readResponse</code>/error shape
@@ -549,8 +562,8 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
     </li>
     <li>
       Cleanup gate: <code>rg</code>でserverのflat
-      <code>{error:string}</code> producerとFrontendのlegacy parserを再検索し、一般REST対象が0なら
-      E-T3aのlegacy
+      <code>{error:string}</code> producerとFrontendのlegacy
+      parserを再検索し、一般REST対象が0なら E-T3aのlegacy
       branchを削除する。残件があればfileを列挙した追加batchを作り、互換branchを黙って残さない。
     </li>
     <li>
@@ -563,7 +576,11 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
   </h3>
   <ul>
     <li>Findings: <code>M11</code></li>
-    <li>Depends on: <code>E-T0</code>が<code>below_threshold</code>を記録した場合だけ</li>
+    <li>
+      Depends on:
+      <code>E-T0</code
+      >が<code>below_threshold</code>を記録した場合だけ
+    </li>
     <li>
       Write set: E-T0 reportが示したcritical production fileの近接testだけ。coverage
       config/policy/thresholdは変更しない。
@@ -574,9 +591,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       再現する。私有関数の単純callや無意味なtruthy assertionで数値だけを通さない。
     </li>
     <li>
-      Verify: 対象suite、対象critical evaluator、<code>bun run test:coverage</code
-      >の順に直列実行する。missing/unmeasuredはtest追加前に instrumentation/source
-      map対象を直す別ticketとする。
+      Verify: 対象suite、対象critical
+      evaluator、<code>bun run test:coverage</code>の順に直列実行する。missing/unmeasuredはtest追加前に
+      instrumentation/source map対象を直す別ticketとする。
     </li>
     <li>
       Stop: E-T0がpassならこのticketを実行しない。production refactorが必要なら該当Area A〜Dへ戻す。
@@ -589,7 +606,11 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
   <h3 id="e-t5-dの4優先画面にbehavior証明を追加する">E-T5: Dの4優先画面にbehavior証明を追加する</h3>
   <ul>
     <li>Findings: <code>m4</code></li>
-    <li>Depends on: 対応する<code>D-T0</code>〜<code>D-T3</code></li>
+    <li>
+      Depends on: 対応する<code>D-T0</code>〜<code
+        >D-T3</code
+      >
+    </li>
     <li>
       Write set: 新規または既存のRepositories、Settings、TaskConsole、Project Evaluation behavior
       suite。
@@ -609,7 +630,9 @@ rg -n &quot;vi\.mock|jest\.mock|toBeTruthy\(|toBeDefined\(&quot; tests src --glo
       mock存在確認が唯一の防波堤でない。
     </li>
   </ul>
-  <h3 id="e-t6-m2非改修判断を静的に確認する">E-T6: <code>m2</code>非改修判断を静的に確認する</h3>
+  <h3 id="e-t6-m2非改修判断を静的に確認する">
+    E-T6: <code>m2</code>非改修判断を静的に確認する
+  </h3>
   <ul>
     <li>Findings: <code>m2</code>（変更対象外）</li>
     <li>
@@ -660,8 +683,9 @@ bun run check:architecture
 </code></pre>
   <p>
     上記は現時点で実在する代表 suite である。移行対象 route の近接 test は実装開始時に
-    <code>package.json</code> と <code>rg --files tests</code> で追加確認し、存在しない仮の path
-    を検証済み evidence に使わない。
+    <code>package.json</code> と
+    <code>rg --files tests</code> で追加確認し、存在しない仮の path を検証済み
+    evidence に使わない。
   </p>
   <p>最低限の contract case:</p>
   <ul>
@@ -754,11 +778,13 @@ bun run verify
   <h2 id="section-12-完了条件">12. 完了条件</h2>
   <ul>
     <li>
-      <code>M11</code>, <code>m3</code>, <code>m4</code> に最新 baseline、実装 diff または変更不要
+      <code>M11</code>, <code>m3</code>,
+      <code>m4</code> に最新 baseline、実装 diff または変更不要
       evidence、test 結果が紐づいている。
     </li>
     <li>
-      <code>m2</code> は根拠不足の因果を復活させず、600 行制限を維持した非改修判定になっている。
+      <code>m2</code> は根拠不足の因果を復活させず、600
+      行制限を維持した非改修判定になっている。
     </li>
     <li>
       一般 REST error が共通 schema/serializer/OpenAPI contract を使い、Frontend の route 別 shape
@@ -769,7 +795,9 @@ bun run verify
     <li>優先 UI の success/error/action/lifecycle が behavior test で固定される。</li>
     <li>lint、typecheck、対象 test、full test、coverage gate、architecture check が通る。</li>
     <li>
-      実装完了後、本書を <code>spec/docs/.archived</code> へ移し、<code>spec/docs</code>
+      実装完了後、本書を <code>spec/docs/.archived</code> へ移し、<code
+        >spec/docs</code
+      >
       に完了計画を残さない。
     </li>
   </ul>

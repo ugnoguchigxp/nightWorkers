@@ -11,7 +11,9 @@
       >
     </li>
     <li>
-      Findings: <code>C4</code>, <code>M5</code>, <code>M6</code>, <code>M13</code>, <code>m9</code>
+      Findings: <code>C4</code>,
+      <code>M5</code>, <code>M6</code>,
+      <code>M13</code>, <code>m9</code>
     </li>
     <li>
       Related active plan:
@@ -50,18 +52,28 @@
       <code>stopTaskRun</code>はruntime
       stop後、読込時のstatusを根拠に無条件<code>updateTaskRun(cancelled)</code>する。
     </li>
-    <li><code>reviewTaskRunCommand</code>はReview計算後に無条件でRunとTaskを更新する。</li>
-    <li>stale recoveryはrunner status確認後に無条件<code>failed</code>へ更新する。</li>
-    <li>初回prompt preparationはcancelled Runを<code>running</code>へ戻し得る。</li>
     <li>
-      <code>updateTaskRunIfStatus</code>とresume専用CASは既に存在するが、一貫して使われていない。
+      <code>reviewTaskRunCommand</code>はReview計算後に無条件でRunとTaskを更新する。
+    </li>
+    <li>
+      stale recoveryはrunner
+      status確認後に無条件<code>failed</code>へ更新する。
+    </li>
+    <li>
+      初回prompt preparationはcancelled
+      Runを<code>running</code>へ戻し得る。
+    </li>
+    <li>
+      <code>updateTaskRunIfStatus</code
+      >とresume専用CASは既に存在するが、一貫して使われていない。
     </li>
   </ul>
   <h3 id="section-32-queue-lifecycle">3.2 Queue lifecycle</h3>
   <ul>
     <li>cancelはprocessing Runを停止せず、leaseだけを消してEntryをcancelledにする。</li>
     <li>
-      resumeは<code>needs_human</code>からlease ownerなしの<code>processing</code>へ直接変更する。
+      resumeは<code>needs_human</code>からlease
+      ownerなしの<code>processing</code>へ直接変更する。
     </li>
     <li>
       generic <code>updateImplementationQueueEntry</code>がapplication commandから広く利用される。
@@ -76,9 +88,14 @@
   <h3 id="section-34-admission--claim-race">3.4 Admission / claim race</h3>
   <ul>
     <li><code>hasActiveImplementationQueueEntry</code>とinsertは別transactionである。</li>
-    <li>DBには<code>task_id</code>に対する非archive partial unique indexがない。</li>
     <li>
-      legacy <code>claimNextQueuedTask</code>はSELECT後のCASに負けると、次候補を試さずnullを返す。
+      DBには<code>task_id</code>に対する非archive partial unique
+      indexがない。
+    </li>
+    <li>
+      legacy
+      <code>claimNextQueuedTask</code
+      >はSELECT後のCASに負けると、次候補を試さずnullを返す。
     </li>
   </ul>
   <h2 id="section-4-target-invariants">4. Target invariants</h2>
@@ -108,7 +125,10 @@
       Task statusはRun/Queueの正本ではなくprojectionであり、projection元とexpected Task
       versionを記録する。
     </li>
-    <li>Queue leaseを持たないhuman/API commandが<code>processing</code>を直接作らない。</li>
+    <li>
+      Queue leaseを持たないhuman/API
+      commandが<code>processing</code>を直接作らない。
+    </li>
     <li>
       <code>implementation_queue_entries</code
       >は同一Taskにつき<code>execution_archived</code>以外を最大1件とする。
@@ -177,8 +197,9 @@
 };
 </code></pre>
   <p>
-    <code>reasonCode</code>は列挙済みの構造値であり、error messageのkeyword分類で生成しない。command
-    resultは <code>applied | replayed | conflict | not_found</code>を区別する。
+    <code>reasonCode</code>は列挙済みの構造値であり、error
+    messageのkeyword分類で生成しない。command resultは
+    <code>applied | replayed | conflict | not_found</code>を区別する。
   </p>
   <h2 id="section-7-implementation-phases">7. Implementation phases</h2>
   <h3 id="phase-b0-transition-race-tests">Phase B0: Transition race tests</h3>
@@ -212,7 +233,8 @@
     </li>
     <li>sourceごとに許可するexpected statusを明示する。</li>
     <li>
-      stale recoveryはstatusに加え、読込時<code>updatedAt</code>またはheartbeat
+      stale
+      recoveryはstatusに加え、読込時<code>updatedAt</code>またはheartbeat
       revisionをCAS条件にする。
     </li>
     <li>prompt preparationは<code>context_compiling -&gt; running</code>等の明示CASにする。</li>
@@ -231,8 +253,8 @@
   <h4 id="implementation-2">Implementation</h4>
   <ol>
     <li>
-      Run terminal command transaction内で関連Queue Entryを<code>activeRunId</code>とsource
-      statusで更新する。
+      Run terminal command transaction内で関連Queue
+      Entryを<code>activeRunId</code>とsource statusで更新する。
     </li>
     <li>既存<code>projectTaskRunParentStatus</code>を利用してTask projectionを計算する。</li>
     <li>Task updateはexpected status/updatedAtまたはrevisionを持つCASにする。</li>
@@ -253,14 +275,17 @@
   <h3 id="phase-b3-queue-cancel--resume-command">Phase B3: Queue cancel / resume command</h3>
   <h4 id="cancel">Cancel</h4>
   <ul>
-    <li><code>queued</code>でactiveRunなし: status/leaseVersion CASでcancelledへ遷移する。</li>
+    <li>
+      <code>queued</code>でactiveRunなし: status/leaseVersion
+      CASでcancelledへ遷移する。
+    </li>
     <li>
       <code>claimed</code>でactiveRunなし: lease
       owner/versionを検証してclaimを解放し、cancelledへ遷移する。
     </li>
     <li>
-      <code>processing</code>またはactiveRunあり: cancellation requestを構造的に記録し、Run stop
-      commandを呼ぶ。
+      <code>processing</code>またはactiveRunあり: cancellation
+      requestを構造的に記録し、Run stop commandを呼ぶ。
     </li>
     <li>
       Queue terminal projectionはRun terminal commandから確定し、APIが先にcancelledを確定しない。
@@ -269,7 +294,10 @@
   </ul>
   <h4 id="resume">Resume</h4>
   <ul>
-    <li><code>needs_human</code> Entryをleaseなし<code>processing</code>へ直接変更しない。</li>
+    <li>
+      <code>needs_human</code>
+      Entryをleaseなし<code>processing</code>へ直接変更しない。
+    </li>
     <li>
       active Runが<code>needs_human</code>なら、resume intentを保存し、queue
       workerがleaseを再取得して既存Runの resume commandを呼ぶ。
@@ -339,7 +367,11 @@ where status &lt;&gt; &#39;execution_archived&#39;;
   </p>
   <h3 id="b-t0-stale-writerrace-characterization">B-T0: stale writer/race characterization</h3>
   <ul>
-    <li>Findings: <code>C4</code>, <code>M5</code>, <code>m9</code>, <code>M13</code></li>
+    <li>
+      Findings: <code>C4</code>,
+      <code>M5</code>, <code>m9</code>,
+      <code>M13</code>
+    </li>
     <li>
       Write set: 新規<code>tests/run-state-transition-races.test.ts</code>、新規
       <code>tests/implementation-queue-races.test.ts</code>
@@ -385,9 +417,9 @@ where status &lt;&gt; &#39;execution_archived&#39;;
       新規symbol:
       <code>transitionTaskRunIfCurrent(input, database?)</code
       >。入力は<code>runId</code>、<code>expectedStatuses</code>、任意の
-      <code>expectedUpdatedAt</code>、<code>targetStatus</code>、patchを持ち、結果は<code
-        >applied | conflict | not_found</code
-      >のtagged unionとする。
+      <code>expectedUpdatedAt</code
+      >、<code>targetStatus</code>、patchを持ち、結果は<code>applied | conflict | not_found</code>のtagged
+      unionとする。
     </li>
     <li>
       Contract:
@@ -402,8 +434,10 @@ where status &lt;&gt; &#39;execution_archived&#39;;
       commandへ移さない。statusを更新する無条件callerだけをB-T2/B-T3で移す。
     </li>
     <li>
-      Stop: <code>compiling_context</code>のようなschema外legacy値を観測した場合、勝手にtransition
-      tableへ追加せずdata migrationを 別ticketにする。
+      Stop:
+      <code>compiling_context</code
+      >のようなschema外legacy値を観測した場合、勝手にtransition tableへ追加せずdata migrationを
+      別ticketにする。
     </li>
     <li>
       Done: completed/failedからの不正遷移、expected status miss、updatedAt miss、not
@@ -418,8 +452,7 @@ where status &lt;&gt; &#39;execution_archived&#39;;
     <li>Depends on: <code>B-T1</code></li>
     <li>
       Write set: <code>api/modules/nightworkers/run-orchestration/stop-task-run.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.run-query.service.ts</code>、
-      <code>api/modules/nightworkers/run-orchestration/start-task-run-persistence.ts</code>、
+      <code>api/modules/nightworkers/nightworkers.run-query.service.ts</code>、 <code>api/modules/nightworkers/run-orchestration/start-task-run-persistence.ts</code>、
       それぞれの近接suiteとB-T0のRun test
     </li>
     <li>
@@ -430,7 +463,8 @@ where status &lt;&gt; &#39;execution_archived&#39;;
     </li>
     <li>
       Recovery contract: runner
-      status/heartbeat判定に使った<code>activeRun.updatedAt</code>をCASへ渡す。CAS winnerだけが
+      status/heartbeat判定に使った<code>activeRun.updatedAt</code>をCASへ渡す。CAS
+      winnerだけが
       <code>run.recovered</code> event、Task message、projectionを作る。
     </li>
     <li>
@@ -449,24 +483,26 @@ where status &lt;&gt; &#39;execution_archived&#39;;
     B-T3: Run outcomeとReviewをRun/Task/Queueの一transactionへ集約する
   </h3>
   <ul>
-    <li>Findings: <code>C4</code>, <code>M6</code></li>
-    <li>Depends on: <code>B-T1</code>, <code>B-T2</code></li>
     <li>
-      Write set:
-      新規<code>api/modules/run/application/run-outcome-transition.command.ts</code>、新規
-      <code>api/modules/run/run-outcome-transition.repository.ts</code
-      >、<code>api/modules/run/application/run-review.command.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.service.ts</code>、
-      <code>api/modules/nightworkers/run-orchestration/stop-task-run.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.run-query.service.ts</code>、
-      <code>api/modules/nightworkers/nightworkers.task-status-cas.repository.ts</code>、
+      Findings: <code>C4</code>,
+      <code>M6</code>
+    </li>
+    <li>
+      Depends on: <code>B-T1</code>,
+      <code>B-T2</code>
+    </li>
+    <li>
+      Write set: 新規<code>api/modules/run/application/run-outcome-transition.command.ts</code>、新規
+      <code>api/modules/run/run-outcome-transition.repository.ts</code>、<code>api/modules/run/application/run-review.command.ts</code>、
+      <code>api/modules/nightworkers/nightworkers.service.ts</code>、 <code>api/modules/nightworkers/run-orchestration/stop-task-run.ts</code>、
+      <code>api/modules/nightworkers/nightworkers.run-query.service.ts</code>、 <code>api/modules/nightworkers/nightworkers.task-status-cas.repository.ts</code>、
       <code>api/modules/queue/queue-repository-commands.ts</code
       >、<code>tests/run-review-command-extra-coverage.test.ts</code>、B-T0
     </li>
     <li>
       Transaction contract: 1 transactionでRun expected status/updatedAt CAS、Task expected
-      status/updatedAt projection、 <code>activeRunId</code>一致Queue Entryのstatus/lease
-      releaseを更新する。いずれかの必須CASがmissしたらrollbackし、
+      status/updatedAt projection、 <code>activeRunId</code>一致Queue
+      Entryのstatus/lease releaseを更新する。いずれかの必須CASがmissしたらrollbackし、
       <code>RUN_OUTCOME_CONFLICT</code>と最新Run/Task/Queue IDを返す。
     </li>
     <li>
@@ -478,8 +514,8 @@ where status &lt;&gt; &#39;execution_archived&#39;;
     </li>
     <li>
       Review consolidation:
-      <code>nightworkers.service.ts</code>の重複Review実装は新commandへdelegateし、Review result
-      IDを idempotency keyにする。CAS winnerだけがmanual confirmationsと2つのRun
+      <code>nightworkers.service.ts</code>の重複Review実装は新commandへdelegateし、Review
+      result IDを idempotency keyにする。CAS winnerだけがmanual confirmationsと2つのRun
       eventを一度生成する。
     </li>
     <li>
@@ -516,18 +552,19 @@ where status &lt;&gt; &#39;execution_archived&#39;;
     </li>
     <li>
       <code>queued</code>/activeRunなし: status+leaseVersion
-      CASで<code>cancelled</code>、lease/slotをclearし、Task <code>queued -&gt; ready</code>を
-      同一transactionでprojectionする。
+      CASで<code>cancelled</code>、lease/slotをclearし、Task
+      <code>queued -&gt; ready</code>を 同一transactionでprojectionする。
     </li>
     <li>
       <code>claimed</code>/activeRunなし: callerがhumanのためlease
       ownerを偽装せず、status+leaseVersion CASでclaimを解放して
-      <code>cancelled</code>にする。<code>leaseVersion</code>は必ず+1する。
+      <code>cancelled</code
+      >にする。<code>leaseVersion</code>は必ず+1する。
     </li>
     <li>
-      activeRunあり、または<code>processing</code>: B-T3のcanonical stop/outcome
-      commandを呼び、Queueを先にcancelledへしない。 Run CAS winnerのprojectionだけがQueue terminal
-      statusを確定する。
+      activeRunあり、または<code>processing</code>: B-T3のcanonical
+      stop/outcome commandを呼び、Queueを先にcancelledへしない。 Run CAS
+      winnerのprojectionだけがQueue terminal statusを確定する。
     </li>
     <li>
       already terminal: 同じsnapshotをidempotent replayとして返す。CAS missは409
@@ -541,21 +578,17 @@ where status &lt;&gt; &#39;execution_archived&#39;;
   <ul>
     <li>Findings: <code>M5</code></li>
     <li>Depends on: <code>B-T4</code></li>
+    <li>Write set: B-T4と同じproduction file、<code>tests/queue-entry-commands-service-coverage.test.ts</code></li>
     <li>
-      Write set: B-T4と同じproduction file、<code
-        >tests/queue-entry-commands-service-coverage.test.ts</code
-      >
+      active Runが<code>needs_human</code>: 現在のPATCH contractにはhuman
+      input、Todo revision、Run preconditionがないため状態を 変えず、409
+      <code>QUEUE_RUN_REQUIRES_TASK_RESUME</code
+      >と<code>activeRunId</code>を返す。Coding Agentの既存resume
+      commandを正規経路にする。
     </li>
     <li>
-      active Runが<code>needs_human</code>: 現在のPATCH contractにはhuman input、Todo revision、Run
-      preconditionがないため状態を 変えず、409
-      <code>QUEUE_RUN_REQUIRES_TASK_RESUME</code>と<code>activeRunId</code>を返す。Coding
-      Agentの既存resume commandを正規経路にする。
-    </li>
-    <li>
-      active Runがterminalまたはmissing: status+leaseVersion CASで<code
-        >needs_human -&gt; queued</code
-      >、<code>activeRunId</code>、lease、slotを
+      active Runがterminalまたはmissing: status+leaseVersion
+      CASで<code>needs_human -&gt; queued</code>、<code>activeRunId</code>、lease、slotを
       clearし、<code>claimReady=true</code>にする。<code>processing</code>へ直接変更しない。
     </li>
     <li>
@@ -563,8 +596,9 @@ where status &lt;&gt; &#39;execution_archived&#39;;
       <code>QUEUE_ENTRY_CONFLICT</code>。新規Runを開始しない。
     </li>
     <li>
-      Done: resume直後のEntryは<code>queued/no lease/no slot/no activeRun</code
-      >か、変更なしの409だけであり、leaseなし <code>processing</code>が生成されない。
+      Done:
+      resume直後のEntryは<code>queued/no lease/no slot/no activeRun</code>か、変更なしの409だけであり、leaseなし
+      <code>processing</code>が生成されない。
     </li>
   </ul>
   <h3 id="b-t6-同一taskのnon-archive-entryをdbで一意にする">
@@ -579,21 +613,20 @@ where status &lt;&gt; &#39;execution_archived&#39;;
       <code>api/modules/queue/queue-entry-commands.service.ts</code>、B-T0のadmission test
     </li>
     <li>
-      Preflight: migration前に<code>status &lt;&gt; &#39;execution_archived&#39;</code
-      >でtask_id別count&gt;1をread-only queryし、重複時は entry ID/status/task
-      IDを報告して停止する。自動archive/deleteをしない。
+      Preflight:
+      migration前に<code>status &lt;&gt; &#39;execution_archived&#39;</code>でtask_id別count&gt;1をread-only
+      queryし、重複時は entry ID/status/task IDを報告して停止する。自動archive/deleteをしない。
     </li>
     <li>
-      Schema: DrizzleとSQLの双方に<code
-        >task_id WHERE status &lt;&gt; &#39;execution_archived&#39;</code
-      >
+      Schema: DrizzleとSQLの双方に<code>task_id WHERE status &lt;&gt; &#39;execution_archived&#39;</code>
       partial unique indexを追加する。 migration
       file名は実装開始時のjournal末尾が0065であることを再確認してから使用する。
     </li>
     <li>
       Admission: precheckはUX用に残すが正本にしない。SQLite unique violationを409
-      <code>QUEUE_ENTRY_EXISTS</code>へ変換し、 失敗側はTask status/messageを変更しない。Task queued
-      projection、Entry insert、system messageを1 transactionにする。
+      <code>QUEUE_ENTRY_EXISTS</code>へ変換し、 失敗側はTask
+      status/messageを変更しない。Task queued projection、Entry insert、system messageを1
+      transactionにする。
     </li>
     <li>
       Done: 2
@@ -748,8 +781,8 @@ bun run lint
     <li>同一Taskに非archive Queue Entryを複数insertできない。</li>
     <li>CAS loss後のlegacy claimが次候補へ進む。</li>
     <li>
-      無条件<code>updateTaskRun</code>/<code>updateTaskStatus</code>がterminal application
-      pathに残っていない。
+      無条件<code>updateTaskRun</code>/<code>updateTaskStatus</code>がterminal
+      application pathに残っていない。
     </li>
     <li>Area Aのbackground cleanup integrationを含むrace testと限定verificationが成功する。</li>
   </ol>

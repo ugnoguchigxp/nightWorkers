@@ -12,9 +12,7 @@
     </li>
     <li>
       Pre-existing/concurrent dirty paths:
-      このrefactorが追加したpathを除いて45件。作業中にも別scopeの変更が増えているため、各Checkpointで<code
-        >git status --short</code
-      >とpath限定diffを再確認する。
+      このrefactorが追加したpathを除いて45件。作業中にも別scopeの変更が増えているため、各Checkpointで<code>git status --short</code>とpath限定diffを再確認する。
     </li>
   </ul>
   <p>このrefactorが最初のCheckpointで所有するpath:</p>
@@ -76,13 +74,9 @@
   <h3 id="mission-pilotのdomainruntime直接依存">Mission Pilotのdomain/runtime直接依存</h3>
   <ul>
     <li>
-      <code>api/modules/missionPilot/agent/mission-pilot-task-read.adapter.ts</code>がTask、Task
-      Message、Queue、Run tableを直接読む。
+      <code>api/modules/missionPilot/agent/mission-pilot-task-read.adapter.ts</code>がTask、Task Message、Queue、Run tableを直接読む。
     </li>
-    <li>
-      <code>api/modules/missionPilot/agent/mission-pilot-task-action.adapter.ts</code>がTask、Run
-      tableを直接読む。
-    </li>
+    <li><code>api/modules/missionPilot/agent/mission-pilot-task-action.adapter.ts</code>がTask、Run tableを直接読む。</li>
     <li>
       <code>api/modules/missionPilot/agent/mission-pilot-action-command-executor.ts</code
       >が<code>startTaskRun</code>をdynamic importして直接開始する。
@@ -90,7 +84,10 @@
   </ul>
   <h3 id="domain-public-api-inventory">Domain public API inventory</h3>
   <ul>
-    <li><code>review</code>はpublic <code>index.ts</code>を持つ。</li>
+    <li>
+      <code>review</code>はpublic
+      <code>index.ts</code>を持つ。
+    </li>
     <li>
       <code>task</code
       >、<code>run</code>は独立moduleが未作成で、正本query/commandは主に<code>nightworkers</code>配下にある。
@@ -104,7 +101,10 @@
       <code>gitCloseout</code
       >は独立moduleが未作成で、正本処理は主に<code>nightworkers</code>配下にある。
     </li>
-    <li><code>taskOperator</code> moduleとshared contractは実装開始時点で存在しない。</li>
+    <li>
+      <code>taskOperator</code> moduleとshared
+      contractは実装開始時点で存在しない。
+    </li>
   </ul>
   <h2 id="initial-command-parity-gaps">Initial command parity gaps</h2>
   <table>
@@ -141,7 +141,9 @@
       <tr>
         <td>Test/review/rework</td>
         <td>専用互換route/service</td>
-        <td><code>run.test.start</code>、<code>review.*</code></td>
+        <td>
+          <code>run.test.start</code>、<code>review.*</code>
+        </td>
         <td>通常runとは別の意味的開始経路</td>
       </tr>
       <tr>

@@ -61,10 +61,11 @@
     <tbody>
       <tr>
         <td><code>api/modules/specification/specification-verification-sidecar.ts</code></td>
-        <td>検証sectionのbacktick commandだけを<code>commands</code>へ抽出する</td>
         <td>
-          Plan時に具体commandを固定しない方針のため、自然に<code>commands: []</code
-          >になり得る。これは仕様上妥当である
+          検証sectionのbacktick commandだけを<code>commands</code>へ抽出する
+        </td>
+        <td>
+          Plan時に具体commandを固定しない方針のため、自然に<code>commands: []</code>になり得る。これは仕様上妥当である
         </td>
       </tr>
       <tr>
@@ -82,14 +83,18 @@
       </tr>
       <tr>
         <td><code>api/modules/codingAgent/verification/quality-gate.service.ts</code></td>
-        <td>current sourceの成功test evidenceが1件あれば<code>testExecution=true</code>にする</td>
+        <td>
+          current sourceの成功test
+          evidenceが1件あれば<code>testExecution=true</code>にする
+        </td>
         <td>mappingされた個別caseの実行成功を確認していない</td>
       </tr>
       <tr>
         <td><code>api/services/verification/checklist-matcher.ts</code></td>
         <td>command-level exit 0で<code>covered</code>にする</td>
         <td>
-          <code>verificationKind</code>と<code>expectedEvidence</code>の適合性、source
+          <code>verificationKind</code
+          >と<code>expectedEvidence</code>の適合性、source
           freshness、case実行結果を完了条件にしていない
         </td>
       </tr>
@@ -115,7 +120,8 @@
   </table>
   <p>
     直近の再現Runでは、required conditionが7件、test-condition mappingが0件、verification evidence
-    runが0件、Verification Documentの<code>commands</code>が0件だった。Coding Agentはraw
+    runが0件、Verification
+    Documentの<code>commands</code>が0件だった。Coding Agentはraw
     shellで検証を実行して完了本文を返したが、structured
     closeoutは全条件を未確認として<code>needs_review</code>へ遷移した。
   </p>
@@ -146,11 +152,15 @@ Run completion ready
   AND final candidateとrevisionがcurrent
 </code></pre>
   <p>
-    stored statusは履歴として維持する。source変更後に過去の<code>passed</code>を削除せず、read
+    stored
+    statusは履歴として維持する。source変更後に過去の<code>passed</code>を削除せず、read
     model上で<code>stale</code>へ投影する。
   </p>
   <h3 id="section-32-commands-の意味">3.2 <code>commands: []</code>の意味</h3>
-  <p>Feature Planの<code>commands</code>は任意の初期hintであり、完了条件の一覧ではない。</p>
+  <p>
+    Feature
+    Planの<code>commands</code>は任意の初期hintであり、完了条件の一覧ではない。
+  </p>
   <ul>
     <li><code>commands: []</code>だけを理由にPlan生成を失敗させない。</li>
     <li>
@@ -175,7 +185,10 @@ Run completion ready
   <p>automated test conditionには、次の両方を要求する。</p>
   <ol>
     <li>current inventory上のactive testcaseとconditionの明示mapping。</li>
-    <li>同じcase identityを持つcurrent execution evidenceの<code>passed</code>。</li>
+    <li>
+      同じcase identityを持つcurrent execution
+      evidenceの<code>passed</code>。
+    </li>
   </ol>
   <p>
     repository全体で何らかのtest commandがexit
@@ -184,8 +197,9 @@ Run completion ready
   <h3 id="section-34-raw-shell結果の扱い">3.4 raw shell結果の扱い</h3>
   <p>
     直接shell commandのstdout、exit code、assistant本文は観測履歴として保持するが、managed
-    evidenceの正本にはしない。<code>run_check</code>と同じserver-side authority、workspace
-    snapshot、revision、artifact freshness検証を通っていない結果を後付けで自動昇格しない。
+    evidenceの正本にはしない。<code>run_check</code>と同じserver-side
+    authority、workspace snapshot、revision、artifact
+    freshness検証を通っていない結果を後付けで自動昇格しない。
   </p>
   <p>
     Coding Agentがraw shellを先に使った場合は、completion
@@ -227,19 +241,27 @@ Run completion ready
     <tbody>
       <tr>
         <td>
-          <code>automated_test</code> / <code>unit_test</code> / <code>integration_test</code> /
+          <code>automated_test</code> /
+          <code>unit_test</code> /
+          <code>integration_test</code> /
           <code>e2e_test</code>
         </td>
         <td>
-          current active case、明示mapping、適合するevidence kind、同一case keyの<code>passed</code>
+          current active case、明示mapping、適合するevidence kind、同一case keyの<code
+            >passed</code
+          >
           execution
         </td>
         <td>mappingだけ、command exit 0だけ、case不明、skip、0件、runner不一致</td>
       </tr>
       <tr>
         <td>
-          <code>command_gate</code> / <code>typecheck</code> / <code>lint</code> /
-          <code>format_check</code> / <code>build</code> / <code>coverage</code> /
+          <code>command_gate</code> /
+          <code>typecheck</code> /
+          <code>lint</code> /
+          <code>format_check</code> /
+          <code>build</code> /
+          <code>coverage</code> /
           <code>migration_check</code>
         </td>
         <td>
@@ -248,12 +270,18 @@ Run completion ready
         <td>unrelatedなverify成功、conditionIdsなし、kind不一致、stale evidence</td>
       </tr>
       <tr>
-        <td><code>manual</code> / <code>manual_evidence</code></td>
+        <td>
+          <code>manual</code> /
+          <code>manual_evidence</code>
+        </td>
         <td>
           task/run/conditionへboundされたuserまたはreviewerの明示確認、actor
           provenance、対象revision/source
         </td>
-        <td>condition作成時の<code>manual</code> status、Coding Agentの自己申告だけ</td>
+        <td>
+          condition作成時の<code>manual</code> status、Coding
+          Agentの自己申告だけ
+        </td>
       </tr>
       <tr>
         <td><code>not_applicable</code></td>
@@ -327,13 +355,14 @@ Run completion ready
   <p><code>verification_evidence_cases</code>へ次を追加する。</p>
   <ul>
     <li>
-      <code>case_key</code>: inventory caseと同じcanonical identity。structured
-      adapterが解決できない場合はnull。
+      <code>case_key</code>: inventory caseと同じcanonical
+      identity。structured adapterが解決できない場合はnull。
     </li>
     <li><code>runner</code>: 実行caseのrunner。</li>
     <li>
       <code>evidence_kind</code>:
-      <code>unit_test</code>、<code>integration_test</code>、<code>e2e_test</code>等の明示種別。
+      <code>unit_test</code
+      >、<code>integration_test</code>、<code>e2e_test</code>等の明示種別。
     </li>
   </ul>
   <p>
@@ -342,7 +371,10 @@ Run completion ready
     evaluatorでは<code>details_missing</code>とする。旧rowを推測でpassへmigrationしない。
   </p>
   <h3 id="section-62-manual-confirmation">6.2 manual confirmation</h3>
-  <p>manual conditionを作成時から完了扱いにしない。初期statusを<code>pending</code>に変更する。</p>
+  <p>
+    manual
+    conditionを作成時から完了扱いにしない。初期statusを<code>pending</code>に変更する。
+  </p>
   <p>
     既存のReview/evidence
     eventからactor、task、run、condition、source/revisionを構造的に検証できる場合はそれを利用する。現在のeventで不足する場合だけ、Coding
@@ -359,7 +391,8 @@ Run completion ready
       中間projectionでありcompletion statusではない。
     </li>
     <li>
-      <code>passed</code>: 保存時点でadmissibleだった証跡のprojection。current判定は必ず再評価する。
+      <code>passed</code>:
+      保存時点でadmissibleだった証跡のprojection。current判定は必ず再評価する。
     </li>
     <li><code>failed</code>: 最新の明示的反証projection。</li>
     <li><code>not_applicable</code>: requiredでないconditionだけ。</li>
@@ -404,8 +437,8 @@ src/modules/codingAgent/
   <p>実装前に、現在誤判定するケースをfailing testとして固定する。</p>
   <ol>
     <li>
-      required automated conditions、<code>commands: []</code>、raw shell成功、managed
-      evidenceなしは未完了。
+      required automated conditions、<code>commands: []</code>、raw
+      shell成功、managed evidenceなしは未完了。
     </li>
     <li>mappingあり、repository内の別testが成功しただけでは未完了。</li>
     <li>mappingしたcase自身のcurrent executionが成功すれば完了。</li>
@@ -428,7 +461,10 @@ src/modules/codingAgent/
       Native API tool manifest、Codex MCP schema、result
       projectorが同じcontractを参照するようにする。
     </li>
-    <li>legacy evidence rowを保持し、分類不能なrowは<code>details_missing</code>として返す。</li>
+    <li>
+      legacy evidence
+      rowを保持し、分類不能なrowは<code>details_missing</code>として返す。
+    </li>
   </ol>
   <p>完了条件:</p>
   <ul>
@@ -438,7 +474,9 @@ src/modules/codingAgent/
   </ul>
   <h3 id="phase-2-condition-assurance-evaluator">Phase 2: condition assurance evaluator</h3>
   <ol>
-    <li>current <code>sourceStateHash</code>にboundされたevidenceだけを候補にする。</li>
+    <li>
+      current <code>sourceStateHash</code>にboundされたevidenceだけを候補にする。
+    </li>
     <li>
       active inventory case、declared case-scoped markerまたはschema mapping、execution
       caseを<code>caseKey</code>で結合する。
@@ -455,7 +493,8 @@ src/modules/codingAgent/
   <h3 id="phase-3-structured-execution-evidence">Phase 3: structured execution evidence</h3>
   <ol>
     <li>
-      <code>run_check</code>へ<code>evidenceKinds</code>を追加し、conditionIdsとexpected
+      <code>run_check</code
+      >へ<code>evidenceKinds</code>を追加し、conditionIdsとexpected
       evidenceの構造的適合をserver側で検証する。
     </li>
     <li>
@@ -472,7 +511,8 @@ src/modules/codingAgent/
       conditionへ流用しない。
     </li>
     <li>
-      <code>run_check</code>実行前後のsource snapshot、report artifact digest、作成時刻を検証する。
+      <code>run_check</code>実行前後のsource snapshot、report artifact
+      digest、作成時刻を検証する。
     </li>
   </ol>
   <p>
@@ -482,15 +522,18 @@ src/modules/codingAgent/
   <h3 id="phase-4-completion-checkとcloseoutの統合">Phase 4: completion checkとcloseoutの統合</h3>
   <ol>
     <li>
-      <code>completion_check</code>、<code>evaluateCodingAgentCompletionReadiness</code>、Codex
-      closeoutをPhase 2の同一evaluatorへ統合する。
+      <code>completion_check</code
+      >、<code>evaluateCodingAgentCompletionReadiness</code>、Codex closeoutをPhase
+      2の同一evaluatorへ統合する。
     </li>
     <li>
-      closeoutはstatic <code>plan.commands</code>を実行した後、既存runtime evidenceを含む全current
-      evidenceを再評価する。
+      closeoutはstatic <code>plan.commands</code>を実行した後、既存runtime
+      evidenceを含む全current evidenceを再評価する。
     </li>
     <li><code>successfulConditionIds</code>をcommand exit codeから直接作らない。</li>
-    <li><code>commands: []</code>でもcurrent evidenceが揃っていればpassさせる。</li>
+    <li>
+      <code>commands: []</code>でもcurrent evidenceが揃っていればpassさせる。
+    </li>
     <li>
       不足時はcondition ID、reason code、expected evidence、利用可能なevidence refsをtyped
       discrepancyとして返す。
@@ -556,7 +599,10 @@ src/modules/codingAgent/
   <p>metric/eventには少なくとも次を残す。</p>
   <ul>
     <li>required condition総数と<code>safe_pass</code>数</li>
-    <li><code>unmapped</code>、<code>details_missing</code>、<code>stale</code>の件数</li>
+    <li>
+      <code>unmapped</code
+      >、<code>details_missing</code>、<code>stale</code>の件数
+    </li>
     <li>terminal前reconciliation回数と解消率</li>
     <li>raw shell後にmanaged rerunが必要になった件数</li>
     <li><code>commands: []</code>のRunにおけるcompletion率</li>
@@ -564,8 +610,8 @@ src/modules/codingAgent/
   <h2 id="section-9-受け入れ条件">9. 受け入れ条件</h2>
   <ul>
     <li>
-      [AC-001] Verification Documentの<code>commands</code>が空でも、current managed
-      evidenceが全required conditionを満たせばRunを完了できる。
+      [AC-001] Verification Documentの<code>commands</code>が空でも、current
+      managed evidenceが全required conditionを満たせばRunを完了できる。
     </li>
     <li>
       [AC-002] raw shellのexit 0またはassistantの完了申告だけではrequired conditionを完了できない。
@@ -601,8 +647,8 @@ src/modules/codingAgent/
       assuranceは独立して評価され、一方の成功でもう一方を補完しない。
     </li>
     <li>
-      [AC-011] <code>completion_check</code>、Native API finalize、Codex SDK finalize、Evidence
-      Check UIが同じassurance contractとreason codeを使う。
+      [AC-011] <code>completion_check</code>、Native API finalize、Codex SDK
+      finalize、Evidence Check UIが同じassurance contractとreason codeを使う。
     </li>
     <li>
       [AC-012] Codex SDK laneは未達条件をterminal前に同じRunへ返し、Coding
@@ -625,9 +671,8 @@ src/modules/codingAgent/
       workflowや意味別modeを追加しない。
     </li>
     <li>
-      [AC-017] focused test、S11t lint/check、architecture check、typecheck、backend build、<code
-        >bun run verify</code
-      >が成功する。
+      [AC-017] focused test、S11t lint/check、architecture check、typecheck、backend
+      build、<code>bun run verify</code>が成功する。
     </li>
   </ul>
   <h2 id="section-10-受け入れ条件とtestのtraceability">10. 受け入れ条件とtestのtraceability</h2>
@@ -651,9 +696,7 @@ src/modules/codingAgent/
       <tr>
         <td>AC-001, AC-002</td>
         <td>
-          <code>tests/coding-agent-acceptance-condition-assurance.test.ts</code>、<code
-            >tests/coding-agent-test-evidence-mapping-integration.test.ts</code
-          >
+          <code>tests/coding-agent-acceptance-condition-assurance.test.ts</code>、<code>tests/coding-agent-test-evidence-mapping-integration.test.ts</code>
         </td>
         <td>
           <code>commands: []</code>相当でもcurrent managed evidenceはpassし、raw
@@ -673,18 +716,14 @@ src/modules/codingAgent/
       <tr>
         <td>AC-007, AC-008, AC-010</td>
         <td>
-          <code>tests/coding-agent-acceptance-condition-assurance.test.ts</code>、<code
-            >tests/coding-agent-run-check-evidence-scope.test.ts</code
-          >
+          <code>tests/coding-agent-acceptance-condition-assurance.test.ts</code>、<code>tests/coding-agent-run-check-evidence-scope.test.ts</code>
         </td>
         <td>evidence kind AND評価、command scope、入力scope検証、Full Verify独立性</td>
       </tr>
       <tr>
         <td>AC-009</td>
         <td>
-          <code>tests/coding-agent-manual-condition-evidence.test.ts</code>、<code
-            >tests/coding-agent-run-check-evidence-scope.test.ts</code
-          >
+          <code>tests/coding-agent-manual-condition-evidence.test.ts</code>、<code>tests/coding-agent-run-check-evidence-scope.test.ts</code>
         </td>
         <td>
           initial pending、actor authority、Run/source
@@ -694,9 +733,7 @@ src/modules/codingAgent/
       <tr>
         <td>AC-011</td>
         <td>
-          <code>tests/coding-agent-completion-readiness.test.ts</code>、<code
-            >tests/coding-agent-evidence-check-query.test.ts</code
-          >
+          <code>tests/coding-agent-completion-readiness.test.ts</code>、<code>tests/coding-agent-evidence-check-query.test.ts</code>
         </td>
         <td>service間でassurance/reasonが一致</td>
       </tr>
@@ -708,9 +745,7 @@ src/modules/codingAgent/
       <tr>
         <td>AC-013</td>
         <td>
-          <code>tests/coding-agent-test-evidence-mapping-integration.test.ts</code>、<code
-            >tests/services.verification-checklist.test.ts</code
-          >
+          <code>tests/coding-agent-test-evidence-mapping-integration.test.ts</code>、<code>tests/services.verification-checklist.test.ts</code>
         </td>
         <td>evidence評価でTodo/Runが更新されない</td>
       </tr>
@@ -761,7 +796,8 @@ bun run verify
     <li>schema migrationとstrict evaluatorのread-only projectionを先に配備する。</li>
     <li>terminal admissionへ接続する前に、現行判定との差分をevent/metricでcanary観測する。</li>
     <li>
-      <code>details_missing</code>になった旧evidenceの比率、<code>commands: []</code>のRun、manual
+      <code>details_missing</code
+      >になった旧evidenceの比率、<code>commands: []</code>のRun、manual
       condition、Codex reconciliationの収束を確認する。
     </li>
     <li>Native APIとCodex SDKを同じreleaseでstrict admissionへ切り替える。</li>
@@ -795,8 +831,8 @@ bun run verify
     <li>UI、observability、canary、full verificationを完了する。</li>
   </ol>
   <p>
-    最初のvertical sliceは、<code>commands: []</code>、Vitest testcase mapping、current structured
-    execution、completion reconciliationを1本のintegration
+    最初のvertical sliceは、<code>commands: []</code>、Vitest testcase
+    mapping、current structured execution、completion reconciliationを1本のintegration
     testで通す。これにより、toolやschemaだけを追加して実Runから利用されない状態を先に防ぐ。
   </p>
   <h2 id="section-14-実装結果">14. 実装結果</h2>
@@ -807,12 +843,13 @@ bun run verify
       compatibilityを<code>shared/modules/codingAgent</code>と<code>api/modules/codingAgent</code>へ集約した。
     </li>
     <li>
-      migration <code>0060_acceptance_condition_assurance.sql</code>でcase identity、evidence
-      kind、manual confirmationを追加し、legacy rowを保持した。
+      migration <code>0060_acceptance_condition_assurance.sql</code>でcase identity、evidence kind、manual
+      confirmationを追加し、legacy rowを保持した。
     </li>
     <li>
-      <code>run_check</code>は実行前のTask/Run/Document/condition/evidence kind検証、Vitest/JUnit
-      structured result、current source snapshotをmanaged evidenceとして保存する。
+      <code>run_check</code>は実行前のTask/Run/Document/condition/evidence
+      kind検証、Vitest/JUnit structured result、current source snapshotをmanaged
+      evidenceとして保存する。
     </li>
     <li>
       completion check、quality gate、Evidence Check、Native finalize、Codex SDK
@@ -836,9 +873,8 @@ bun run verify
     <li>focused acceptance matrix: 14 test files、58 tests pass。</li>
     <li>
       <code>s11tnext:lint</code
-      >、<code>s11tnext:check</code>、<code>check:architecture</code>、<code>typecheck</code>、<code>build:backend</code>、<code
-        >bun run verify</code
-      >: pass。
+      >、<code>s11tnext:check</code>、<code>check:architecture</code>、<code>typecheck</code>、<code>build:backend</code>、<code>bun run verify</code>:
+      pass。
     </li>
   </ul>
   <p>

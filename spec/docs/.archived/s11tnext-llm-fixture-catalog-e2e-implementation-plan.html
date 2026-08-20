@@ -23,7 +23,8 @@
     </li>
     <li>
       Source guidance:
-      <code>AGENTS.md</code>と<code>spec/s11t-coding-agent-guide.md</code>を実装時の上位規則とする
+      <code>AGENTS.md</code
+      >と<code>spec/s11t-coding-agent-guide.md</code>を実装時の上位規則とする
     </li>
   </ul>
   <h2 id="section-1-目的">1. 目的</h2>
@@ -112,7 +113,10 @@
     <li>tool arguments。</li>
     <li>turn順序。</li>
     <li><code>previous_tool_failed</code>等の構造的condition。</li>
-    <li><code>taskRevision</code>、<code>latestRunId</code>等の動的placeholder。</li>
+    <li>
+      <code>taskRevision</code
+      >、<code>latestRunId</code>等の動的placeholder。
+    </li>
     <li>scenario enum。</li>
     <li>E2E routeのauthorization / isolation guard。</li>
   </ul>
@@ -130,7 +134,9 @@
   <p>Taskごとのfixture turn / structured output queueはprocess memoryだけに保持する。</p>
   <ul>
     <li>SQLiteへ保存しない。</li>
-    <li>Authorization、API key、<code>.env</code>内容をfixtureへ渡さない。</li>
+    <li>
+      Authorization、API key、<code>.env</code>内容をfixtureへ渡さない。
+    </li>
     <li>raw provider requestを記録しない。</li>
     <li>E2E process終了時に全stateを破棄する。</li>
     <li>Task cleanup時にfixture stateを明示解放できるAPIを用意する。</li>
@@ -180,8 +186,8 @@
   </ul>
   <h3 id="section-33-tool-turn-fixture-provider">3.3 tool-turn fixture provider</h3>
   <p>
-    <code>api/services/structured-llm/fixture-tool-provider.ts</code>はTask
-    IDごとのturn配列をprocess memoryへ登録し、provider-native tool turnとして順に返す。
+    <code>api/services/structured-llm/fixture-tool-provider.ts</code>はTask IDごとのturn配列をprocess
+    memoryへ登録し、provider-native tool turnとして順に返す。
   </p>
   <p>現在すでに存在する能力:</p>
   <ul>
@@ -195,10 +201,7 @@
   </ul>
   <p>本計画ではこのprovider contractを維持する。</p>
   <h3 id="section-34-mission-pilot-e2e-fixture">3.4 Mission Pilot E2E fixture</h3>
-  <p>
-    <code>api/modules/missionPilot/routes/mission-pilot-agent-fixture-routes.ts</code
-    >は次のscenarioを持つ。
-  </p>
+  <p><code>api/modules/missionPilot/routes/mission-pilot-agent-fixture-routes.ts</code>は次のscenarioを持つ。</p>
   <ul>
     <li>Questionnaire。</li>
     <li><code>autopilot</code>。</li>
@@ -212,7 +215,8 @@
   </p>
   <h3 id="section-35-coding-agent-nativeapi-lane">3.5 Coding Agent native/API lane</h3>
   <p>
-    Coding Agentの<code>native-api-runner</code>は<code>callProviderToolTurn</code>をprovider
+    Coding
+    Agentの<code>native-api-runner</code>は<code>callProviderToolTurn</code>をprovider
     portとして使用する。したがって、Codex SDKを模倣せず、E2Eのruntime
     laneを<code>native-api-runner</code>へ固定すれば、同じfixture providerとfixture
     catalogを利用できる。
@@ -381,7 +385,10 @@ codingAgent.directRun.complete
   </p>
   <p>既存inline literalとrender後本文のUTF-8 byte列が一致することをmigration testで確認する。</p>
   <h3 id="section-65-locale">6.5 locale</h3>
-  <p>E2E fixture catalogは<code>ja-JP</code>を明示し、<code>fallbackLocales = []</code>とする。</p>
+  <p>
+    E2E fixture
+    catalogは<code>ja-JP</code>を明示し、<code>fallbackLocales = []</code>とする。
+  </p>
   <ul>
     <li>General Settingsのlanguageへ連動しない。</li>
     <li>requestごとにlocaleを切り替えない。</li>
@@ -404,12 +411,18 @@ export function renderLlmFixtureText&lt;K extends PromptKey&gt;(
   <p>実装規則:</p>
   <ol>
     <li>artifact JSONはstatic importする。</li>
-    <li>runtime境界ではartifactを<code>unknown</code>としてgenerated factoryへ渡す。</li>
+    <li>
+      runtime境界ではartifactを<code>unknown</code>としてgenerated
+      factoryへ渡す。
+    </li>
     <li><code>expectedCatalogDigest</code>検証を迂回しない。</li>
     <li>generated TypeScriptを手編集しない。</li>
     <li><code>bindText()</code>を一度だけ作成し、固定bindingを再利用する。</li>
     <li><code>createTextRenderer()</code>を使用しない。</li>
-    <li>production SystemContextの<code>p()</code>、locale scope、auditへ接続しない。</li>
+    <li>
+      production SystemContextの<code>p()</code>、locale
+      scope、auditへ接続しない。
+    </li>
     <li>fixture key不明、digest不一致、不正artifactはfail-closeする。</li>
   </ol>
   <h2 id="section-8-fixture-provider-contract">8. Fixture Provider Contract</h2>
@@ -433,8 +446,8 @@ export function renderLlmFixtureText&lt;K extends PromptKey&gt;(
 ): FixtureTurn;
 </code></pre>
   <p>
-    providerはS11tnext keyを知らない。providerへ渡る時点では従来どおり<code>content: string</code
-    >である。
+    providerはS11tnext
+    keyを知らない。providerへ渡る時点では従来どおり<code>content: string</code>である。
   </p>
   <h3 id="section-82-structured-text-outputs">8.2 structured text outputs</h3>
   <p>
@@ -512,8 +525,11 @@ clearFixtureProviderTask(taskId: string): void;
   <ol>
     <li><code>git status --short</code>を保存し、既存変更へ触れない。</li>
     <li>
-      <code>package.json</code>と<code>bun.lock</code>から<code>s11tnext</code> /
-      <code>s11tnext-cli</code>の一致を確認する。
+      <code>package.json</code
+      >と<code>bun.lock</code>から<code
+        >s11tnext</code
+      >
+      / <code>s11tnext-cli</code>の一致を確認する。
     </li>
     <li>現在のMission Pilot fixture turn列をscenario別にsnapshot化する。</li>
     <li>
@@ -556,7 +572,9 @@ s11tnext:fixtures:check
     <li>lint、build、stale checkが成功する。</li>
     <li>generated key / valuesが型検査される。</li>
     <li>catalog digest不一致がfail-closeする。</li>
-    <li><code>ja-JP</code>、no fallback、no trailing newlineが固定される。</li>
+    <li>
+      <code>ja-JP</code>、no fallback、no trailing newlineが固定される。
+    </li>
     <li>production SystemContext catalogと生成物に差分がない。</li>
     <li>新規dependencyがない。</li>
   </ul>
@@ -573,7 +591,9 @@ s11tnext:fixtures:check
   <p>手順:</p>
   <ol>
     <li>各assistant本文を意味単位のTOMLへ移す。</li>
-    <li><code>buildAgentScenarioTurns()</code>とhelperの本文引数をfixture keyへ置き換える。</li>
+    <li>
+      <code>buildAgentScenarioTurns()</code>とhelperの本文引数をfixture keyへ置き換える。
+    </li>
     <li>tool call、arguments、condition、順序を変更しない。</li>
     <li>rendered本文とbaseline本文のbyte equalityを検証する。</li>
     <li>
@@ -1041,12 +1061,15 @@ bun run verify:e2e
   <h2 id="section-16-implementation-handoff-checklist">16. Implementation Handoff Checklist</h2>
   <p>実装担当は開始前に次を確認する。</p>
   <ul>
-    <li><input disabled="" type="checkbox" /> <code>AGENTS.md</code>を読んだ。</li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>AGENTS.md</code>を読んだ。
+    </li>
     <li>
       <input disabled="" type="checkbox" /> <code>spec/s11t-coding-agent-guide.md</code>を読んだ。
     </li>
     <li>
-      <input disabled="" type="checkbox" /> <code>git status --short</code>で既存差分を記録した。
+      <input disabled="" type="checkbox" />
+      <code>git status --short</code>で既存差分を記録した。
     </li>
     <li>
       <input disabled="" type="checkbox" /> 現行<code>s11tnext</code> /
@@ -1057,7 +1080,9 @@ bun run verify:e2e
       <input disabled="" type="checkbox" /> test専用catalogをproduction SystemContext
       catalogから分離した。
     </li>
-    <li><input disabled="" type="checkbox" /> <code>trailingNewline: false</code>を固定した。</li>
+    <li>
+      <input disabled="" type="checkbox" /> <code>trailingNewline: false</code>を固定した。
+    </li>
     <li><input disabled="" type="checkbox" /> TOMLと生成物を同時更新した。</li>
     <li><input disabled="" type="checkbox" /> generated TypeScriptを手編集していない。</li>
     <li><input disabled="" type="checkbox" /> tool call構造をTOMLへ移していない。</li>

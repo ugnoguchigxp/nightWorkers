@@ -13,8 +13,13 @@
     <li>User decisions confirmed: 2026-07-15</li>
     <li>Implementation status: completed 2026-07-15</li>
     <li>
-      Verification: <code>bun run verify</code>、<code>bun run test</code>（316 files / 1935
-      tests）、<code>bun run check:architecture</code>、<code>bun run check:docs</code> green
+      Verification:
+      <code>bun run verify</code
+      >、<code>bun run test</code>（316 files / 1935
+      tests）、<code>bun run check:architecture</code>、<code
+        >bun run check:docs</code
+      >
+      green
     </li>
   </ul>
   <h3 id="implementation-result">Implementation Result</h3>
@@ -190,7 +195,8 @@
     profileを作らない。将来必要になった場合は旧設計を復活させず、要件からゼロベースで設計する。
   </p>
   <p>
-    既存の<code>executionMode</code>、Test / Review API、UI操作、専用prompt、専用routeはproduction
+    既存の<code>executionMode</code>、Test / Review
+    API、UI操作、専用prompt、専用routeはproduction
     pathから削除する。過去Runのmode値は履歴表示用のread-only dataとしてのみ残せる。
   </p>
   <h3 id="section-32-必須system-context">3.2 必須System Context</h3>
@@ -302,7 +308,8 @@
 </code></pre>
   <p>
     status区分は、<code>pending</code> /
-    <code>running</code>を作業中、<code>needs_human</code>をユーザー回答待ちのpause、<code
+    <code>running</code
+    >を作業中、<code>needs_human</code>をユーザー回答待ちのpause、<code
       >passed</code
     >
     /
@@ -327,14 +334,20 @@
       </tr>
       <tr>
         <td><code>description</code></td>
-        <td>互換readを維持し、<code>objective</code> / <code>context</code>へ移行</td>
+        <td>
+          互換readを維持し、<code>objective</code> /
+          <code>context</code>へ移行
+        </td>
       </tr>
       <tr>
         <td><code>taskType</code></td>
         <td>UI分類の任意metadataへ降格。runtime分岐に使わない</td>
       </tr>
       <tr>
-        <td><code>procedureId</code> / <code>procedureSnapshot</code></td>
+        <td>
+          <code>procedureId</code> /
+          <code>procedureSnapshot</code>
+        </td>
         <td>既存表示の互換readのみ。新規agent制御には使わない</td>
       </tr>
       <tr>
@@ -473,14 +486,18 @@ Current Todo detail
     assistantがtool callなしの本文を返した場合、その本文をfinal candidateとして保存する。Coding
     Agent Runでも固定<code>needs_human</code>本文へ差し替えない。
   </p>
-  <p>Runを<code>completed</code>へ遷移する際、次の決定的整合性だけを確認する。</p>
+  <p>
+    Runを<code>completed</code>へ遷移する際、次の決定的整合性だけを確認する。
+  </p>
   <ul>
     <li><code>running</code> Todoがない。</li>
     <li>
-      <code>pending</code> Todoがない。不要になったTodoはLLMが<code>skipped</code>へ明示遷移する。
+      <code>pending</code>
+      Todoがない。不要になったTodoはLLMが<code>skipped</code>へ明示遷移する。
     </li>
     <li>
-      <code>needs_human</code> Todoがない。存在する場合はRunをcompletedにせずpause状態を維持する。
+      <code>needs_human</code>
+      Todoがない。存在する場合はRunをcompletedにせずpause状態を維持する。
     </li>
     <li>Todo revisionが読み取り時から変わっていない。</li>
     <li>必須approval待ちのside effectがない。</li>
@@ -678,27 +695,39 @@ Current Todo detail
     <li><code>native-api-startup-controller.ts</code>の固定startup sequence。</li>
     <li><code>native-api-startup-todos.ts</code>の固定Todo生成・完了。</li>
     <li><code>native-api-runner-routing.ts</code>の本文・error文字列classifier。</li>
-    <li>implementation / test / reviewごとの<code>toolChoice: required</code>とmode分岐。</li>
-    <li>implementationでtool callがないときの固定<code>needs_human</code> response。</li>
-    <li>current Todoの<code>taskType</code> / <code>procedureId</code>に応じたtool公開切替。</li>
-    <li><code>todo-list-builder.ts</code>の固定prep、quality gate、completion report Todo。</li>
+    <li>
+      implementation / test / reviewごとの<code>toolChoice: required</code>とmode分岐。
+    </li>
+    <li>
+      implementationでtool callがないときの固定<code>needs_human</code>
+      response。
+    </li>
+    <li>
+      current Todoの<code>taskType</code> /
+      <code>procedureId</code>に応じたtool公開切替。
+    </li>
+    <li>
+      <code>todo-list-builder.ts</code>の固定prep、quality gate、completion report Todo。
+    </li>
     <li>Task本文やtitleのregexによるmigration / E2E / feature分類。</li>
     <li>command文字列のregex分類を根拠とするTodo完了とquality gate完了。</li>
     <li><code>ledger-sink.ts</code>からのTodo自動closeと次Todo自動start。</li>
     <li><code>native-api-finalize.ts</code>からの最終Todo直接完了。</li>
-    <li><code>finalize_answer</code>専用tool。通常のassistant final textを終了候補にする。</li>
+    <li>
+      <code>finalize_answer</code>専用tool。通常のassistant final
+      textを終了候補にする。
+    </li>
     <li>final response後に別threadを開始するCodex recovery prompt。</li>
     <li>current Todo完了を促すCodex checkpoint prompt。</li>
-    <li>
-      <code>RunControlPhase = active | recovery | closeout | terminal</code>を使うsemantic state
-      machine。
-    </li>
+    <li><code>RunControlPhase = active | recovery | closeout | terminal</code>を使うsemantic state machine。</li>
     <li>consecutive no-progressによる固定recovery action。</li>
     <li>Test完了後のReview自動開始、Review後の固定closeout。</li>
     <li>Test mode / Review modeのruntime route、専用prompt、専用UI action。</li>
     <li>LLM本文をschema error、gate error、tool不足の固定文へ差し替える処理。</li>
     <li>import失敗後にhostが別のimport / implementation pathを選ぶfallback。</li>
-    <li><code>new_context</code>時に履歴を要約なしの固定baselineへresetする処理。</li>
+    <li>
+      <code>new_context</code>時に履歴を要約なしの固定baselineへresetする処理。
+    </li>
   </ul>
   <h3 id="section-54-観測用途に限定して残せるclassifier">5.4 観測用途に限定して残せるclassifier</h3>
   <p>
@@ -781,7 +810,9 @@ Current Todo detail
       新runtimeの<code>dependsOn</code>をTodo IDへ統一する。legacy
       dependencyは新runtimeへ変換しない。
     </li>
-    <li><code>TodoMutationService</code>を作り、UIとLLM toolを同じserviceへ接続する。</li>
+    <li>
+      <code>TodoMutationService</code>を作り、UIとLLM toolを同じserviceへ接続する。
+    </li>
     <li>Todo操作を<code>id + expectedRevision</code>へ変更する。</li>
     <li><code>transition + optional nextTodoId</code>を一transactionで実行する。</li>
     <li>event ledger、startup、finalizeからのTodo mutationを停止する。</li>
@@ -813,7 +844,10 @@ Current Todo detail
       builderへ集約する。
     </li>
     <li>implementation / test / review promptを削除し、単一System Contextへ置き換える。</li>
-    <li><code>PlanSummary</code>と<code>CurrentTodoContext</code>のversion付きschemaを作る。</li>
+    <li>
+      <code>PlanSummary</code
+      >と<code>CurrentTodoContext</code>のversion付きschemaを作る。
+    </li>
     <li>Native APIとCodex SDKへ同じSystem ContextとTodo Contextを注入する。</li>
     <li>
       current TodoにSystem Context snapshot、next action、last failure、attempt countを含める。
@@ -830,14 +864,14 @@ Current Todo detail
   <h3 id="phase-3-native-api-agent-loopの縮小">Phase 3: Native API agent loopの縮小</h3>
   <p>実施:</p>
   <ol>
-    <li><code>native-api-run-coordinator.ts</code>からstartup flagsとphase routingを除去する。</li>
     <li>
-      loopを<code>model call -&gt; explicit tool calls -&gt; typed results -&gt; model call</code
-      >へ縮小する。
+      <code>native-api-run-coordinator.ts</code>からstartup flagsとphase routingを除去する。
     </li>
+    <li>loopを<code>model call -&gt; explicit tool calls -&gt; typed results -&gt; model call</code>へ縮小する。</li>
     <li>
-      implementation / test / reviewのmode分岐と<code>toolChoice: required</code
-      >を外す。ただし最初のturnではTodo mutation toolの実行を必須とする。
+      implementation / test /
+      reviewのmode分岐と<code>toolChoice: required</code>を外す。ただし最初のturnではTodo
+      mutation toolの実行を必須とする。
     </li>
     <li>tool callなしのassistant本文をfinal candidateとして扱う。</li>
     <li>tool parse / validation failureをmodel-visible resultへ変換する。</li>
@@ -877,7 +911,9 @@ Current Todo detail
   <h3 id="phase-5-run-controlとfinalizationの縮小">Phase 5: Run Controlとfinalizationの縮小</h3>
   <p>実施:</p>
   <ol>
-    <li><code>RunControlState</code>からsemantic phaseとrecovery counterを除去する。</li>
+    <li>
+      <code>RunControlState</code>からsemantic phaseとrecovery counterを除去する。
+    </li>
     <li>
       action identity、idempotency、revision、effect
       logを<code>ActionExecutionJournal</code>へ抽出する。
@@ -919,7 +955,9 @@ Current Todo detail
   <p>実施:</p>
   <ol>
     <li>5.3の削除対象file / function / testを削除する。</li>
-    <li><code>spec/architecture.md</code>からTest / Review modeと固定lifecycleを除去する。</li>
+    <li>
+      <code>spec/architecture.md</code>からTest / Review modeと固定lifecycleを除去する。
+    </li>
     <li>MCP tool descriptionからmanaged fixed gateの説明を除去する。</li>
     <li>AGENTS規則と新runtime contractの整合を確認する。</li>
     <li>互換期間終了後、seq指定Todo mutationと旧field writeを削除する。</li>
@@ -933,7 +971,10 @@ Current Todo detail
   <ul>
     <li>legacy runtime pathとTest / Review modeがproduction bundleに含まれない。</li>
     <li>固定gate、auto Todo close、recovery promptのdead codeがない。</li>
-    <li><code>bun run check:architecture</code>と<code>bun run check:docs</code>がgreen。</li>
+    <li>
+      <code>bun run check:architecture</code
+      >と<code>bun run check:docs</code>がgreen。
+    </li>
     <li>rollback flagを削除済み。</li>
   </ul>
   <h2 id="section-8-verification-plan">8. Verification Plan</h2>
@@ -950,7 +991,9 @@ Current Todo detail
     <li><code>nextTodoId</code>未指定時にhostが次Todoを開始しない。</li>
     <li>tool failureを記録してもTodoはrunningのままでattempt countが増える。</li>
     <li>skipped / needs_humanのreasonが保持される。</li>
-    <li>ユーザー回答による<code>resume</code>で同じTodoへ回答Contextが追記され、runningへ戻る。</li>
+    <li>
+      ユーザー回答による<code>resume</code>で同じTodoへ回答Contextが追記され、runningへ戻る。
+    </li>
     <li>新runtime Sessionのresume後もplan revisionとcurrent Todoが一致する。</li>
   </ul>
   <h3 id="section-82-agent-loop-tests">8.2 Agent loop tests</h3>
@@ -960,7 +1003,9 @@ Current Todo detail
     <li>invalid argumentsがtyped tool resultとしてmodelへ戻る。</li>
     <li>tool domain failure後にmodelが別actionを選べる。</li>
     <li>tool / Test失敗後にLLMがTodo Contextを更新して再試行できる。</li>
-    <li>達成不能時にLLMが<code>needs_human</code>へ遷移し、具体的な質問を返して停止する。</li>
+    <li>
+      達成不能時にLLMが<code>needs_human</code>へ遷移し、具体的な質問を返して停止する。
+    </li>
     <li>provider本文とschema issueが同時に保存される。</li>
     <li>transport到達不能時だけprovider failureとして扱う。</li>
     <li>context compaction後もTask goal、Plan summary、Current Todo detailが残る。</li>
@@ -1017,8 +1062,9 @@ bun run test -- tests/run-control.test.ts
 bun run verify
 </code></pre>
   <p>
-    cutover前にはfull backend testと、必須Todo、失敗再試行、<code>needs_human</code>停止、Test /
-    Review mode不存在、新Session restartのdeterministic E2Eを追加して実行する。live provider
+    cutover前にはfull backend
+    testと、必須Todo、失敗再試行、<code>needs_human</code>停止、Test / Review
+    mode不存在、新Session restartのdeterministic E2Eを追加して実行する。live provider
     testはcredentialを必要とするため通常gateと分離し、release候補で明示実行する。
   </p>
   <h2 id="section-9-migration-and-rollback">9. Migration and Rollback</h2>
@@ -1075,15 +1121,22 @@ bun run verify
     <li>Runあたりmodel turn数。</li>
     <li>tool call成功 / typed failure / validation failure数。</li>
     <li>LLMが行ったTodo create / update / transition / replan数。</li>
-    <li>LLM commandまたは明示的な人間UI操作を伴わないhost Todo mutation数。目標<code>0</code>。</li>
+    <li>
+      LLM commandまたは明示的な人間UI操作を伴わないhost Todo
+      mutation数。目標<code>0</code>。
+    </li>
     <li>
       tool失敗後の<code>record_failure</code>数、再試行数、再計画数、<code>needs_human</code>停止数。
     </li>
     <li>current Todoなしのtool call拒否数。</li>
     <li>completion precondition rejection数とerror code。</li>
     <li>fixed response replacement数。目標<code>0</code>。</li>
-    <li>host-generated semantic recovery turn数。目標<code>0</code>。</li>
-    <li>context compaction前後のTodo Context保持率。目標<code>100%</code>。</li>
+    <li>
+      host-generated semantic recovery turn数。目標<code>0</code>。
+    </li>
+    <li>
+      context compaction前後のTodo Context保持率。目標<code>100%</code>。
+    </li>
     <li>新runtime Session内のrestart / resume成功率。</li>
     <li>permission denialとapproval request数。</li>
   </ul>
@@ -1131,7 +1184,10 @@ bun run verify
     <li>legacy Session履歴を移行せず、新Session IDと新Run IDで再開できる。</li>
     <li>新runtime開始後の同一Sessionではconversation、Todo Context、event historyが継続する。</li>
     <li>legacy semantic control codeと、それを固定していたtestが削除される。</li>
-    <li><code>bun run verify</code>、対象integration test、deterministic E2Eがgreenになる。</li>
+    <li>
+      <code>bun run verify</code>、対象integration test、deterministic
+      E2Eがgreenになる。
+    </li>
   </ol>
   <h2 id="section-13-recommended-implementation-order">13. Recommended Implementation Order</h2>
   <p>

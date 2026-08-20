@@ -8,7 +8,10 @@
     </li>
     <li>Created / reviewed: 2026-08-02</li>
     <li>Target: NightWorkers Coding Agent Run</li>
-    <li>Baseline: <code>main</code> / <code>521d64a803aaad9e4676514f6590fce4f37edd97</code></li>
+    <li>
+      Baseline: <code>main</code> /
+      <code>521d64a803aaad9e4676514f6590fce4f37edd97</code>
+    </li>
     <li>Baseline worktree: dirty</li>
     <li>
       Related:
@@ -33,10 +36,8 @@
       testを自動化済み。
     </li>
     <li>
-      <code>bun install --frozen-lockfile --ignore-scripts</code>、<code>bun run s11tnext:lint</code
-      >、<code>bun run s11tnext:check</code>、<code>bun run verify</code>、<code
-        >bun run build:backend</code
-      >は成功済み。
+      <code>bun install --frozen-lockfile --ignore-scripts</code
+      >、<code>bun run s11tnext:lint</code>、<code>bun run s11tnext:check</code>、<code>bun run verify</code>、<code>bun run build:backend</code>は成功済み。
     </li>
     <li>
       TerraとLunaによるTodo CRUD相当の実Run各1回は、live
@@ -68,11 +69,8 @@
     JSON/JUnitから各171件をparseしたが、caseKeyは0件しか解決されなかった。
   </p>
   <p>
-    inventoryの名前が<code>TodoView &gt; test name</code>、Vitest JSONの名前が<code
-      >TodoView test name</code
-    >であり、現在のidentity比較が両者を同一視しなかったことが直接原因である。さらに、LLM向け<code>run_check</code>結果から<code
-      >parsed=171 / resolved=0</code
-    >が省略され、<code>completion_check</code>が<code>run_structured_tests</code>を繰り返し返したため、Terraはreporterを変えて再試行した。
+    inventoryの名前が<code>TodoView &gt; test name</code>、Vitest
+    JSONの名前が<code>TodoView test name</code>であり、現在のidentity比較が両者を同一視しなかったことが直接原因である。さらに、LLM向け<code>run_check</code>結果から<code>parsed=171 / resolved=0</code>が省略され、<code>completion_check</code>が<code>run_structured_tests</code>を繰り返し返したため、Terraはreporterを変えて再試行した。
   </p>
   <p>
     separatorだけを直しても、Lunaへrunner、reporter、evidence
@@ -100,7 +98,8 @@
     <li>hostがtest名、Task本文、ユーザー文言からcondition mappingを推測しない。</li>
     <li>DB table、column、migrationを追加しない。</li>
     <li>
-      <code>suitePath</code>、location、native ID、execution profile、report formatを永続化しない。
+      <code>suitePath</code>、location、native ID、execution profile、report
+      formatを永続化しない。
     </li>
     <li>新しいrunner／reporter adapterを追加しない。</li>
     <li>Confirmation Receiptとfollow-up verifyの状態遷移を変更しない。</li>
@@ -168,7 +167,10 @@
 }
 </code></pre>
   <ul>
-    <li>caseは<code>caseKey</code>、<code>name</code>、<code>file</code>の3 fieldだけとする。</li>
+    <li>
+      caseは<code>caseKey</code>、<code>name</code>、<code>file</code>の3
+      fieldだけとする。
+    </li>
     <li>
       runner、discovery level、declared condition IDs、source snapshotはDBへ保持し、model
       projectionから除外する。
@@ -180,9 +182,9 @@
   </ul>
   <p>
     既存<code>caseKey</code>自体をinventory内限定の<code>T1</code>、<code>T2</code>形式へ変更し、別aliasは追加しない。caseをrunner、relative
-    file、canonical nameで安定sortしてから採番する。参照の正本は常に<code
-      >inventoryId + caseKey</code
-    >であり、別inventoryの同じshort keyを再利用しない。
+    file、canonical
+    nameで安定sortしてから採番する。参照の正本は常に<code>inventoryId + caseKey</code>であり、別inventoryの同じshort
+    keyを再利用しない。
   </p>
   <p>既存の長いcaseKeyはopaque keyとして読み取り可能なまま残し、migrationしない。</p>
   <h3 id="section-52-mapping">5.2 Mapping</h3>
@@ -216,8 +218,8 @@
     kindはconditionの<code>expectedEvidence</code>から解決する。
   </p>
   <p>
-    command gateはVerification Documentのplanned commandを<code>command + cwd</code
-    >でexact照合し、保存済み<code>conditionIds</code>と<code>evidenceKinds</code>を使う。planned
+    command gateはVerification Documentのplanned
+    commandを<code>command + cwd</code>でexact照合し、保存済み<code>conditionIds</code>と<code>evidenceKinds</code>を使う。planned
     commandがないcommand gateをLLMのad
     hoc入力で補完せず、<code>COMMAND_GATE_PLAN_MISSING</code>を返す。automated test
     conditionでは<code>commands: []</code>を許容する。
@@ -266,8 +268,12 @@
     <li>legacy static inventoryだけ現在のsuffix互換を残す。</li>
     <li>file pathはinventory cwdとevidence cwdからabsolute pathへ解決する。</li>
     <li>fileなし、runner unknown、複数一致は推測で解決しない。</li>
-    <li>JUnitはreport形式として扱い、新規evidenceのrunnerへ<code>junit</code>を保存しない。</li>
-    <li>legacy <code>runner=junit</code>は読み取り互換のため直ちに削除しない。</li>
+    <li>
+      JUnitはreport形式として扱い、新規evidenceのrunnerへ<code>junit</code>を保存しない。
+    </li>
+    <li>
+      legacy <code>runner=junit</code>は読み取り互換のため直ちに削除しない。
+    </li>
   </ul>
   <h3 id="section-62-host-owned-capture">6.2 Host-owned capture</h3>
   <p>
@@ -315,7 +321,10 @@
       </tr>
       <tr>
         <td>capture failed</td>
-        <td><code>parsedArtifactId</code>なし、またはmapping対象caseのidentity解決に失敗</td>
+        <td>
+          <code>parsedArtifactId</code
+          >なし、またはmapping対象caseのidentity解決に失敗
+        </td>
       </tr>
       <tr>
         <td>test failed</td>
@@ -404,7 +413,10 @@
   <h3 id="phase-0-回帰fixture">Phase 0: 回帰fixture</h3>
   <ul>
     <li>現在のexact mapping差分をbaselineとして固定する。</li>
-    <li><code>Suite &gt; case</code>と<code>Suite case</code>の不一致を最小fixtureで再現する。</li>
+    <li>
+      <code>Suite &gt; case</code
+      >と<code>Suite case</code>の不一致を最小fixtureで再現する。
+    </li>
     <li>
       integration testがcaseKeyを手動注入してresolverを迂回している箇所を修正対象として固定する。
     </li>
@@ -418,9 +430,7 @@
     <li><code>api/services/verification/adapters/vitest-json.ts</code></li>
     <li><code>api/services/verification/adapters/junit.ts</code></li>
     <li>
-      <code
-        >api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector.ts</code
-      >
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector.ts</code>
     </li>
   </ul>
   <p>実施:</p>
@@ -459,9 +469,7 @@
     </li>
     <li><code>api/modules/codingAgent/verification/evidence-readiness.service.ts</code></li>
     <li>
-      <code
-        >api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector.ts</code
-      >
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-tool-result-projector.ts</code>
     </li>
     <li><code>api/systemContexts/contexts/codingAgent/completion-rule.context.toml</code></li>
   </ul>
@@ -485,7 +493,10 @@
   <h2 id="section-9-test-plan">9. Test plan</h2>
   <p>最低限、次を自動化する。</p>
   <ol>
-    <li><code>Suite &gt; case</code>と<code>Suite case</code>が一致する。</li>
+    <li>
+      <code>Suite &gt; case</code
+      >と<code>Suite case</code>が一致する。
+    </li>
     <li>NFKC、case、空白が決定的に正規化される。</li>
     <li>file違いとduplicate名を誤結合しない。</li>
     <li>JUnit入力をactual Vitest runnerとして解決できる。</li>
@@ -493,7 +504,9 @@
     <li>generic＋specificはspecificへ正規化され、複数specificは拒否される。</li>
     <li>scope外testをcommand実行前に拒否する。</li>
     <li>classifierだけで<code>testExecutionObserved=true</code>にならない。</li>
-    <li>parser認識済み0件とparser未認識を<code>parsedArtifactId</code>で区別する。</li>
+    <li>
+      parser認識済み0件とparser未認識を<code>parsedArtifactId</code>で区別する。
+    </li>
     <li>
       mapping対象のunresolved
       caseを<code>TEST_EVIDENCE_CAPTURE_FAILED</code>へ分類し、無関係なunresolved caseはrequired
@@ -556,7 +569,8 @@
   <h2 id="section-11-compatibilityとリスク">11. Compatibilityとリスク</h2>
   <ul>
     <li>
-      DB migrationは行わず、legacy long keyと<code>runner=junit</code>を読み取れる状態を維持する。
+      DB migrationは行わず、legacy long
+      keyと<code>runner=junit</code>を読み取れる状態を維持する。
     </li>
     <li>legacy evidenceを推測でsafe passへ昇格しない。</li>
     <li>
@@ -573,8 +587,8 @@
   <p>初期案をレビューし、次を改善した。</p>
   <ol>
     <li>
-      追加予定だった<code>TestCaseLocator</code>、suite path、location、native ID、execution
-      profile、report format永続化を削除した。
+      追加予定だった<code>TestCaseLocator</code>、suite path、location、native
+      ID、execution profile、report format永続化を削除した。
     </li>
     <li>内部caseKeyとLLM向けaliasの二重化をやめ、既存caseKey自体をshort keyにした。</li>
     <li>
@@ -586,10 +600,13 @@
       commandからhostがscopeを解決する形にした。
     </li>
     <li>
-      新しいcapture status列を追加せず、既存<code>parsedArtifactId</code>、evidence run、case
-      rowsから状態を導出する形にした。
+      新しいcapture status列を追加せず、既存<code>parsedArtifactId</code>、evidence
+      run、case rowsから状態を導出する形にした。
     </li>
-    <li>0件の有効structured resultとparser失敗を<code>parsedArtifactId</code>で区別した。</li>
+    <li>
+      0件の有効structured
+      resultとparser失敗を<code>parsedArtifactId</code>で区別した。
+    </li>
     <li>
       <code>cases: &quot;171/171&quot;</code
       >をやめ、flatな<code>parsed</code>、<code>resolved</code>にした。

@@ -75,7 +75,7 @@
         "jsdom": "^30.0.1",
         "postcss": "8.5.24",
         "s11tnext-cli": "0.1.2",
-        "spec-html": "0.1.1",
+        "spec-html": "0.1.3",
         "tailwindcss": "4.3.2",
         "typescript": "7.0.2",
         "vite": "8.1.4",
@@ -1601,7 +1601,7 @@
 
     "space-separated-tokens": ["space-separated-tokens@2.0.2", "", {}, "sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q=="],
 
-    "spec-html": ["spec-html@0.1.1", "", { "dependencies": { "github-slugger": "2.0.0", "html-validate": "10.17.0", "marked": "18.0.10", "open": "^11.0.1", "prettier": "3.9.6" }, "peerDependencies": { "chart.js": "^4.5.1", "mermaid": "^11.16.1" }, "optionalPeers": ["chart.js", "mermaid"], "bin": { "spec-html": "dist/cli.js" } }, "sha512-y7xi0avWWMixrHfFMRneZsaXaYmWQF9f+QGqeUV45YDyuul0FsPM2PKFjn5KxizmKo3nAyoxJOw+VoVBhdmqlg=="],
+    "spec-html": ["spec-html@0.1.3", "", { "dependencies": { "github-slugger": "2.0.0", "html-validate": "10.17.0", "marked": "18.0.10", "open": "11.0.1", "prettier": "3.9.6" }, "peerDependencies": { "chart.js": "^4.5.1", "mermaid": "^11.16.1" }, "optionalPeers": ["chart.js", "mermaid"], "bin": { "spec-html": "dist/cli.js" } }, "sha512-mQbcp5bO8w5ZTopRl2DbfKFMyLcuaVfViPFbsB0esHBmTdKZsN4+60XeowhCL7QQUOaIwbgYMSdNaolYP6yWyA=="],
 
     "split2": ["split2@4.2.0", "", {}, "sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg=="],
 

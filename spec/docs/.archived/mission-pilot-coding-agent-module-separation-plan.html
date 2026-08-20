@@ -16,9 +16,7 @@
     </li>
     <li>Last updated: 2026-07-16</li>
     <li>Target repository: <code>/Users/y.noguchi/Code/nightWorkers</code></li>
-    <li>
-      Target branch at plan creation: <code>codex/mission-pilot-persistent-agent-refactor</code>
-    </li>
+    <li>Target branch at plan creation: <code>codex/mission-pilot-persistent-agent-refactor</code></li>
     <li>Target HEAD at plan creation: <code>95dfa8dc</code></li>
     <li>
       Working tree policy: preserve every pre-existing tracked and untracked change visible when
@@ -224,7 +222,10 @@
     <li>role固有authorization policy。</li>
     <li>role固有のUI表示判断。</li>
   </ul>
-  <p><code>agentsShare</code>はMission PilotまたはCoding Agentをimportしてはならない。</p>
+  <p>
+    <code>agentsShare</code>はMission PilotまたはCoding
+    Agentをimportしてはならない。
+  </p>
   <h2 id="section-2-allowed-production-code-locations">2. Allowed Production Code Locations</h2>
   <h3 id="section-21-backend">2.1 Backend</h3>
   <pre><code class="language-text">api/modules/
@@ -381,7 +382,9 @@ shared domain   -X-&gt; role-specific repository/table
   </ul>
   <h3 id="section-34-service規則">3.4 Service規則</h3>
   <ul>
-    <li>Serviceは同じroleのrepositoryと、<code>agentsShare</code>のportだけを直接参照する。</li>
+    <li>
+      Serviceは同じroleのrepositoryと、<code>agentsShare</code>のportだけを直接参照する。
+    </li>
     <li>他roleのserviceを直接呼ばない。</li>
     <li>shared domain serviceへrole引数を渡して分岐させない。</li>
     <li>role固有のworkflowをshared serviceへ移さない。</li>
@@ -393,7 +396,9 @@ shared domain   -X-&gt; role-specific repository/table
     <li>Coding Agent repositoryはCoding Agent固有tableだけを扱う。</li>
     <li>Task / Run等の共有tableはAgent非依存repositoryが扱う。</li>
     <li>Role serviceは共有repositoryを直接importせず、共有query / command portを使う。</li>
-    <li><code>nightworkers.repository</code>のnamespace importをrole moduleから禁止する。</li>
+    <li>
+      <code>nightworkers.repository</code>のnamespace importをrole moduleから禁止する。
+    </li>
     <li>Repositoryがevent listener、prompt、tool definitionを持たない。</li>
   </ul>
   <h2 id="section-4-current-boundary-violations">4. Current Boundary Violations</h2>
@@ -427,17 +432,13 @@ shared domain   -X-&gt; role-specific repository/table
       </ul>
     </li>
     <li>
-      <code
-        >api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code
-      >
+      <code>api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code>
       <ul>
         <li>Coding Agent起点でQuestionnaireを開始する。</li>
       </ul>
     </li>
     <li>
-      <code
-        >api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code
-      >
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code>
       <ul>
         <li>Coding AgentがQuestionnaireを作るまでworkspace mutationを止める。</li>
       </ul>
@@ -563,7 +564,10 @@ shared domain   -X-&gt; role-specific repository/table
       <tr>
         <td><code>api/modules/planMode/plan-mode-routing.service.ts</code></td>
         <td><code>missionPilot</code></td>
-        <td><code>missionPilot/planning</code>と<code>missionPilot/repositories</code>へ分割</td>
+        <td>
+          <code>missionPilot/planning</code
+          >と<code>missionPilot/repositories</code>へ分割
+        </td>
       </tr>
       <tr>
         <td><code>api/modules/planMode/plan-mode-routing-lock.ts</code></td>
@@ -627,7 +631,9 @@ shared domain   -X-&gt; role-specific repository/table
       </tr>
       <tr>
         <td>
-          <code>api/modules/codingAgent/runtime/types.ts</code>、<code>shared/contracts.ts</code>
+          <code>api/modules/codingAgent/runtime/types.ts</code>、<code
+            >shared/contracts.ts</code
+          >
         </td>
         <td>mixed</td>
         <td>
@@ -638,16 +644,22 @@ shared domain   -X-&gt; role-specific repository/table
       <tr>
         <td>
           <code>api/modules/codingAgent/runtime/registry.ts</code
-          >、<code>runtime-lane.ts</code>、<code>agent-mode-session.ts</code>
+          >、<code>runtime-lane.ts</code>、<code
+            >agent-mode-session.ts</code
+          >
         </td>
         <td>mixed</td>
         <td>
-          Coding Agent runtime selectionは<code>codingAgent</code>、共有Task Run session identity /
-          stateは中立domainへ分割
+          Coding Agent runtime selectionは<code>codingAgent</code>、共有Task
+          Run session identity / stateは中立domainへ分割
         </td>
       </tr>
       <tr>
-        <td><code>api/services/runner/NativeLocalRunner.ts</code>、<code>types.ts</code></td>
+        <td>
+          <code>api/services/runner/NativeLocalRunner.ts</code>、<code
+            >types.ts</code
+          >
+        </td>
         <td>mixed</td>
         <td>
           Coding Agent起動adapterか汎用command runnerかをconsumer単位で判定。NightWorkersからCoding
@@ -658,8 +670,8 @@ shared domain   -X-&gt; role-specific repository/table
         <td><code>api/modules/review/**</code>からruntime resultへの参照</td>
         <td><code>replace</code></td>
         <td>
-          <code>agentsShare</code>の中立Run outcome contractへ変更し、Coding Agent
-          runtime内部型をimportしない
+          <code>agentsShare</code>の中立Run outcome contractへ変更し、Coding
+          Agent runtime内部型をimportしない
         </td>
       </tr>
       <tr>
@@ -701,7 +713,8 @@ shared domain   -X-&gt; role-specific repository/table
         <td>mixed</td>
         <td>
           ユーザーも操作するQuestionnaire正本domain / repositoryは中立moduleを維持し、Mission
-          Pilot固有autonomy / prompt / continuationだけ<code>missionPilot/questionnaire</code>へ移動
+          Pilot固有autonomy / prompt /
+          continuationだけ<code>missionPilot/questionnaire</code>へ移動
         </td>
       </tr>
       <tr>
@@ -729,18 +742,14 @@ shared domain   -X-&gt; role-specific repository/table
       </tr>
       <tr>
         <td>
-          <code
-            >api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code
-          >
+          <code>api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code>
         </td>
         <td><code>delete-after-migration</code></td>
         <td>C8で削除</td>
       </tr>
       <tr>
         <td>
-          <code
-            >api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code
-          >
+          <code>api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code>
         </td>
         <td><code>delete-after-migration</code></td>
         <td>C8で削除</td>
@@ -970,8 +979,9 @@ git ls-files --others --exclude-standard
     mutationは提供しない。
   </p>
   <p>
-    現在の<code>task_runs</code>、Task、Review、Git workspace等の中立tableをCoding Agent
-    repositoryへ移さない。Coding Agent serviceは中立application query / command portを使用する。
+    現在の<code>task_runs</code>、Task、Review、Git
+    workspace等の中立tableをCoding Agent repositoryへ移さない。Coding Agent serviceは中立application
+    query / command portを使用する。
   </p>
   <h3 id="section-63-agentsshare-backend">6.3 agentsShare backend</h3>
   <pre><code class="language-text">api/modules/agentsShare/
@@ -1030,10 +1040,8 @@ git ls-files --others --exclude-standard
     <li>baseline testを実行する。</li>
   </ol>
   <p>
-    Change ledgerには最低限、<code>current path</code>、<code>current consumers</code
-    >、<code>classification</code>、<code>target public API</code>、<code>target path</code
-    >、<code>checkpoint</code>、<code>pre-existing dirty change</code>、<code>replacement test</code
-    >を記録する。consumer未確認のfileを<code>codingAgent</code>または<code>missionPilot</code>へ確定しない。
+    Change
+    ledgerには最低限、<code>current path</code>、<code>current consumers</code>、<code>classification</code>、<code>target public API</code>、<code>target path</code>、<code>checkpoint</code>、<code>pre-existing dirty change</code>、<code>replacement test</code>を記録する。consumer未確認のfileを<code>codingAgent</code>または<code>missionPilot</code>へ確定しない。
   </p>
   <p>最低限のbaseline:</p>
   <pre><code class="language-bash">node scripts/run-vitest.mjs run \
@@ -1080,7 +1088,11 @@ node scripts/check-module-boundaries.mjs
         <li>role間の直接import禁止。</li>
         <li>agentsShareからroleへの逆import禁止。</li>
         <li>他moduleからrole内部へのdeep import禁止。</li>
-        <li><code>api</code>、<code>src</code>、<code>shared</code>の3 treeすべてを走査する。</li>
+        <li>
+          <code>api</code
+          >、<code>src</code>、<code>shared</code>の3
+          treeすべてを走査する。
+        </li>
       </ul>
     </li>
     <li>Agent固有コード配置検査を追加する。</li>
@@ -1090,11 +1102,13 @@ node scripts/check-module-boundaries.mjs
   <p>配置検査対象marker:</p>
   <ul>
     <li>
-      file pathまたはexport名に<code>mission-pilot</code> / <code>missionPilot</code> /
+      file pathまたはexport名に<code>mission-pilot</code> /
+      <code>missionPilot</code> /
       <code>MissionPilot</code>を含む。
     </li>
     <li>
-      file pathまたはexport名に<code>coding-agent</code> / <code>codingAgent</code> /
+      file pathまたはexport名に<code>coding-agent</code> /
+      <code>codingAgent</code> /
       <code>CodingAgent</code>を含む。
     </li>
     <li>role固有SystemContext constant。</li>
@@ -1103,7 +1117,10 @@ node scripts/check-module-boundaries.mjs
   </ul>
   <p>許可例外:</p>
   <ul>
-    <li><code>api/app.ts</code>等のcomposition rootからpublic indexをimportする行。</li>
+    <li>
+      <code>api/app.ts</code>等のcomposition rootからpublic
+      indexをimportする行。
+    </li>
     <li>historical migration。</li>
     <li>test file。</li>
     <li>移行期間中baseline manifestに記録された既存違反。</li>
@@ -1123,7 +1140,10 @@ node scripts/check-module-boundaries.mjs
   <ol>
     <li><code>api/modules/codingAgent</code>を作成する。</li>
     <li><code>api/modules/agentsShare</code>を作成する。</li>
-    <li><code>src/modules/codingAgent</code>、<code>src/modules/agentsShare</code>を作成する。</li>
+    <li>
+      <code>src/modules/codingAgent</code
+      >、<code>src/modules/agentsShare</code>を作成する。
+    </li>
     <li>必要なら<code>shared/modules</code>の3 rootを作成する。</li>
     <li>各rootに<code>index.ts</code>を作る。</li>
     <li>Public exportを最小にする。</li>
@@ -1205,7 +1225,8 @@ node scripts/check-module-boundaries.mjs
       <tr>
         <td><code>api/modules/codingAgent/runtime/codex-sdk/*</code></td>
         <td>
-          file分類後に<code>codingAgent/runtime/codex-sdk</code>またはgeneric Codex transportへ分割
+          file分類後に<code>codingAgent/runtime/codex-sdk</code>またはgeneric Codex
+          transportへ分割
         </td>
       </tr>
       <tr>
@@ -1230,16 +1251,17 @@ node scripts/check-module-boundaries.mjs
       outcome contractを使う。
     </li>
     <li>
-      <code>api/modules/review</code>は<code>AgentRuntimeResult</code>のCoding
-      Agent内部定義を参照せず、中立Run outcome contractを使う。
+      <code>api/modules/review</code
+      >は<code>AgentRuntimeResult</code>のCoding Agent内部定義を参照せず、中立Run
+      outcome contractを使う。
     </li>
     <li>
       <code>changedFilesFromDiff</code>等の純粋helperはCoding Agent
       runtimeへ移さず、GitまたはReviewの中立utilityへ置く。
     </li>
     <li>
-      <code>runtime-session-state.ts</code>がstructured provider resumeでも使われる場合はgeneric
-      session storeとし、Coding Agent moduleの所有物にしない。
+      <code>runtime-session-state.ts</code>がstructured provider
+      resumeでも使われる場合はgeneric session storeとし、Coding Agent moduleの所有物にしない。
     </li>
     <li>
       <code>NativeLocalRunner</code>がCoding Agent起動だけを行う場合はCoding Agent
@@ -1279,7 +1301,8 @@ node scripts/check-module-boundaries.mjs
   <ul>
     <li><code>api/services/coding-agent-context</code>が存在しない。</li>
     <li>
-      Coding Agent runtime固有ファイルが<code>api/modules/codingAgent/runtime</code>に残っていない。
+      Coding Agent
+      runtime固有ファイルが<code>api/modules/codingAgent/runtime</code>に残っていない。
     </li>
     <li>Coding Agent SystemContextにPlan ownershipがない。</li>
     <li>Coding Agent runtimeは単一runtimeのまま。</li>
@@ -1346,7 +1369,10 @@ node scripts/check-module-boundaries.mjs
   </ul>
   <p>Artifactのread-only参照が必要な場合:</p>
   <ul>
-    <li><code>agentsShare</code>の<code>ArtifactQueryPort</code>を使用する。</li>
+    <li>
+      <code>agentsShare</code
+      >の<code>ArtifactQueryPort</code>を使用する。
+    </li>
     <li>Coding Agent module内にread-only adapterを置く。</li>
     <li>mutation commandを同じtoolへ混ぜない。</li>
   </ul>
@@ -1396,10 +1422,13 @@ node scripts/check-module-boundaries.mjs
         <li><code>plan.artifact.regenerate</code></li>
       </ul>
     </li>
-    <li><code>questionnaire.submit</code>は既存のユーザー介入契約を迂回しない形にする。</li>
+    <li>
+      <code>questionnaire.submit</code>は既存のユーザー介入契約を迂回しない形にする。
+    </li>
     <li>
       generic
-      <code>plan.artifact.generate</code>と型別actionが重複する場合は型別actionを正本にする。
+      <code>plan.artifact.generate</code
+      >と型別actionが重複する場合は型別actionを正本にする。
     </li>
     <li>Action executorは既存application commandを使い続ける。</li>
     <li>Side effectはauthorization、revision、idempotencyをserver側で検証する。</li>
@@ -1555,10 +1584,14 @@ Questionnaire shared application service
     <li>Mission Pilot SystemContextを新しい所有権へ切り替える。</li>
     <li>Coding Agent SystemContextからPlan ownershipを削除する。</li>
     <li>
-      Coding Agent <code>plan_mode</code> mutation toolをmanifest / dispatcher / MCPから削除する。
+      Coding Agent <code>plan_mode</code> mutation toolをmanifest / dispatcher
+      / MCPから削除する。
     </li>
     <li>Coding Agent Plan intake guardを削除する。</li>
-    <li>Coding Agent Plan continuation listenerを<code>api/app.ts</code>から削除する。</li>
+    <li>
+      Coding Agent Plan continuation
+      listenerを<code>api/app.ts</code>から削除する。
+    </li>
     <li>Coding Agent Plan intake serviceをRun startから削除する。</li>
     <li>旧positive testをMission Pilot ownershipとCoding Agent negative contractへ置換する。</li>
     <li>Targeted integrationを実行する。</li>
@@ -1610,23 +1643,17 @@ Questionnaire shared application service
   <p>
     C8は一つのcommit候補として編集するが、targeted
     integrationが成功するまでcommitしない。失敗した場合は、Phase 0
-    ledgerとC8の変更ファイル一覧を使ってC8で加えた差分だけを<code>apply_patch</code>相当の明示編集で戻す。<code
-      >git restore</code
-    >、<code>git checkout</code>、working
+    ledgerとC8の変更ファイル一覧を使ってC8で加えた差分だけを<code>apply_patch</code>相当の明示編集で戻す。<code>git restore</code>、<code>git checkout</code>、working
     tree全体のstashで戻してはならない。C5〜C7のdirect-test可能な準備状態と、実装開始前から存在した差分を保持する。
   </p>
   <p>削除候補:</p>
   <ul>
     <li><code>api/modules/planMode/plan-mode-coding-agent-continuation.service.ts</code></li>
     <li>
-      <code
-        >api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code
-      >
+      <code>api/modules/nightworkers/run-orchestration/coding-agent-plan-mode-intake.service.ts</code>
     </li>
     <li>
-      <code
-        >api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code
-      >
+      <code>api/modules/codingAgent/runtime/native-api-runner/native-api-plan-mode-intake-guard.ts</code>
     </li>
     <li>Coding Agent <code>plan_mode</code> worker tool。</li>
     <li>Coding Agent Plan Mode tool schema / manifest registration。</li>
@@ -2002,7 +2029,8 @@ bun run verify:base
     </li>
     <li><code>agentsShare</code>を便利な退避場所にしない。</li>
     <li>
-      <code>agentsShare</code>へrole固有処理が必要になった場合は、抽出を中止してowner側へ戻す。
+      <code>agentsShare</code
+      >へrole固有処理が必要になった場合は、抽出を中止してowner側へ戻す。
     </li>
     <li>Coding AgentにPlan mutationを戻さない。</li>
     <li>Mission PilotからArtifact actionを削らない。</li>
@@ -2058,7 +2086,9 @@ bun run verify:base
       Agent固有コードが<code>missionPilot</code>、<code>codingAgent</code>、<code>agentsShare</code>以外にない。
     </li>
     <li>Frontend Agent固有コードが対応する3 module以外にない。</li>
-    <li>Role固有shared schemaが<code>shared/modules</code>の対応rootへ移動している。</li>
+    <li>
+      Role固有shared schemaが<code>shared/modules</code>の対応rootへ移動している。
+    </li>
     <li>Compatibility re-exportが残っていない。</li>
   </ul>
   <h3 id="dependency">Dependency</h3>
@@ -2136,7 +2166,8 @@ bun run verify:base
         <td></td>
         <td>architecture</td>
         <td>
-          <code>missionPilot</code> / <code>codingAgent</code> /
+          <code>missionPilot</code> /
+          <code>codingAgent</code> /
           <code>agentsShare</code> のbackend/frontend/shared public indexを追加。
         </td>
       </tr>
