@@ -75,7 +75,7 @@
         "jsdom": "^30.0.1",
         "postcss": "8.5.24",
         "s11tnext-cli": "0.1.2",
-        "spec-html": "0.1.4",
+        "spec-html": "0.1.5",
         "tailwindcss": "4.3.2",
         "typescript": "7.0.2",
         "vite": "8.1.4",
@@ -1613,7 +1613,7 @@
 
     "space-separated-tokens": ["space-separated-tokens@2.0.2", "", {}, "sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q=="],
 
-    "spec-html": ["spec-html@0.1.4", "", { "dependencies": { "github-slugger": "2.0.0", "html-validate": "10.17.0", "jsdom": "26.1.0", "marked": "18.0.10", "open": "11.0.1", "prettier": "3.9.6" }, "peerDependencies": { "chart.js": "^4.5.1", "mermaid": "^11.16.1" }, "optionalPeers": ["chart.js", "mermaid"], "bin": { "spec-html": "dist/cli.js" } }, "sha512-c1pNablcvcPG1gEy9vAkKwmNcsHqPt7qPyaazsElzAmkYQbKP0C2/yHdV39F3Kru7TI7xiDb+/JfOiM/EmlUPw=="],
+    "spec-html": ["spec-html@0.1.5", "", { "dependencies": { "github-slugger": "2.0.0", "html-validate": "10.17.0", "jsdom": "26.1.0", "marked": "18.0.10", "open": "11.0.1", "prettier": "3.9.6" }, "peerDependencies": { "chart.js": "^4.5.1", "mermaid": "^11.16.1" }, "optionalPeers": ["chart.js", "mermaid"], "bin": { "spec-html": "dist/cli.js" } }, "sha512-pbCqCa002oFpbQq0zK5IZGB9fvtuWxL2y3bz0n5Nl8IpwPx0ZobT2WyMazRWkxKnKQRcuxwFtMBq09CaAXtA4g=="],
 
     "split2": ["split2@4.2.0", "", {}, "sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg=="],
 
