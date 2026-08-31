@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { nativeApiToolRegistrations } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import {
 	measureProjectExplorationRun,
+	PROJECT_EXPLORATION_TOOL_TAXONOMY,
 	summarizeProjectExplorationPair,
 } from "../api/modules/ontology/exploration/project-exploration-measurement";
 
 describe("project exploration measurement", () => {
+	it("keeps the closed metric taxonomy aligned with the native tool manifest", () => {
+		const nativeNames = new Set(
+			nativeApiToolRegistrations.map((tool) => tool.name),
+		);
+		for (const tool of [
+			...PROJECT_EXPLORATION_TOOL_TAXONOMY.exploration,
+			...PROJECT_EXPLORATION_TOOL_TAXONOMY.mutation,
+		]) {
+			expect(nativeNames.has(tool)).toBe(true);
+		}
+	});
+
 	it("measures only successful exploration calls before the first source mutation", () => {
 		const catalogPayload = {
 			ok: true,
@@ -79,6 +93,9 @@ describe("project exploration measurement", () => {
 			uniqueFilesReadBeforeMutation: 1,
 			totalInputTokens: 150,
 			totalCachedInputTokens: 25,
+			preMutationInputTokens: null,
+			preMutationCachedInputTokens: null,
+			preMutationNonCachedInputTokens: null,
 			usageMode: "mixed",
 			timeToFirstMutationMs: 8000,
 			taskCompleted: true,
@@ -163,10 +180,42 @@ describe("project exploration measurement", () => {
 			readFileCallsBeforeMutation: 1,
 			totalInputTokens: null,
 			totalCachedInputTokens: null,
+			preMutationInputTokens: null,
+			preMutationCachedInputTokens: null,
+			preMutationNonCachedInputTokens: null,
 			usageMode: "unavailable",
 			timeToFirstMutationMs: null,
 			taskCompleted: false,
 			verificationPassed: null,
+		});
+	});
+
+	it("uses timestamped measured usage through the mutation boundary only", () => {
+		const result = measureProjectExplorationRun({
+			run: runFixture(false),
+			events: [
+				event(1, "read_file", true, { filePath: "api/a.ts" }),
+				event(2, "apply_patch", true, {}),
+			],
+			usageRecords: [
+				{
+					inputTokens: 100,
+					cachedInputTokens: 40,
+					usageMode: "measured",
+					createdAt: "2026-07-14T00:00:01.000Z",
+				},
+				{
+					inputTokens: 80,
+					cachedInputTokens: 10,
+					usageMode: "measured",
+					createdAt: "2026-07-14T00:00:03.000Z",
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			preMutationInputTokens: 100,
+			preMutationCachedInputTokens: 40,
+			preMutationNonCachedInputTokens: 60,
 		});
 	});
 

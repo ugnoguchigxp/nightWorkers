@@ -113,6 +113,11 @@ function parseLauncherArgs(args) {
       throw new Error(`${required} is required`);
     }
   }
+  if (hasOption(workerArgs, '--formal') && !preserveIsolatedRuntime) {
+    throw new Error(
+      '--formal requires --preserve-isolated-runtime so raw evidence is retained.',
+    );
+  }
   return {
     llmSettingsPath: resolvedSettingsPath,
     preserveIsolatedRuntime,

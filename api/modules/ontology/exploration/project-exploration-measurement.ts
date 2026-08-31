@@ -3,6 +3,16 @@ import {
 	projectExplorationCatalogRunPinSchema,
 } from "../../../../shared/schemas/project-exploration-catalog.schema";
 
+/**
+ * Closed metric taxonomy. Adding a new native exploration or source-mutation
+ * tool requires a deliberate update here and in the manifest parity test.
+ */
+export const PROJECT_EXPLORATION_TOOL_TAXONOMY = {
+	exploration: ["list_dir", "search_files", "read_file"] as const,
+	mutation: ["apply_patch", "replace_content"] as const,
+	catalog: "project_exploration_catalog",
+} as const;
+
 export type ExplorationReductionMeasurement = {
 	runId: string;
 	taskId: string;
@@ -29,6 +39,15 @@ export type ExplorationReductionMeasurement = {
 	uniqueFilesReadBeforeMutation: number;
 	totalInputTokens: number | null;
 	totalCachedInputTokens: number | null;
+	/**
+	 * Measured usage issued no later than the first successful source mutation.
+	 * The values stay null when the run did not mutate or when a record cannot be
+	 * located on the event timeline; a formal pilot must treat that as incomplete
+	 * evidence rather than turning it into a zero.
+	 */
+	preMutationInputTokens: number | null;
+	preMutationCachedInputTokens: number | null;
+	preMutationNonCachedInputTokens: number | null;
 	usageMode: "measured" | "estimated" | "mixed" | "unavailable";
 	timeToFirstMutationMs: number | null;
 	taskCompleted: boolean;
@@ -49,6 +68,7 @@ type MeasurementUsage = {
 	inputTokens: number | null;
 	cachedInputTokens: number | null;
 	usageMode: string;
+	createdAt?: Date | string;
 };
 
 export function measureProjectExplorationRun(input: {
@@ -150,7 +170,12 @@ export function measureProjectExplorationRun(input: {
 				}
 			}
 		}
-		if (ok && (toolName === "apply_patch" || toolName === "replace_content")) {
+		if (
+			ok &&
+			PROJECT_EXPLORATION_TOOL_TAXONOMY.mutation.includes(
+				toolName as (typeof PROJECT_EXPLORATION_TOOL_TAXONOMY.mutation)[number],
+			)
+		) {
 			mutationAt = readTimestamp(event);
 			continue;
 		}
@@ -176,6 +201,31 @@ export function measureProjectExplorationRun(input: {
 	const totalCachedInputTokens = sumNullable(
 		input.usageRecords.map((record) => record.cachedInputTokens),
 	);
+	const preMutationUsage = mutationAt
+		? input.usageRecords.filter((record) => {
+				const createdAt = readUsageTimestamp(record.createdAt);
+				return (
+					createdAt !== null && createdAt.getTime() <= mutationAt.getTime()
+				);
+			})
+		: [];
+	const preMutationInputTokens = sumComplete(
+		preMutationUsage.map((record) => record.inputTokens),
+	);
+	const preMutationCachedInputTokens = sumComplete(
+		preMutationUsage.map((record) => record.cachedInputTokens),
+	);
+	const preMutationNonCachedInputTokens =
+		preMutationInputTokens === null || preMutationCachedInputTokens === null
+			? null
+			: preMutationUsage.reduce((total, record) => {
+					const inputTokens = record.inputTokens ?? 0;
+					const cachedInputTokens = record.cachedInputTokens ?? 0;
+					return (
+						total +
+						Math.max(0, inputTokens - Math.min(inputTokens, cachedInputTokens))
+					);
+				}, 0);
 	const catalogAvailable = pin?.version === 2 && pin.available;
 	if (
 		catalogAvailable &&
@@ -216,6 +266,9 @@ export function measureProjectExplorationRun(input: {
 		uniqueFilesReadBeforeMutation: filesRead.size,
 		totalInputTokens,
 		totalCachedInputTokens,
+		preMutationInputTokens,
+		preMutationCachedInputTokens,
+		preMutationNonCachedInputTokens,
 		usageMode: aggregateUsageMode(input.usageRecords),
 		timeToFirstMutationMs: mutationAt
 			? Math.max(0, mutationAt.getTime() - input.run.startedAt.getTime())
@@ -265,6 +318,10 @@ export function summarizeProjectExplorationPair(input: {
 		totalCachedInputTokens: nullableComparison(
 			input.baseline.totalCachedInputTokens,
 			input.catalog.totalCachedInputTokens,
+		),
+		preMutationNonCachedInputTokens: nullableComparison(
+			input.baseline.preMutationNonCachedInputTokens,
+			input.catalog.preMutationNonCachedInputTokens,
 		),
 		timeToFirstMutationMs: nullableComparison(
 			input.baseline.timeToFirstMutationMs,
@@ -338,6 +395,18 @@ function sumNullable(values: Array<number | null>): number | null {
 	return available.length > 0
 		? available.reduce((sum, value) => sum + value, 0)
 		: null;
+}
+
+function sumComplete(values: Array<number | null>): number | null {
+	if (values.length === 0 || values.some((value) => value === null))
+		return null;
+	return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+}
+
+function readUsageTimestamp(value: Date | string | undefined): Date | null {
+	if (!value) return null;
+	const date = value instanceof Date ? value : new Date(value);
+	return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function aggregateUsageMode(

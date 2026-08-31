@@ -1,10 +1,32 @@
 import { createHash } from "node:crypto";
 import type { ExplorationReductionMeasurement } from "../../api/modules/ontology/exploration/project-exploration-measurement";
-import type { PilotTask } from "./tasks";
+import type { IndependentEvaluation } from "./evaluator";
+import { modelPilotTask, type PilotTask } from "./tasks";
+
+export type PilotAttemptClassification =
+	| "valid"
+	| "safety_failure"
+	| "catalog_reliability_failure"
+	| "shared_infrastructure_failure"
+	| "task_outcome_failure"
+	| "protocol_failure";
+
+type PilotArmForReport = {
+	taskId?: string;
+	runId?: string;
+	status?: string;
+	measurement: ExplorationReductionMeasurement;
+	evaluation?: IndependentEvaluation | null;
+};
 
 type PilotPairForReport = {
-	baseline: { measurement: ExplorationReductionMeasurement };
-	catalog: { measurement: ExplorationReductionMeasurement };
+	pairId?: string;
+	attemptNumber?: number;
+	executionOrder?: ["baseline", "catalog"] | ["catalog", "baseline"];
+	baseline: PilotArmForReport;
+	catalog: PilotArmForReport;
+	classification?: PilotAttemptClassification;
+	classificationReasonCodes?: string[];
 	controls: {
 		sameBaseRef: boolean;
 		samePrompt: boolean;
@@ -21,13 +43,31 @@ export function buildPilotReport(input: {
 	repositoryRoot: string;
 	targetHead: string;
 	consumerHead: string;
+	producerHead?: string;
 	consumerDirty: boolean;
+	producerDirty?: boolean;
 	consumerDiffHash: string;
 	mcpServerId: string;
 	dedicatedDatabase: boolean;
+	dedicatedProducerDatabase?: boolean;
 	databasePath: string;
+	producerDatabasePath?: string;
+	preRegistrationHash?: string | null;
+	preflightCanaryHash?: string | null;
+	preflightEvidenceHash?: string | null;
+	featureFlagRestoredToOff: boolean;
+	mcpDisconnected: boolean;
+	activePilotRunCount: number;
+	controlFingerprints?: Record<string, string>;
+	safetyIncidentCount?: number;
+	stopReasonCodes?: string[];
 }) {
-	const measurements = input.pairs.map((pair) => ({
+	const comparablePairs = input.pairs.filter((pair) =>
+		["valid", "task_outcome_failure"].includes(
+			pair.classification ?? "valid",
+		),
+	);
+	const measurements = comparablePairs.map((pair) => ({
 		baseline: pair.baseline.measurement,
 		catalog: pair.catalog.measurement,
 	}));
@@ -37,38 +77,54 @@ export function buildPilotReport(input: {
 	const catalogExploration = measurements.map(({ catalog }) =>
 		explorationCalls(catalog),
 	);
-	const baselineTokens = measurements.flatMap(({ baseline }) =>
-		baseline.totalInputTokens === null ? [] : [baseline.totalInputTokens],
+	const baselineNonCachedTokens = measurements.flatMap(({ baseline }) =>
+		baseline.preMutationNonCachedInputTokens === null
+			? []
+			: [baseline.preMutationNonCachedInputTokens],
 	);
-	const catalogTokens = measurements.flatMap(({ catalog }) =>
-		catalog.totalInputTokens === null ? [] : [catalog.totalInputTokens],
+	const catalogNonCachedTokens = measurements.flatMap(({ catalog }) =>
+		catalog.preMutationNonCachedInputTokens === null
+			? []
+			: [catalog.preMutationNonCachedInputTokens],
 	);
-	const baselineCompletionRate = rate(
-		measurements.map(({ baseline }) => baseline.taskCompleted),
+	const baselineEvaluations = comparablePairs.map(
+		(pair) => pair.baseline.evaluation,
 	);
-	const catalogCompletionRate = rate(
-		measurements.map(({ catalog }) => catalog.taskCompleted),
+	const catalogEvaluations = comparablePairs.map(
+		(pair) => pair.catalog.evaluation,
 	);
-	const baselineVerification = measurements.flatMap(({ baseline }) =>
-		baseline.verificationPassed === null ? [] : [baseline.verificationPassed],
+	const baselineCompletion = completeBooleans(baselineEvaluations, (value) => value.passed);
+	const catalogCompletion = completeBooleans(catalogEvaluations, (value) => value.passed);
+	const baselineVerification = completeBooleans(
+		baselineEvaluations,
+		(value) => value.verificationPassed,
 	);
-	const catalogVerification = measurements.flatMap(({ catalog }) =>
-		catalog.verificationPassed === null ? [] : [catalog.verificationPassed],
+	const catalogVerification = completeBooleans(
+		catalogEvaluations,
+		(value) => value.verificationPassed,
 	);
-	const unsafeIncidentCount = measurements.reduce(
-		(total, { catalog }) =>
-			total +
-			(catalog.fallbackReason === "PROJECT_EXPLORATION_STALE" ||
-			catalog.fallbackReason === "PROJECT_EXPLORATION_UNSAFE_PATH" ||
-			catalog.fallbackReason === "workspace_mismatch"
-				? 1
-				: 0),
-		0,
-	);
+	const unsafeIncidentCount =
+		(input.safetyIncidentCount ?? 0) +
+		measurements.reduce(
+			(total, { catalog }) =>
+				total +
+				(catalog.fallbackReason === "PROJECT_EXPLORATION_STALE" ||
+				catalog.fallbackReason === "PROJECT_EXPLORATION_UNSAFE_PATH" ||
+				catalog.fallbackReason === "workspace_mismatch"
+					? 1
+					: 0),
+			0,
+		);
+	const catalogReliabilityFailureCount = input.pairs.filter(
+		(pair) =>
+			pair.classification === "catalog_reliability_failure" ||
+			pair.catalog.measurement.catalogFailureCount > 0 ||
+			pair.catalog.measurement.warnings.includes("catalog_result_invalid"),
+	).length;
 	const catalogFailurePropagationCount = measurements.filter(
 		({ catalog }) => catalog.catalogFailureCount > 0 && !catalog.taskCompleted,
 	).length;
-	const controlsSatisfied = input.pairs.every(
+	const controlsSatisfied = comparablePairs.every(
 		(pair) =>
 			pair.controls.sameBaseRef &&
 			pair.controls.samePrompt &&
@@ -80,117 +136,204 @@ export function buildPilotReport(input: {
 		median(catalogExploration),
 	);
 	const tokenReductionRate = reductionRate(
-		median(baselineTokens),
-		median(catalogTokens),
+		median(baselineNonCachedTokens),
+		median(catalogNonCachedTokens),
+	);
+	const catalogExactlyOne = comparablePairs.every(
+		(pair) =>
+			pair.catalog.measurement.catalogCallCount === 1 &&
+			pair.catalog.measurement.catalogCalledBeforeBroadExploration === true,
+	);
+	const noEvaluatorMutation = [...baselineEvaluations, ...catalogEvaluations].every(
+		(value) => value !== null && value !== undefined && !value.evaluatorMutatedWorktree,
+	);
+	const measuredUsage = measurements.every(
+		({ baseline, catalog }) =>
+			baseline.usageMode === "measured" && catalog.usageMode === "measured",
+	);
+	const completionRegressionCount = regressionCount(
+		baselineCompletion,
+		catalogCompletion,
+	);
+	const verificationRegressionCount = regressionCount(
+		baselineVerification,
+		catalogVerification,
 	);
 	const gates = {
-		minimumTenPairs: input.pairs.length >= 10,
+		minimumTenPairs: comparablePairs.length === 10,
+		attemptRetention: input.pairs.length >= comparablePairs.length,
 		pairedControls: controlsSatisfied,
 		consumerSourceClean: !input.consumerDirty,
+		producerSourceClean: !input.producerDirty,
 		databaseIsolation: input.dedicatedDatabase,
+		producerDatabaseIsolation: input.dedicatedProducerDatabase === true,
+		featureFlagRestoredToOff: input.featureFlagRestoredToOff,
+		mcpDisconnected: input.mcpDisconnected,
+		activePilotRunsDrained: input.activePilotRunCount === 0,
+		catalogExactlyOnceBeforeExploration: catalogExactlyOne,
+		zeroCatalogReliabilityFailures: catalogReliabilityFailureCount === 0,
+		zeroUnsafeIncidents: unsafeIncidentCount === 0,
+		zeroCatalogFailurePropagation: catalogFailurePropagationCount === 0,
+		independentEvaluationComplete:
+			baselineCompletion.length === comparablePairs.length &&
+			catalogCompletion.length === comparablePairs.length &&
+			noEvaluatorMutation,
+		measuredUsageComplete:
+			measuredUsage &&
+			baselineNonCachedTokens.length === comparablePairs.length &&
+			catalogNonCachedTokens.length === comparablePairs.length,
 		explorationReduction:
 			explorationReductionRate !== null && explorationReductionRate >= 0.2,
-		inputTokenReduction:
-			baselineTokens.length === input.pairs.length &&
-			catalogTokens.length === input.pairs.length &&
-			tokenReductionRate !== null &&
-			tokenReductionRate >= 0.15,
+		preMutationNonCachedInputTokenReduction:
+			tokenReductionRate !== null && tokenReductionRate >= 0.15,
 		completionNonRegression:
-			catalogCompletionRate >= baselineCompletionRate,
+			catalogCompletion.length === comparablePairs.length &&
+			baselineCompletion.length === comparablePairs.length &&
+			rate(catalogCompletion) >= rate(baselineCompletion) &&
+			completionRegressionCount === 0,
 		verificationNonRegression:
-			baselineVerification.length === input.pairs.length &&
-			catalogVerification.length === input.pairs.length &&
-			rate(catalogVerification) >= rate(baselineVerification),
-		zeroUnsafeIncidents: unsafeIncidentCount === 0,
+			catalogVerification.length === comparablePairs.length &&
+			baselineVerification.length === comparablePairs.length &&
+			rate(catalogVerification) >= rate(baselineVerification) &&
+			verificationRegressionCount === 0,
 		noReplanIncrease:
 			median(measurements.map(({ catalog }) => catalog.replanCount)) <=
 			median(measurements.map(({ baseline }) => baseline.replanCount)),
-		zeroCatalogFailurePropagation: catalogFailurePropagationCount === 0,
 	};
+	const safetyOrReliabilityFailure =
+		unsafeIncidentCount > 0 || catalogReliabilityFailureCount > 0;
 	const evidenceComplete =
 		gates.minimumTenPairs &&
+		gates.attemptRetention &&
 		gates.pairedControls &&
 		gates.consumerSourceClean &&
+		gates.producerSourceClean &&
 		gates.databaseIsolation &&
-		baselineTokens.length === input.pairs.length &&
-		catalogTokens.length === input.pairs.length &&
-		baselineVerification.length === input.pairs.length &&
-		catalogVerification.length === input.pairs.length;
-	const decision = !evidenceComplete
-		? "INSUFFICIENT_EVIDENCE"
-		: Object.values(gates).every(Boolean)
-			? "GO"
-			: "NO-GO";
+		gates.producerDatabaseIsolation &&
+		gates.featureFlagRestoredToOff &&
+		gates.mcpDisconnected &&
+		gates.activePilotRunsDrained &&
+		gates.catalogExactlyOnceBeforeExploration &&
+		gates.zeroCatalogFailurePropagation &&
+		gates.independentEvaluationComplete &&
+		gates.measuredUsageComplete;
+	const decision = safetyOrReliabilityFailure
+		? "NO-GO"
+		: !evidenceComplete
+			? "INSUFFICIENT_EVIDENCE"
+			: Object.values(gates).every(Boolean)
+				? "GO"
+				: "NO-GO";
+	const decisionReasonCodes = [
+		...(safetyOrReliabilityFailure
+			? [
+					...(unsafeIncidentCount > 0 ? ["safety_incident"] : []),
+					...(catalogReliabilityFailureCount > 0
+						? ["catalog_reliability_failure"]
+						: []),
+				]
+			: !evidenceComplete
+				? failedGateCodes(gates, [
+						"minimumTenPairs",
+						"attemptRetention",
+						"pairedControls",
+						"consumerSourceClean",
+						"producerSourceClean",
+						"databaseIsolation",
+						"producerDatabaseIsolation",
+						"featureFlagRestoredToOff",
+						"mcpDisconnected",
+						"activePilotRunsDrained",
+						"catalogExactlyOnceBeforeExploration",
+						"zeroCatalogFailurePropagation",
+						"independentEvaluationComplete",
+						"measuredUsageComplete",
+					])
+				: failedGateCodes(gates)),
+		...(input.stopReasonCodes ?? []),
+	].sort();
 
 	return {
-		schemaVersion: "project-intelligence-paired-pilot-v1",
+		schemaVersion: "project-intelligence-value-paired-pilot-v2",
 		pilotId: input.pilotId,
+		protocolVersion: 1,
 		generatedAt: new Date().toISOString(),
 		decision,
+		decisionReasonCodes,
+		preRegistrationHash: input.preRegistrationHash ?? null,
+		preflightCanaryHash: input.preflightCanaryHash ?? null,
+		preflightEvidenceHash: input.preflightEvidenceHash ?? null,
 		controls: {
 			repositoryId: input.repositoryId,
 			repositoryRoot: input.repositoryRoot,
-			targetHead: input.targetHead,
-			consumerHead: input.consumerHead,
+			targetCommit: input.targetHead,
+			consumerCommit: input.consumerHead,
+			producerCommit: input.producerHead ?? null,
 			consumerDirty: input.consumerDirty,
+			producerDirty: input.producerDirty ?? false,
 			consumerDiffHash: input.consumerDiffHash,
 			mcpServerId: input.mcpServerId,
 			dedicatedDatabase: input.dedicatedDatabase,
+			dedicatedProducerDatabase: input.dedicatedProducerDatabase === true,
 			databasePath: input.databasePath,
-			featureFlagRestoredToOff: true,
+			producerDatabasePath: input.producerDatabasePath ?? null,
+			featureFlagRestoredToOff: input.featureFlagRestoredToOff,
+			mcpDisconnected: input.mcpDisconnected,
+			activePilotRunCount: input.activePilotRunCount,
+			...input.controlFingerprints,
 		},
 		taskSet: input.selectedTasks.map((task) => ({
-			...task,
+			id: task.id,
+			...modelPilotTask(task),
 			promptDigest: pilotPromptDigest(task),
+			evaluatorProfileId: task.evaluatorProfileId,
 		})),
-		pairs: input.pairs,
+		attempts: input.pairs,
+		validPairs: comparablePairs.map((pair) => pair.pairId ?? null),
 		aggregate: {
-			pairCount: input.pairs.length,
+			attemptCount: input.pairs.length,
+			validPairCount: comparablePairs.length,
 			baseline: {
 				medianExploratoryToolCalls: median(baselineExploration),
-				medianInputTokens: median(baselineTokens),
-				completionRate: baselineCompletionRate,
+				medianPreMutationNonCachedInputTokens: median(baselineNonCachedTokens),
+				completionRate: rate(baselineCompletion),
 				verificationPassRate: rate(baselineVerification),
-				verificationEvidenceCount: baselineVerification.length,
 			},
 			catalog: {
 				medianExploratoryToolCalls: median(catalogExploration),
-				medianInputTokens: median(catalogTokens),
-				completionRate: catalogCompletionRate,
+				medianPreMutationNonCachedInputTokens: median(catalogNonCachedTokens),
+				completionRate: rate(catalogCompletion),
 				verificationPassRate: rate(catalogVerification),
-				verificationEvidenceCount: catalogVerification.length,
 				catalogBeforeBroadExplorationRate: rate(
 					measurements.map(
 						({ catalog }) =>
 							catalog.catalogCalledBeforeBroadExploration === true,
 					),
 				),
-				catalogCallRate: rate(
-					measurements.map(({ catalog }) => catalog.catalogCalled),
+				catalogExactlyOneRate: rate(
+					measurements.map(({ catalog }) => catalog.catalogCallCount === 1),
 				),
 			},
 			reductions: {
 				exploratoryToolCalls: explorationReductionRate,
-				inputTokens: tokenReductionRate,
+				preMutationNonCachedInputTokens: tokenReductionRate,
 			},
-			unsafeIncidentCount,
-			catalogFailurePropagationCount,
+			qualityGuards: {
+				completionRegressionCount,
+				verificationRegressionCount,
+				catalogFailurePropagationCount,
+			},
+			safety: { unsafeIncidentCount, catalogReliabilityFailureCount },
 			gates,
 		},
+		stopReasonCodes: [...new Set(input.stopReasonCodes ?? [])].sort(),
 	};
 }
 
 export function pilotPromptDigest(task: PilotTask) {
-	return createHash("sha256")
-		.update(
-			JSON.stringify({
-				title: task.title,
-				description: task.description,
-				objective: task.objective,
-				acceptanceCriteria: task.acceptanceCriteria,
-			}),
-		)
-		.digest("hex");
+	return `sha256:${createHash("sha256")
+		.update(JSON.stringify(modelPilotTask(task)))
+		.digest("hex")}`;
 }
 
 function explorationCalls(measurement: ExplorationReductionMeasurement) {
@@ -199,6 +342,21 @@ function explorationCalls(measurement: ExplorationReductionMeasurement) {
 		measurement.searchCallsBeforeMutation +
 		measurement.readFileCallsBeforeMutation +
 		(measurement.mode === "catalog" ? measurement.catalogCallCount : 0)
+	);
+}
+
+function completeBooleans<T>(
+	values: Array<T | null | undefined>,
+	read: (value: T) => boolean,
+): boolean[] {
+	return values.flatMap((value) => (value === null || value === undefined ? [] : [read(value)]));
+}
+
+function regressionCount(baseline: boolean[], catalog: boolean[]) {
+	if (baseline.length !== catalog.length) return Number.POSITIVE_INFINITY;
+	return baseline.reduce(
+		(count, passed, index) => count + (passed && catalog[index] === false ? 1 : 0),
+		0,
 	);
 }
 
@@ -219,4 +377,11 @@ function reductionRate(baseline: number | null, catalog: number | null) {
 function rate(values: boolean[]) {
 	if (values.length === 0) return 0;
 	return values.filter(Boolean).length / values.length;
+}
+
+function failedGateCodes(
+	gates: Record<string, boolean>,
+	include: string[] = Object.keys(gates),
+) {
+	return include.filter((name) => !gates[name]).sort();
 }

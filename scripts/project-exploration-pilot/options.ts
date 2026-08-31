@@ -18,6 +18,15 @@ export type PilotOptions = {
 	allowDirtyConsumer: boolean;
 	allowLiveApi: boolean;
 	dedicatedDatabase: boolean;
+	formal: boolean;
+	registration: string | null;
+	evaluatorQualification: string | null;
+	preflightCanary: boolean;
+	canaryEvidence: string | null;
+	preflightOnly: boolean;
+	preflightEvidence: string | null;
+	producerDatabase: string;
+	resume: string | null;
 	output: string | null;
 };
 
@@ -40,6 +49,15 @@ export function parsePilotOptions(
 			"allow-dirty-consumer": { type: "boolean" },
 			"allow-live-api": { type: "boolean" },
 			"dedicated-database": { type: "boolean" },
+			formal: { type: "boolean" },
+			registration: { type: "string" },
+			"evaluator-qualification": { type: "string" },
+			"preflight-canary": { type: "boolean" },
+			"canary-evidence": { type: "string" },
+			preflight: { type: "boolean" },
+			"preflight-evidence": { type: "string" },
+			"producer-database": { type: "string" },
+			resume: { type: "string" },
 			output: { type: "string" },
 		},
 		strict: true,
@@ -57,6 +75,75 @@ export function parsePilotOptions(
 	const cooldownSeconds = nonnegativeInteger(
 		parsed.values["cooldown-seconds"] ?? "30",
 	);
+	const formal = parsed.values.formal ?? false;
+	const registration = parsed.values.registration
+		? requiredPathOption("--registration", parsed.values.registration, cwd)
+		: null;
+	const evaluatorQualification = parsed.values["evaluator-qualification"]
+		? requiredPathOption(
+				"--evaluator-qualification",
+				parsed.values["evaluator-qualification"],
+				cwd,
+			)
+		: null;
+	const preflightCanary = parsed.values["preflight-canary"] ?? false;
+	const canaryEvidence = parsed.values["canary-evidence"]
+		? requiredPathOption(
+				"--canary-evidence",
+				parsed.values["canary-evidence"],
+				cwd,
+			)
+		: null;
+	const preflightOnly = parsed.values.preflight ?? false;
+	const preflightEvidence = parsed.values["preflight-evidence"]
+		? requiredPathOption(
+				"--preflight-evidence",
+				parsed.values["preflight-evidence"],
+				cwd,
+			)
+		: null;
+	const output = parsed.values.output
+		? path.resolve(cwd, parsed.values.output)
+		: null;
+	if (formal && !registration) {
+		throw new Error("--formal requires --registration.");
+	}
+	if (formal && !evaluatorQualification) {
+		throw new Error("--formal requires --evaluator-qualification.");
+	}
+	if (formal && !canaryEvidence) {
+		throw new Error("--formal requires --canary-evidence.");
+	}
+	if (formal && !preflightOnly && !preflightEvidence) {
+		throw new Error("--formal requires --preflight-evidence after preflight succeeds.");
+	}
+	if (preflightOnly && !formal) {
+		throw new Error("--preflight requires --formal controls.");
+	}
+	if (preflightOnly && preflightEvidence) {
+		throw new Error("--preflight produces evidence; do not pass --preflight-evidence.");
+	}
+	if (formal && preflightCanary) {
+		throw new Error("--formal cannot be combined with --preflight-canary.");
+	}
+	if (preflightCanary && canaryEvidence) {
+		throw new Error("--preflight-canary produces evidence; do not pass --canary-evidence.");
+	}
+	if (preflightCanary && (fromPair !== 1 || pairCount !== 1)) {
+		throw new Error("--preflight-canary requires --from-pair 1 and --pair-count 1.");
+	}
+	if (preflightCanary && !output) {
+		throw new Error("--preflight-canary requires --output for its evidence artifact.");
+	}
+	if (formal && (parsed.values["allow-dirty-consumer"] || parsed.values["allow-live-api"])) {
+		throw new Error("Formal pilot rejects dirty-consumer and live-api overrides.");
+	}
+	if (formal && !parsed.values["dedicated-database"]) {
+		throw new Error("Formal pilot requires --dedicated-database.");
+	}
+	if (formal && !output) {
+		throw new Error("Formal pilot requires --output for atomic checkpoints.");
+	}
 	return {
 		pilotId: parsed.values["pilot-id"]?.trim() || DEFAULT_PILOT_ID,
 		repositoryId: parsed.values["repository-id"] ?? "",
@@ -78,9 +165,22 @@ export function parsePilotOptions(
 		allowDirtyConsumer: parsed.values["allow-dirty-consumer"] ?? false,
 		allowLiveApi: parsed.values["allow-live-api"] ?? false,
 		dedicatedDatabase: parsed.values["dedicated-database"] ?? false,
-		output: parsed.values.output
-			? path.resolve(cwd, parsed.values.output)
+		formal,
+		registration,
+		evaluatorQualification,
+		preflightCanary,
+		canaryEvidence,
+		preflightOnly,
+		preflightEvidence,
+		producerDatabase: requiredPathOption(
+			"--producer-database",
+			parsed.values["producer-database"],
+			cwd,
+		),
+		resume: parsed.values.resume
+			? requiredPathOption("--resume", parsed.values.resume, cwd)
 			: null,
+		output,
 	};
 }
 

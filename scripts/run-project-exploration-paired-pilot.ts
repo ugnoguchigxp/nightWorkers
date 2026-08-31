@@ -1,30 +1,16 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, openSync, unlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-	createRepository,
-	createTask,
-	listTasks,
-} from "../api/modules/nightworkers/nightworkers.basic.service";
+import { createRepository } from "../api/modules/nightworkers/nightworkers.basic.service";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 import {
-	measureProjectExplorationRun,
-	summarizeProjectExplorationPair,
-} from "../api/modules/ontology/exploration/project-exploration-measurement";
-import { saveProjectExplorationCatalogSettings } from "../api/modules/ontology/exploration/project-exploration-settings.service";
-import { startTaskRun } from "../api/modules/nightworkers/run-orchestration/start-task-run";
-import { listTaskEventsForRun } from "../api/modules/nightworkers/nightworkers.runs-event.repository";
-import { listLlmUsageRecordsForRun } from "../api/services/llm-usage/repository";
+	getProjectExplorationCatalogSettings,
+	saveProjectExplorationCatalogSettings,
+} from "../api/modules/ontology/exploration/project-exploration-settings.service";
 import { mcpClientManager } from "../api/services/mcp/mcp-client-manager";
-import {
-	createMcpServer,
-	listMcpServers,
-	updateMcpServer,
-} from "../api/services/mcp/mcp-settings";
 import { resolveStructuredLlmRoleRoute } from "../api/services/structured-llm/role-routing";
 import { readStructuredLlmProviderSettings } from "../api/services/structured-llm/settings";
-import { getRuntimePaths } from "../api/runtime/paths";
 import {
 	DATABASE_ACCESS_SCOPES,
 	assertIsolatedRuntimeEnvironment,
@@ -34,28 +20,49 @@ import {
 	parsePilotOptions,
 	type PilotOptions,
 } from "./project-exploration-pilot/options";
+import { buildPilotReport } from "./project-exploration-pilot/report";
+import { counterbalancedOrder } from "./project-exploration-pilot/registration";
+import { evaluatorSetFingerprint } from "./project-exploration-pilot/evaluator";
+import { buildPilotCanaryEvidence } from "./project-exploration-pilot/canary";
+import { buildPilotPreflightEvidence } from "./project-exploration-pilot/preflight";
 import {
-	buildPilotReport,
-	pilotPromptDigest,
-} from "./project-exploration-pilot/report";
+	activePilotRunCountFor,
+	assertPairEvidenceIntegrity,
+	commonSystemPromptFingerprint,
+	consumedPairAttemptCount,
+	interruptionCode,
+	pilotRunInventory,
+	runPair,
+} from "./project-exploration-pilot/runtime-execution";
+import {
+	initializeProducerPilotDatabase,
+	preparePilotMcpServer,
+	acquirePilotRuntimeLease,
+	catalogPinEvidence,
+	gitOutput,
+	listCompetingNightWorkersProcesses,
+	progress,
+	sha256Fingerprint,
+	sleep,
+	writeAtomicJson,
+	writeRawCheckpoint,
+} from "./project-exploration-pilot/runtime-infrastructure";
+import {
+	assertRegistrationFingerprints,
+	assertResumeCheckpointMatchesRuntime,
+	loadFormalCanaryEvidence,
+	loadFormalEvaluatorQualification,
+	loadFormalPreflightEvidence,
+	loadFormalRegistration,
+	loadResumeCheckpoint,
+	type PilotPair,
+} from "./project-exploration-pilot/runtime-support";
+import { nativeApiToolRegistrations } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import {
 	PILOT_TASKS,
+	PILOT_PREFLIGHT_CANARY_TASK,
 	type PilotTask,
 } from "./project-exploration-pilot/tasks";
-
-const POLL_INTERVAL_MS = 2_000;
-
-const TERMINAL_RUN_STATUSES = new Set([
-	"completed",
-	"failed",
-	"cancelled",
-	"needs_review",
-	"blocked",
-	"timed_out",
-	"needs_human",
-]);
-
-type PilotMode = "baseline" | "catalog";
 
 async function main() {
 	assertIsolatedRuntimeEnvironment(process.env, [
@@ -95,11 +102,13 @@ async function runPilot(options: PilotOptions) {
 			`Pilot repository path mismatch: expected ${options.repositoryRoot}, received ${repository.localPath}`,
 		);
 	}
-	const selectedTasks = PILOT_TASKS.slice(
-		options.fromPair - 1,
-		options.fromPair - 1 + options.pairCount,
-	);
-	if (selectedTasks.length !== options.pairCount) {
+	const selectedTasks: readonly PilotTask[] = options.preflightCanary
+		? [PILOT_PREFLIGHT_CANARY_TASK]
+		: PILOT_TASKS.slice(
+				options.fromPair - 1,
+				options.fromPair - 1 + options.pairCount,
+			);
+	if (!options.preflightCanary && selectedTasks.length !== options.pairCount) {
 		throw new Error("Requested pair range exceeds the fixed pilot task set.");
 	}
 
@@ -112,6 +121,11 @@ async function runPilot(options: PilotOptions) {
 		throw new Error("Pilot target repository must be clean before starting.");
 	}
 	const consumerHead = await gitOutput(process.cwd(), ["rev-parse", "HEAD"]);
+	const producerHead = await gitOutput(options.producerRoot, ["rev-parse", "HEAD"]);
+	const producerStatus = await gitOutput(options.producerRoot, [
+		"status",
+		"--porcelain=v1",
+	]);
 	const consumerStatus = await gitOutput(process.cwd(), [
 		"status",
 		"--porcelain=v1",
@@ -121,6 +135,31 @@ async function runPilot(options: PilotOptions) {
 			"NightWorkers must be clean before the paired pilot. Commit or isolate the implementation changes, or use --allow-dirty-consumer only for non-gating diagnostics.",
 		);
 	}
+	if (options.formal && (consumerStatus.length > 0 || producerStatus.length > 0)) {
+		throw new Error(
+			"Formal pilot requires clean NightWorkers and vulnWorkbench worktrees.",
+		);
+	}
+	const registration = await loadFormalRegistration(options, {
+		producerHead,
+		consumerHead,
+		targetHead,
+	});
+	const evaluatorQualification = await loadFormalEvaluatorQualification(
+		options,
+		targetHead,
+	);
+	const resumedCheckpoint = await loadResumeCheckpoint(options);
+	const resumedPairs = resumedCheckpoint.pairs;
+	const interruptions = [...resumedCheckpoint.interruptions];
+	const tasksToRun = selectedTasks.filter(
+		(task) =>
+			!resumedPairs.some(
+				(pair) =>
+					pair.pairId === task.id &&
+					["valid", "task_outcome_failure"].includes(pair.classification),
+			),
+	);
 	const competingProcesses = await listCompetingNightWorkersProcesses();
 	if (
 		competingProcesses.length > 0 &&
@@ -149,12 +188,89 @@ async function runPilot(options: PilotOptions) {
 		thinkingDepth: options.thinkingDepth,
 		requestTimeoutSeconds: configuredRoute.requestTimeoutSeconds ?? undefined,
 	};
-	const mcpServer = await ensurePilotMcpServer({
+	const settingsPath = process.env.NIGHTWORKERS_LLM_SETTINGS_PATH;
+	if (!settingsPath) {
+		throw new Error("Pilot requires an isolated NIGHTWORKERS_LLM_SETTINGS_PATH.");
+	}
+	const settingsFingerprint = sha256Fingerprint(await readFile(settingsPath, "utf8"));
+	const routeFingerprint = sha256Fingerprint(JSON.stringify(routeOverride));
+	const toolManifestFingerprint = sha256Fingerprint(
+		JSON.stringify(
+			nativeApiToolRegistrations.map((tool) => ({
+				name: tool.name,
+				kind: tool.kind,
+				workerToolName: tool.workerToolName ?? null,
+				definition: tool.definition,
+			})),
+		),
+	);
+	const canaryEvidence = await loadFormalCanaryEvidence(options, {
+		registration,
+		commits: {
+			producer: producerHead,
+			consumer: consumerHead,
+			target: targetHead,
+		},
+		controlFingerprints: {
+			route: routeFingerprint,
+			settings: settingsFingerprint,
+			toolManifest: toolManifestFingerprint,
+		},
+	});
+	const preflightEvidence = await loadFormalPreflightEvidence(options, {
+		registration,
+		evaluatorQualification,
+		canaryEvidence,
+		commits: {
+			producer: producerHead,
+			consumer: consumerHead,
+			target: targetHead,
+		},
+		controlFingerprints: {
+			route: routeFingerprint,
+			settings: settingsFingerprint,
+			systemPrompt:
+				registration?.registration.fingerprints.systemPrompt ?? "",
+			toolManifest: toolManifestFingerprint,
+			evaluatorSet: evaluatorSetFingerprint(PILOT_TASKS),
+		},
+	});
+	const checkpointControls = {
+		producerCommit: producerHead,
+		consumerCommit: consumerHead,
+		targetCommit: targetHead,
+		routeFingerprint,
+		settingsFingerprint,
+		toolManifestFingerprint,
+		preRegistrationHash: registration?.hash ?? null,
+		preflightCanaryHash: canaryEvidence?.hash ?? null,
+		preflightEvidenceHash: preflightEvidence?.hash ?? null,
+		systemPromptFingerprint:
+			registration?.registration.fingerprints.systemPrompt ?? null,
+	};
+	assertResumeCheckpointMatchesRuntime({
+		checkpoint: resumedCheckpoint,
+		controls: checkpointControls,
+		formal: options.formal,
+	});
+	await initializeProducerPilotDatabase({
+		producerRoot: options.producerRoot,
+		producerDatabase: options.producerDatabase,
+		formal: options.formal,
+	});
+	const producerPreparation = await preparePilotMcpServer({
 		producerRoot: options.producerRoot,
 		repositoryRoot: options.repositoryRoot,
+		producerDatabase: options.producerDatabase,
+		formal: options.formal,
+		preparationTimeoutSeconds: options.timeoutSeconds,
+		targetHead,
 	});
+	const mcpServer = producerPreparation.mcpServer;
 
-	const pairs: Awaited<ReturnType<typeof runPair>>[] = [];
+	const pairs: PilotPair[] = [...resumedPairs];
+	let featureFlagRestoredToOff = false;
+	let mcpDisconnected = false;
 	try {
 		const tools = await mcpClientManager.listToolsForServer(mcpServer);
 		const requiredTools = [
@@ -170,18 +286,65 @@ async function runPilot(options: PilotOptions) {
 				`Pilot MCP server is missing tools: ${missingTools.join(", ")}`,
 			);
 		}
-		for (const [taskIndex, task] of selectedTasks.entries()) {
+		if (!options.preflightOnly) {
+			for (const [taskIndex, task] of tasksToRun.entries()) {
+			const consumedPairAttempts = await consumedPairAttemptCount(
+				options.pilotId,
+			);
+			if (
+				registration &&
+				consumedPairAttempts >=
+					registration.registration.schedule.maxPairAttempts
+			) {
+				throw new Error("Pilot reached its pre-registered global attempt stop-loss.");
+			}
 			progress({ event: "pair.started", pairId: task.id, title: task.title });
-			const pair = await runPair({
-				task,
-				pilotId: options.pilotId,
-				repositoryId: options.repositoryId,
-				mcpServerId: mcpServer.id,
-				timeoutSeconds: options.timeoutSeconds,
-				routeOverride,
-				cooldownSeconds: options.cooldownSeconds,
-			});
+			let pair: PilotPair;
+			try {
+				pair = await runPair({
+					task,
+					pilotId: options.pilotId,
+					repositoryId: options.repositoryId,
+					mcpServerId: mcpServer.id,
+					timeoutSeconds: options.timeoutSeconds,
+					routeOverride,
+					cooldownSeconds: options.cooldownSeconds,
+					executionOrder: counterbalancedOrder(
+						options.fromPair + selectedTasks.indexOf(task),
+					),
+					maxAttemptsPerTask:
+						registration?.registration.schedule.maxAttemptsPerTask ?? 2,
+				});
+			} catch (error) {
+				interruptions.push({
+					pairId: task.id,
+					state: "unclassified",
+					code: interruptionCode(error),
+				});
+				if (options.output) {
+					await writeRawCheckpoint(options.output, {
+						pilotId: options.pilotId,
+						completedPairIds: pairs.map((entry) => entry.pairId),
+						pairs,
+						runInventory: await pilotRunInventory(options.pilotId),
+						interruptions,
+						controls: checkpointControls,
+					});
+				}
+				throw error;
+			}
+			await assertPairEvidenceIntegrity(pair);
 			pairs.push(pair);
+			if (options.output) {
+				await writeRawCheckpoint(options.output, {
+					pilotId: options.pilotId,
+					completedPairIds: pairs.map((entry) => entry.pairId),
+					pairs,
+					runInventory: await pilotRunInventory(options.pilotId),
+					interruptions,
+					controls: checkpointControls,
+				});
+			}
 			progress({
 				event: "pair.finished",
 				pairId: task.id,
@@ -192,7 +355,7 @@ async function runPilot(options: PilotOptions) {
 			});
 			if (
 				options.cooldownSeconds > 0 &&
-				taskIndex < selectedTasks.length - 1
+				taskIndex < tasksToRun.length - 1
 			) {
 				progress({
 					event: "pilot.cooldown",
@@ -201,15 +364,107 @@ async function runPilot(options: PilotOptions) {
 				});
 				await sleep(options.cooldownSeconds * 1_000);
 			}
+			}
 		}
 	} finally {
-		await saveProjectExplorationCatalogSettings(options.repositoryId, {
-			enabled: false,
-			mcpServerId: mcpServer.id,
+		try {
+			await saveProjectExplorationCatalogSettings(options.repositoryId, {
+				enabled: false,
+				mcpServerId: mcpServer.id,
+			});
+			const restored = await getProjectExplorationCatalogSettings(
+				options.repositoryId,
+			);
+			featureFlagRestoredToOff = restored.enabled === false;
+			if (!featureFlagRestoredToOff) {
+				throw new Error("Pilot feature flag did not restore to OFF.");
+			}
+		} finally {
+			await mcpClientManager.disconnect(mcpServer.id);
+			mcpDisconnected = true;
+		}
+	}
+	const activePilotRunCount = await activePilotRunCountFor(options.pilotId);
+	if (!featureFlagRestoredToOff || !mcpDisconnected || activePilotRunCount !== 0) {
+		throw new Error("Pilot cleanup verification failed.");
+	}
+	if (options.preflightOnly) {
+		const evidence = buildPilotPreflightEvidence({
+			pilotId: options.pilotId,
+			commits: {
+				producer: producerHead,
+				consumer: consumerHead,
+				target: targetHead,
+			},
+			artifacts: {
+				registration: registration?.hash ?? "",
+				evaluatorQualification: evaluatorQualification?.hash ?? "",
+				canary: canaryEvidence?.hash ?? "",
+			},
+			controlFingerprints: {
+				route: routeFingerprint,
+				settings: settingsFingerprint,
+				systemPrompt:
+					registration?.registration.fingerprints.systemPrompt ?? "",
+				toolManifest: toolManifestFingerprint,
+				evaluatorSet: evaluatorSetFingerprint(PILOT_TASKS),
+			},
+			gates: {
+				cleanSources:
+					consumerStatus.length === 0 &&
+					producerStatus.length === 0 &&
+					targetStatus.length === 0,
+				dedicatedConsumerDatabase: options.dedicatedDatabase,
+				dedicatedProducerDatabase: true,
+				producerCatalogReady: producerPreparation.catalogReady,
+				producerProjectRegistrationExact:
+					producerPreparation.exactProjectRegistration,
+				featureFlagRestoredToOff,
+				mcpDisconnected,
+				activePilotRunsDrained: activePilotRunCount === 0,
+			},
 		});
-		await mcpClientManager.disconnect(mcpServer.id);
+		await writeAtomicJson(options.output as string, evidence);
+		process.stdout.write(
+			`${JSON.stringify({ status: evidence.status, output: options.output })}\n`,
+		);
+		return;
 	}
 
+	const controlFingerprints = {
+		routeFingerprint,
+		settingsFingerprint,
+		systemPromptFingerprint: commonSystemPromptFingerprint(pairs),
+		toolManifestFingerprint,
+		evaluatorSetFingerprint: evaluatorSetFingerprint(selectedTasks),
+	};
+	if (registration) assertRegistrationFingerprints(registration, controlFingerprints);
+	if (options.preflightCanary) {
+		const pair = pairs[0];
+		if (!pair) throw new Error("Pilot canary did not produce one complete pair.");
+		const evidence = buildPilotCanaryEvidence({
+			pair,
+			commits: {
+				producer: producerHead,
+				consumer: consumerHead,
+				target: targetHead,
+			},
+			controlFingerprints: {
+				route: routeFingerprint,
+				settings: settingsFingerprint,
+				systemPrompt: controlFingerprints.systemPromptFingerprint,
+				toolManifest: toolManifestFingerprint,
+			},
+		});
+		await writeAtomicJson(options.output as string, evidence);
+		process.stdout.write(
+			`${JSON.stringify({
+				status: evidence.status,
+				output: options.output,
+			})}\n`,
+		);
+		return;
+	}
 	const report = buildPilotReport({
 		pilotId: options.pilotId,
 		selectedTasks,
@@ -218,356 +473,35 @@ async function runPilot(options: PilotOptions) {
 		repositoryRoot: options.repositoryRoot,
 		targetHead,
 		consumerHead,
+		producerHead,
 		consumerDirty: consumerStatus.length > 0,
+		producerDirty: producerStatus.length > 0,
 		consumerDiffHash,
 		mcpServerId: mcpServer.id,
 		dedicatedDatabase: options.dedicatedDatabase,
+		dedicatedProducerDatabase: true,
 		databasePath: resolveLocalDatabasePath(process.env.DATABASE_URL),
+		producerDatabasePath: options.producerDatabase,
+		preRegistrationHash: registration?.hash ?? null,
+		preflightCanaryHash: canaryEvidence?.hash ?? null,
+		preflightEvidenceHash: preflightEvidence?.hash ?? null,
+		featureFlagRestoredToOff,
+		mcpDisconnected,
+		activePilotRunCount,
+		controlFingerprints,
 	});
 	if (options.output) {
-		await Bun.write(options.output, `${JSON.stringify(report, null, 2)}\n`);
+		await writeAtomicJson(options.output, report);
 		progress({ event: "pilot.report_written", output: options.output });
 	}
-	process.stdout.write(`${JSON.stringify(report)}\n`);
-}
-
-async function ensurePilotMcpServer(input: {
-	producerRoot: string;
-	repositoryRoot: string;
-}) {
-	const desired = {
-		name: "vulnWorkbench Project Intelligence Pilot",
-		enabled: true,
-		transport: "stdio" as const,
-		command: "bun",
-		args: ["api/cli/static-intelligence-mcp-server.ts"],
-		cwd: input.producerRoot,
-		env: {
-			STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS: input.repositoryRoot,
-			STATIC_INTELLIGENCE_PROJECT_CREATION_POLICY:
-				"create_within_allowed_roots",
-		},
-		toolPrefix: "vuln_pilot",
-	};
-	const existing = listMcpServers().find(
-		(server) => server.toolPrefix === desired.toolPrefix,
+	process.stdout.write(
+		`${JSON.stringify({
+			pilotId: report.pilotId,
+			decision: report.decision,
+			validPairCount: report.aggregate.validPairCount,
+			output: options.output,
+		})}\n`,
 	);
-	if (!existing) return createMcpServer(desired);
-	const updated = await updateMcpServer(existing.id, desired);
-	if (!updated) throw new Error("Failed to update the pilot MCP server.");
-	return updated;
-}
-
-async function runPair(input: {
-	task: PilotTask;
-	pilotId: string;
-	repositoryId: string;
-	mcpServerId: string;
-	timeoutSeconds: number;
-	routeOverride: {
-		providerEndpointId: string;
-		model: string;
-		thinkingDepth: "low" | "medium" | "high" | "very_high";
-		requestTimeoutSeconds?: number;
-	};
-	cooldownSeconds: number;
-}) {
-	const baseline = await prepareAndStartRun({ ...input, mode: "baseline" });
-	const baselineTerminal = await waitForTerminalRun(
-		baseline.runId,
-		input.timeoutSeconds + 180,
-	);
-	const baselineMeasurement = await measureRun(baselineTerminal);
-	progress({
-		event: "pilot.cooldown",
-		seconds: input.cooldownSeconds,
-		reason: "provider_capacity_recovery_between_pair_members",
-	});
-	await sleep(input.cooldownSeconds * 1_000);
-	const catalog = await prepareAndStartRun({ ...input, mode: "catalog" });
-	await saveProjectExplorationCatalogSettings(input.repositoryId, {
-		enabled: false,
-		mcpServerId: input.mcpServerId,
-	});
-	const catalogTerminal = await waitForTerminalRun(
-		catalog.runId,
-		input.timeoutSeconds + 180,
-	);
-	const catalogMeasurement = await measureRun(catalogTerminal);
-	return {
-		pairId: input.task.id,
-		category: input.task.category,
-		title: input.task.title,
-		promptDigest: pilotPromptDigest(input.task),
-		baseline: {
-			taskId: baseline.taskId,
-			runId: baselineTerminal.id,
-			status: baselineTerminal.status,
-			baseRef: baselineTerminal.baseRef,
-			worktreePath: baseline.worktreePath,
-			measurement: baselineMeasurement,
-			route: routeEvidence(baselineTerminal.contextSnapshot),
-		},
-		catalog: {
-			taskId: catalog.taskId,
-			runId: catalogTerminal.id,
-			status: catalogTerminal.status,
-			baseRef: catalogTerminal.baseRef,
-			worktreePath: catalog.worktreePath,
-			measurement: catalogMeasurement,
-			route: routeEvidence(catalogTerminal.contextSnapshot),
-			pin: catalogPinEvidence(catalogTerminal.contextSnapshot),
-		},
-		controls: {
-			sameBaseRef:
-				baselineTerminal.baseRef === catalogTerminal.baseRef,
-			samePrompt: true,
-			sameRoute:
-				JSON.stringify(routeEvidence(baselineTerminal.contextSnapshot)) ===
-				JSON.stringify(routeEvidence(catalogTerminal.contextSnapshot)),
-			independentWorktrees:
-				Boolean(baseline.worktreePath) &&
-				Boolean(catalog.worktreePath) &&
-				baseline.worktreePath !== catalog.worktreePath,
-		},
-		comparison: summarizeProjectExplorationPair({
-			baseline: baselineMeasurement,
-			catalog: catalogMeasurement,
-		}),
-	};
-}
-
-async function prepareAndStartRun(input: {
-	task: PilotTask;
-	pilotId: string;
-	repositoryId: string;
-	mcpServerId: string;
-	timeoutSeconds: number;
-	routeOverride: {
-		providerEndpointId: string;
-		model: string;
-		thinkingDepth: "low" | "medium" | "high" | "very_high";
-		requestTimeoutSeconds?: number;
-	};
-	mode: PilotMode;
-}) {
-	const createdBy = `${input.pilotId}:${input.task.id}:${input.mode}`;
-	const existingTask = (await listTasks()).find(
-		(task) => task.createdBy === createdBy,
-	);
-	const task =
-		existingTask ??
-		(await createTask({
-			repositoryId: input.repositoryId,
-			title: input.task.title,
-			description: input.task.description,
-			objective: input.task.objective,
-			acceptanceCriteria: input.task.acceptanceCriteria,
-			timeoutSeconds: input.timeoutSeconds,
-			createdBy,
-		}));
-	const existingRuns = await nightworkersRepo.listTaskRunsForTask(task.id);
-	const existingRun = existingRuns.sort(
-		(left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
-	)[0];
-	if (existingRun) {
-		return {
-			taskId: task.id,
-			runId: existingRun.id,
-			worktreePath: task.worktreePath,
-		};
-	}
-
-	await saveProjectExplorationCatalogSettings(input.repositoryId, {
-		enabled: input.mode === "catalog",
-		mcpServerId: input.mcpServerId,
-	});
-	const run = await startTaskRun(task.id, {
-		executionMode: "implementation",
-		executionModeSource: "explicit",
-		routeOverride: input.routeOverride,
-	});
-	const refreshedTask = await nightworkersRepo.getTask(task.id);
-	return {
-		taskId: task.id,
-		runId: run.id,
-		worktreePath: refreshedTask?.worktreePath ?? null,
-	};
-}
-
-async function waitForTerminalRun(runId: string, maxWaitSeconds: number) {
-	const deadline = Date.now() + maxWaitSeconds * 1_000;
-	let lastStatus = "";
-	while (Date.now() < deadline) {
-		const run = await nightworkersRepo.getTaskRun(runId);
-		if (!run) throw new Error(`Pilot run disappeared: ${runId}`);
-		if (run.status !== lastStatus) {
-			lastStatus = run.status;
-			progress({ event: "run.status", runId, status: run.status });
-		}
-		if (TERMINAL_RUN_STATUSES.has(run.status)) return run;
-		await sleep(POLL_INTERVAL_MS);
-	}
-	const run = await nightworkersRepo.getTaskRun(runId);
-	if (!run) throw new Error(`Pilot run disappeared: ${runId}`);
-	progress({ event: "run.poll_timeout", runId, status: run.status });
-	return run;
-}
-
-async function measureRun(
-	run: NonNullable<Awaited<ReturnType<typeof nightworkersRepo.getTaskRun>>>,
-) {
-	const [events, usageRecords] = await Promise.all([
-		listTaskEventsForRun(run.id),
-		listLlmUsageRecordsForRun(run.id),
-	]);
-	return measureProjectExplorationRun({ run, events, usageRecords });
-}
-
-function routeEvidence(contextSnapshot: unknown) {
-	const snapshot = recordValue(contextSnapshot);
-	const routing = recordValue(snapshot?.effectiveLlmRouting);
-	const active = recordValue(routing?.active);
-	return {
-		runtimeLane: stringValue(snapshot?.runtimeLane),
-		providerId: stringValue(active?.providerId),
-		providerEndpointId: stringValue(active?.providerEndpointId),
-		model: stringValue(active?.model),
-		thinkingDepth: stringValue(active?.thinkingDepth),
-	};
-}
-
-function catalogPinEvidence(contextSnapshot: unknown) {
-	const snapshot = recordValue(contextSnapshot);
-	const pin = recordValue(snapshot?.projectExplorationCatalog);
-	if (!pin) return null;
-	const readiness = recordValue(pin.readiness);
-	const freshness = recordValue(pin.freshness);
-	const preparation = recordValue(pin.preparation);
-	return {
-		version: numberValue(pin.version),
-		available: pin.available === true,
-		reason: stringValue(pin.reason),
-		preparedAt: stringValue(pin.preparedAt),
-		preparationStatus: stringValue(pin.preparationStatus),
-		freshness: freshness
-			? {
-					status: stringValue(freshness.status),
-					sourceRevisionKind: stringValue(freshness.sourceRevisionKind),
-					sourceRevisionValue: stringValue(freshness.sourceRevisionValue),
-				}
-			: null,
-		readiness: readiness
-			? {
-					codeStructure: stringValue(readiness.codeStructure),
-					usability: stringValue(readiness.usability),
-					reasonCodes: Array.isArray(readiness.reasonCodes)
-						? readiness.reasonCodes.filter(
-								(value): value is string => typeof value === "string",
-							)
-						: [],
-					coverage: recordValue(readiness.coverage),
-				}
-			: null,
-		preparation: preparation
-			? {
-					reused: preparation.reused === true,
-					durationMs: numberValue(preparation.durationMs),
-					pollCount: numberValue(preparation.pollCount),
-				}
-			: null,
-	};
-}
-
-function acquirePilotRuntimeLease(options: PilotOptions): () => void {
-	if (!options.dedicatedDatabase) return () => {};
-	const runtimePaths = getRuntimePaths();
-	const databasePath = resolveLocalDatabasePath(process.env.DATABASE_URL);
-	if (!existsSync(databasePath)) {
-		throw new Error(
-			`Dedicated pilot database does not exist: ${databasePath}`,
-		);
-	}
-	const leasePath = path.join(
-		runtimePaths.runtimeRoot,
-		"project-intelligence-pilot.lock",
-	);
-	let descriptor: number;
-	try {
-		descriptor = openSync(leasePath, "wx", 0o600);
-	} catch (error) {
-		throw new Error(
-			`Dedicated pilot database already has a runtime lease: ${leasePath}`,
-			{ cause: error },
-		);
-	}
-	return () => {
-		closeSync(descriptor);
-		unlinkSync(leasePath);
-	};
-}
-
-async function gitOutput(cwd: string, args: string[]) {
-	return commandOutput(cwd, ["git", ...args]);
-}
-
-async function listCompetingNightWorkersProcesses() {
-	const output = await commandOutput(process.cwd(), [
-		"ps",
-		"-axo",
-		"pid=,command=",
-	]);
-	return output
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter(Boolean)
-		.filter((line) => {
-			const [rawPid] = line.split(/\s+/, 1);
-			if (Number(rawPid) === process.pid) return false;
-			return (
-				line.includes("bun api/index.ts") ||
-				line.includes("bun run dev:api")
-			);
-		});
-}
-
-async function commandOutput(cwd: string, command: string[]) {
-	const child = Bun.spawn(command, {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const [exitCode, stdout, stderr] = await Promise.all([
-		child.exited,
-		new Response(child.stdout).text(),
-		new Response(child.stderr).text(),
-	]);
-	if (exitCode !== 0) {
-		throw new Error(`${command.join(" ")} failed: ${stderr.trim()}`);
-	}
-	return stdout.trim();
-}
-
-function progress(payload: Record<string, unknown>) {
-	process.stderr.write(`${JSON.stringify({ ...payload, at: new Date().toISOString() })}\n`);
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-	return value && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: null;
-}
-
-function stringValue(value: unknown) {
-	return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function numberValue(value: unknown) {
-	return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function sleep(durationMs: number) {
-	return new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
 main().catch((error) => {
