@@ -225,7 +225,7 @@ describe("project exploration paired pilot modules", () => {
 		const fingerprints = protocolFingerprintSummary();
 		expect(
 			parsePilotRegistration({
-				schemaVersion: "project-intelligence-value-pilot-registration-v1",
+				schemaVersion: "project-intelligence-value-pilot-registration-v2",
 				protocolVersion: 1,
 				status: "SEALED",
 				pilotId: "value-pilot-v1",
@@ -251,23 +251,20 @@ describe("project exploration paired pilot modules", () => {
 						order: counterbalancedOrder(index + 1),
 					})),
 				},
-				retention: { rawEvidenceDeleteAfter: "2026-12-31" },
-				approvals: {
-					nightworkersRolloutOwner: "owner",
-					vulnWorkbenchEvidenceReviewer: "reviewer",
-				},
+				retention: { rawEvidencePolicy: "LOCAL_OWNER_RETAINED" },
+				approvals: { pilotOwner: "owner" },
 			}),
 		).toMatchObject({ pilotId: "value-pilot-v1", status: "SEALED" });
 	});
 
 	it("rejects placeholder approvals, placeholder fingerprints, and extra sealed fields", () => {
 		const registration = sealedRegistration();
-		registration.approvals.nightworkersRolloutOwner = "UNASSIGNED";
+		registration.approvals.pilotOwner = "UNASSIGNED";
 		expect(() => parsePilotRegistration(registration)).toThrow(
 			"assigned approver",
 		);
 
-		registration.approvals.nightworkersRolloutOwner = "rollout-owner";
+		registration.approvals.pilotOwner = "pilot-owner";
 		registration.fingerprints.route = `sha256:${"0".repeat(64)}`;
 		expect(() => parsePilotRegistration(registration)).toThrow(
 			"zero placeholder",
@@ -691,7 +688,7 @@ function canaryPair(overrides: { catalogCallCount?: number } = {}) {
 function sealedRegistration() {
 	const fingerprints = protocolFingerprintSummary();
 	return {
-		schemaVersion: "project-intelligence-value-pilot-registration-v1",
+		schemaVersion: "project-intelligence-value-pilot-registration-v2",
 		protocolVersion: 1,
 		status: "SEALED",
 		pilotId: "value-pilot-v1",
@@ -717,10 +714,7 @@ function sealedRegistration() {
 				order: counterbalancedOrder(index + 1),
 			})),
 		},
-		retention: { rawEvidenceDeleteAfter: "2026-12-31" },
-		approvals: {
-			nightworkersRolloutOwner: "rollout-owner",
-			vulnWorkbenchEvidenceReviewer: "evidence-reviewer",
-		},
+		retention: { rawEvidencePolicy: "LOCAL_OWNER_RETAINED" },
+		approvals: { pilotOwner: "pilot-owner" },
 	};
 }

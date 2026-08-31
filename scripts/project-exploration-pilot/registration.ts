@@ -8,7 +8,7 @@ import { parseStrictJson } from "./strict-json";
 import { modelPilotTask, PILOT_TASKS, type PilotTask } from "./tasks";
 
 export const VALUE_PILOT_REGISTRATION_SCHEMA =
-	"project-intelligence-value-pilot-registration-v1";
+	"project-intelligence-value-pilot-registration-v2";
 export const VALUE_PILOT_PROTOCOL_VERSION = 1;
 
 export type PilotArm = "baseline" | "catalog";
@@ -37,11 +37,8 @@ export type PilotRegistration = {
 		maxPairAttempts: 14;
 		pairs: Array<{ taskId: string; order: [PilotArm, PilotArm] }>;
 	};
-	retention: { rawEvidenceDeleteAfter: string };
-	approvals: {
-		nightworkersRolloutOwner: string;
-		vulnWorkbenchEvidenceReviewer: string;
-	};
+	retention: { rawEvidencePolicy: "LOCAL_OWNER_RETAINED" };
+	approvals: { pilotOwner: string };
 };
 
 export type LoadedPilotRegistration = {
@@ -250,36 +247,19 @@ function schedule(value: Record<string, unknown>): PilotRegistration["schedule"]
 }
 
 function retention(value: Record<string, unknown>): PilotRegistration["retention"] {
-	assertExactKeys(value, ["rawEvidenceDeleteAfter"], "retention");
-	const rawEvidenceDeleteAfter = text(
-		value.rawEvidenceDeleteAfter,
-		"retention.rawEvidenceDeleteAfter",
-	);
-	if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(rawEvidenceDeleteAfter)) {
-		throw new Error("retention.rawEvidenceDeleteAfter must be an ISO calendar date.");
+	assertExactKeys(value, ["rawEvidencePolicy"], "retention");
+	if (value.rawEvidencePolicy !== "LOCAL_OWNER_RETAINED") {
+		throw new Error(
+			"retention.rawEvidencePolicy must be LOCAL_OWNER_RETAINED.",
+		);
 	}
-	const parsed = new Date(`${rawEvidenceDeleteAfter}T00:00:00.000Z`);
-	if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== rawEvidenceDeleteAfter) {
-		throw new Error("retention.rawEvidenceDeleteAfter must be a real calendar date.");
-	}
-	return { rawEvidenceDeleteAfter };
+	return { rawEvidencePolicy: "LOCAL_OWNER_RETAINED" };
 }
 
 function approvals(value: Record<string, unknown>): PilotRegistration["approvals"] {
-	assertExactKeys(
-		value,
-		["nightworkersRolloutOwner", "vulnWorkbenchEvidenceReviewer"],
-		"approvals",
-	);
+	assertExactKeys(value, ["pilotOwner"], "approvals");
 	return {
-		nightworkersRolloutOwner: namedApproval(
-			value.nightworkersRolloutOwner,
-			"approvals.nightworkersRolloutOwner",
-		),
-		vulnWorkbenchEvidenceReviewer: namedApproval(
-			value.vulnWorkbenchEvidenceReviewer,
-			"approvals.vulnWorkbenchEvidenceReviewer",
-		),
+		pilotOwner: namedApproval(value.pilotOwner, "approvals.pilotOwner"),
 	};
 }
 
