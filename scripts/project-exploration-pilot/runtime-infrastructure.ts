@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { closeSync, existsSync, openSync, unlinkSync } from "node:fs";
 import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { getRuntimePaths } from "../../api/runtime/paths";
 import { mcpClientManager } from "../../api/services/mcp/mcp-client-manager";
 import {
@@ -150,7 +149,7 @@ export async function initializeProducerPilotDatabase(input: {
 		stderr: "pipe",
 		env: {
 			PATH: process.env.PATH ?? "",
-			DATABASE_URL: pathToFileURL(input.producerDatabase).href,
+			DATABASE_URL: vulnWorkbenchSqliteUrl(input.producerDatabase),
 			NODE_ENV: "development",
 		},
 	});
@@ -177,7 +176,7 @@ async function ensurePilotMcpServer(input: {
 		args: ["api/cli/static-intelligence-mcp-server.ts"],
 		cwd: input.producerRoot,
 		env: {
-			DATABASE_URL: pathToFileURL(input.producerDatabase).href,
+			DATABASE_URL: vulnWorkbenchSqliteUrl(input.producerDatabase),
 			STATIC_INTELLIGENCE_ALLOWED_PROJECT_ROOTS: input.repositoryRoot,
 			STATIC_INTELLIGENCE_PROJECT_CREATION_POLICY: input.projectCreationPolicy,
 		},
@@ -239,7 +238,7 @@ async function verifyProducerProjectRegistration(input: {
 			stderr: "pipe",
 			env: {
 				PATH: process.env.PATH ?? "",
-				DATABASE_URL: pathToFileURL(input.producerDatabase).href,
+				DATABASE_URL: vulnWorkbenchSqliteUrl(input.producerDatabase),
 			},
 		},
 	);
@@ -263,6 +262,11 @@ async function verifyProducerProjectRegistration(input: {
 			cause: error,
 		});
 	}
+}
+
+/** vulnWorkbench accepts `file:/absolute/path`, not a WHATWG `file:///` URL. */
+export function vulnWorkbenchSqliteUrl(databasePath: string) {
+	return `file:${path.resolve(databasePath)}`;
 }
 
 function mcpToolPayload(value: unknown) {

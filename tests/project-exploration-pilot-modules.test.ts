@@ -31,6 +31,7 @@ import {
 	type PilotAttemptClassification,
 	pilotPromptDigest,
 } from "../scripts/project-exploration-pilot/report";
+import { vulnWorkbenchSqliteUrl } from "../scripts/project-exploration-pilot/runtime-infrastructure";
 import { parseStrictJson } from "../scripts/project-exploration-pilot/strict-json";
 import {
 	modelPilotTask,
@@ -42,6 +43,12 @@ import {
 } from "../scripts/project-exploration-pilot/tasks";
 
 describe("project exploration paired pilot modules", () => {
+	it("uses the SQLite URL dialect accepted by the isolated producer", () => {
+		expect(vulnWorkbenchSqliteUrl("/workspace/producer-pilot.sqlite")).toBe(
+			"file:/workspace/producer-pilot.sqlite",
+		);
+	});
+
 	it("parses normalized CLI options without depending on process cwd", () => {
 		const options = parsePilotOptions(
 			[
