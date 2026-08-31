@@ -18,13 +18,13 @@ export type PilotCanaryEvidence = {
 	controlFingerprints: {
 		route: string;
 		settings: string;
-		systemPrompt: string;
+		promptContract: string;
 		toolManifest: string;
 		evaluatorProfile: string;
 	};
 	pairedControls: {
 		sameBaseRef: boolean;
-		samePrompt: boolean;
+		sameTaskPrompt: boolean;
 		sameRoute: boolean;
 		independentWorktrees: boolean;
 	};
@@ -71,8 +71,8 @@ export function buildPilotCanaryEvidence(input: {
 	commits: PilotCanaryEvidence["commits"];
 	controlFingerprints: Omit<
 		PilotCanaryEvidence["controlFingerprints"],
-		"systemPrompt" | "evaluatorProfile"
-	> & { systemPrompt: string };
+		"promptContract" | "evaluatorProfile"
+	> & { promptContract: string };
 }): PilotCanaryEvidence {
 	const profileFingerprint = evaluatorProfileFingerprint(
 		evaluatorProfileFor(PILOT_PREFLIGHT_CANARY_TASK),
@@ -95,7 +95,7 @@ export function buildPilotCanaryEvidence(input: {
 	const status =
 		input.pair.classification === "valid" &&
 		input.pair.controls.sameBaseRef &&
-		input.pair.controls.samePrompt &&
+		input.pair.controls.sameTaskPrompt &&
 		input.pair.controls.sameRoute &&
 		input.pair.controls.independentWorktrees &&
 		baseline.status === "completed" &&
@@ -175,13 +175,18 @@ export function parsePilotCanaryEvidence(value: unknown): PilotCanaryEvidence {
 	);
 	assertKeys(
 		controlFingerprints,
-		["route", "settings", "systemPrompt", "toolManifest", "evaluatorProfile"],
+		["route", "settings", "promptContract", "toolManifest", "evaluatorProfile"],
 		"canary control fingerprints",
 	);
 	const pairedControls = object(record.pairedControls, "canary paired controls");
 	assertKeys(
 		pairedControls,
-		["sameBaseRef", "samePrompt", "sameRoute", "independentWorktrees"],
+		[
+			"sameBaseRef",
+			"sameTaskPrompt",
+			"sameRoute",
+			"independentWorktrees",
+		],
 		"canary paired controls",
 	);
 	const baseline = object(record.baseline, "canary baseline");
@@ -218,9 +223,9 @@ export function parsePilotCanaryEvidence(value: unknown): PilotCanaryEvidence {
 				controlFingerprints.settings,
 				"canary settings fingerprint",
 			),
-			systemPrompt: fingerprint(
-				controlFingerprints.systemPrompt,
-				"canary system prompt fingerprint",
+			promptContract: fingerprint(
+				controlFingerprints.promptContract,
+				"canary prompt contract fingerprint",
 			),
 			toolManifest: fingerprint(
 				controlFingerprints.toolManifest,
@@ -233,7 +238,10 @@ export function parsePilotCanaryEvidence(value: unknown): PilotCanaryEvidence {
 		},
 		pairedControls: {
 			sameBaseRef: boolean(pairedControls.sameBaseRef, "sameBaseRef"),
-			samePrompt: boolean(pairedControls.samePrompt, "samePrompt"),
+			sameTaskPrompt: boolean(
+				pairedControls.sameTaskPrompt,
+				"sameTaskPrompt",
+			),
 			sameRoute: boolean(pairedControls.sameRoute, "sameRoute"),
 			independentWorktrees: boolean(
 				pairedControls.independentWorktrees,
@@ -282,9 +290,9 @@ export function assertPilotCanaryMatchesRuntime(input: {
 	commits: PilotCanaryEvidence["commits"];
 	controlFingerprints: Omit<
 		PilotCanaryEvidence["controlFingerprints"],
-		"systemPrompt" | "evaluatorProfile"
+		"promptContract" | "evaluatorProfile"
 	>;
-	registeredSystemPromptFingerprint: string;
+	registeredPromptContractFingerprint: string;
 }): void {
 	const expectedEvaluatorProfile = evaluatorProfileFingerprint(
 		evaluatorProfileFor(PILOT_PREFLIGHT_CANARY_TASK),
@@ -308,9 +316,9 @@ export function assertPilotCanaryMatchesRuntime(input: {
 			input.evidence.controlFingerprints.toolManifest,
 		],
 		[
-			"registered system prompt",
-			input.registeredSystemPromptFingerprint,
-			input.evidence.controlFingerprints.systemPrompt,
+			"registered prompt contract",
+			input.registeredPromptContractFingerprint,
+			input.evidence.controlFingerprints.promptContract,
 		],
 		[
 			"evaluator profile",

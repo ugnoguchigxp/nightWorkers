@@ -19,7 +19,7 @@ export type PilotPreflightEvidence = {
 	controlFingerprints: {
 		route: string;
 		settings: string;
-		systemPrompt: string;
+		promptContract: string;
 		toolManifest: string;
 		evaluatorSet: string;
 	};
@@ -108,7 +108,7 @@ export function parsePilotPreflightEvidence(value: unknown): PilotPreflightEvide
 	);
 	assertKeys(
 		controlFingerprints,
-		["route", "settings", "systemPrompt", "toolManifest", "evaluatorSet"],
+		["route", "settings", "promptContract", "toolManifest", "evaluatorSet"],
 		"preflight control fingerprints",
 	);
 	const gates = object(record.gates, "preflight gates");
@@ -144,9 +144,9 @@ export function parsePilotPreflightEvidence(value: unknown): PilotPreflightEvide
 		controlFingerprints: {
 			route: fingerprint(controlFingerprints.route, "route fingerprint"),
 			settings: fingerprint(controlFingerprints.settings, "settings fingerprint"),
-			systemPrompt: fingerprint(
-				controlFingerprints.systemPrompt,
-				"system prompt fingerprint",
+			promptContract: fingerprint(
+				controlFingerprints.promptContract,
+				"prompt contract fingerprint",
 			),
 			toolManifest: fingerprint(
 				controlFingerprints.toolManifest,

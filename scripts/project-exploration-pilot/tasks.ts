@@ -28,6 +28,30 @@ export type ModelPilotTask = Pick<
 >;
 export type PilotTaskArm = "baseline" | "catalog";
 
+/**
+ * This is deliberately a prompt-construction contract, not a hash of one
+ * rendered prompt: task and arm-specific system prompts are expected to vary.
+ * The clean consumer commit binds the implementation; this version makes a
+ * reviewed construction-policy change explicit in the sealed registration.
+ */
+export const PILOT_PROMPT_CONTRACT_VERSION = 1;
+
+const CATALOG_ARM_PROMPT_INSTRUCTION =
+	"Pilot-only protocol: before any broad repository list or search, call the available Project Exploration catalog exactly once with a focused request. Do not repeat the call.";
+
+export function pilotPromptContractFingerprint() {
+	return `sha256:${createHash("sha256")
+		.update(
+			JSON.stringify({
+				version: PILOT_PROMPT_CONTRACT_VERSION,
+				systemContexts: ["codingAgent.native-runtime", "codingAgent.current-todo"],
+				baselineTaskDescription: "model task description only",
+				catalogTaskInstruction: CATALOG_ARM_PROMPT_INSTRUCTION,
+			}),
+		)
+		.digest("hex")}`;
+}
+
 /** The only task shape the runner is permitted to give a model. */
 export function modelPilotTask(task: PilotTask): ModelPilotTask {
 	return {
@@ -41,7 +65,7 @@ export function modelPilotTask(task: PilotTask): ModelPilotTask {
 export function pilotTaskDescription(task: PilotTask, arm: PilotTaskArm) {
 	const prompt = modelPilotTask(task);
 	return arm === "catalog"
-		? `${prompt.description}\n\nPilot-only protocol: before any broad repository list or search, call the available Project Exploration catalog exactly once with a focused request. Do not repeat the call.`
+		? `${prompt.description}\n\n${CATALOG_ARM_PROMPT_INSTRUCTION}`
 		: prompt.description;
 }
 
@@ -181,3 +205,4 @@ export const PILOT_PREFLIGHT_CANARY_TASK = {
 		"The marker file exists with the required first line, git diff --check passes, and no other file is edited.",
 	evaluatorProfileId: "pilot-preflight-canary-v1",
 } as const satisfies PilotTask;
+import { createHash } from "node:crypto";

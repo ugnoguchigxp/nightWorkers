@@ -16,6 +16,7 @@ import {
 	buildPilotPreflightEvidence,
 	parsePilotPreflightEvidence,
 } from "../scripts/project-exploration-pilot/preflight";
+import { nativeApiToolManifestFingerprint } from "../scripts/project-exploration-pilot/protocol-fingerprints";
 import {
 	assertEvaluatorQualificationMatchesRuntime,
 	parseEvaluatorQualificationArtifact,
@@ -33,8 +34,10 @@ import {
 import { parseStrictJson } from "../scripts/project-exploration-pilot/strict-json";
 import {
 	modelPilotTask,
+	PILOT_PROMPT_CONTRACT_VERSION,
 	PILOT_TASKS,
 	type PilotTask,
+	pilotPromptContractFingerprint,
 	pilotTaskDescription,
 } from "../scripts/project-exploration-pilot/tasks";
 
@@ -189,12 +192,21 @@ describe("project exploration paired pilot modules", () => {
 		).toThrow("--formal requires --preflight-evidence");
 	});
 
-	it("keeps the fixed ten-task catalog and prompt digest deterministic", () => {
+	it("keeps the fixed ten-task catalog and prompt contracts deterministic", () => {
 		expect(PILOT_TASKS).toHaveLength(10);
 		expect(new Set(PILOT_TASKS.map((task) => task.id)).size).toBe(10);
 		expect(pilotPromptDigest(PILOT_TASKS[0])).toMatch(/^sha256:[a-f0-9]{64}$/);
 		expect(pilotPromptDigest(PILOT_TASKS[0])).toBe(
 			pilotPromptDigest({ ...PILOT_TASKS[0] }),
+		);
+		expect(PILOT_PROMPT_CONTRACT_VERSION).toBe(1);
+		expect(pilotPromptContractFingerprint()).toMatch(/^sha256:[a-f0-9]{64}$/);
+		expect(pilotPromptContractFingerprint()).toBe(
+			pilotPromptContractFingerprint(),
+		);
+		expect(nativeApiToolManifestFingerprint()).toMatch(/^sha256:[a-f0-9]{64}$/);
+		expect(nativeApiToolManifestFingerprint()).toBe(
+			nativeApiToolManifestFingerprint(),
 		);
 	});
 
@@ -227,7 +239,7 @@ describe("project exploration paired pilot modules", () => {
 					evaluatorSet: fingerprints.evaluatorSet,
 					route: `sha256:${"d".repeat(64)}`,
 					settings: `sha256:${"e".repeat(64)}`,
-					systemPrompt: `sha256:${"f".repeat(64)}`,
+					promptContract: `sha256:${"f".repeat(64)}`,
 					toolManifest: `sha256:${"1".repeat(64)}`,
 				},
 				schedule: {
@@ -251,15 +263,21 @@ describe("project exploration paired pilot modules", () => {
 	it("rejects placeholder approvals, placeholder fingerprints, and extra sealed fields", () => {
 		const registration = sealedRegistration();
 		registration.approvals.nightworkersRolloutOwner = "UNASSIGNED";
-		expect(() => parsePilotRegistration(registration)).toThrow("assigned approver");
+		expect(() => parsePilotRegistration(registration)).toThrow(
+			"assigned approver",
+		);
 
 		registration.approvals.nightworkersRolloutOwner = "rollout-owner";
 		registration.fingerprints.route = `sha256:${"0".repeat(64)}`;
-		expect(() => parsePilotRegistration(registration)).toThrow("zero placeholder");
+		expect(() => parsePilotRegistration(registration)).toThrow(
+			"zero placeholder",
+		);
 
 		registration.fingerprints.route = `sha256:${"d".repeat(64)}`;
 		Object.assign(registration, { unreviewedOverride: true });
-		expect(() => parsePilotRegistration(registration)).toThrow("invalid field set");
+		expect(() => parsePilotRegistration(registration)).toThrow(
+			"invalid field set",
+		);
 	});
 
 	it("requires a complete, matching evaluator qualification before a formal pilot", () => {
@@ -333,7 +351,7 @@ describe("project exploration paired pilot modules", () => {
 		const controls = {
 			route: `sha256:${"d".repeat(64)}`,
 			settings: `sha256:${"e".repeat(64)}`,
-			systemPrompt: `sha256:${"f".repeat(64)}`,
+			promptContract: `sha256:${"f".repeat(64)}`,
 			toolManifest: `sha256:${"0".repeat(64)}`,
 		};
 		const evidence = buildPilotCanaryEvidence({
@@ -348,7 +366,7 @@ describe("project exploration paired pilot modules", () => {
 				evidence: parsePilotCanaryEvidence(evidence),
 				commits,
 				controlFingerprints: controls,
-				registeredSystemPromptFingerprint: controls.systemPrompt,
+				registeredPromptContractFingerprint: controls.promptContract,
 			}),
 		).not.toThrow();
 		expect(
@@ -374,7 +392,7 @@ describe("project exploration paired pilot modules", () => {
 		const controlFingerprints = {
 			route: `sha256:${"0".repeat(64)}`,
 			settings: `sha256:${"1".repeat(64)}`,
-			systemPrompt: `sha256:${"2".repeat(64)}`,
+			promptContract: `sha256:${"2".repeat(64)}`,
 			toolManifest: `sha256:${"3".repeat(64)}`,
 			evaluatorSet: `sha256:${"4".repeat(64)}`,
 		};
@@ -581,7 +599,7 @@ function pair(
 		},
 		controls: {
 			sameBaseRef: true,
-			samePrompt: true,
+			sameTaskPrompt: true,
 			sameRoute: true,
 			independentWorktrees: true,
 		},
@@ -650,7 +668,7 @@ function canaryPair(overrides: { catalogCallCount?: number } = {}) {
 		classification: "valid",
 		controls: {
 			sameBaseRef: true,
-			samePrompt: true,
+			sameTaskPrompt: true,
 			sameRoute: true,
 			independentWorktrees: true,
 		},
@@ -687,7 +705,7 @@ function sealedRegistration() {
 			evaluatorSet: fingerprints.evaluatorSet,
 			route: `sha256:${"d".repeat(64)}`,
 			settings: `sha256:${"e".repeat(64)}`,
-			systemPrompt: `sha256:${"f".repeat(64)}`,
+			promptContract: `sha256:${"f".repeat(64)}`,
 			toolManifest: `sha256:${"1".repeat(64)}`,
 		},
 		schedule: {

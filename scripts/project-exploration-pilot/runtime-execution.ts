@@ -96,7 +96,9 @@ export async function runPair(input: {
 		classificationReasonCodes: classifyPairReasonCodes({ baseline, catalog }),
 		controls: {
 			sameBaseRef: baseline.baseRef === catalog.baseRef,
-			samePrompt: true,
+			sameTaskPrompt:
+				baseline.taskPromptFingerprint === catalog.taskPromptFingerprint &&
+				baseline.taskPromptFingerprint === pilotPromptDigest(input.task),
 			sameRoute: JSON.stringify(baseline.route) === JSON.stringify(catalog.route),
 			independentWorktrees:
 				Boolean(baseline.worktreePath) &&
@@ -140,6 +142,7 @@ async function runPairMember(input: {
 		status: terminal.status,
 		baseRef: terminal.baseRef,
 		worktreePath: started.worktreePath,
+		taskPromptFingerprint: pilotPromptDigest(input.task),
 		measurement,
 		evaluation,
 		route: routeEvidence(terminal.contextSnapshot),
@@ -208,7 +211,14 @@ export async function activePilotRunCountFor(pilotId: string) {
 }
 
 export async function assertPairEvidenceIntegrity(pair: PilotPair) {
+	const task = PILOT_TASKS.find((candidate) => candidate.id === pair.pairId);
+	if (!task || pair.promptDigest !== pilotPromptDigest(task)) {
+		throw new Error("Pilot pair does not match a sealed task prompt.");
+	}
 	for (const arm of [pair.baseline, pair.catalog]) {
+		if (arm.taskPromptFingerprint !== pair.promptDigest) {
+			throw new Error("Pilot arm does not match its pair task prompt.");
+		}
 		const run = await nightworkersRepo.getTaskRun(arm.runId);
 		if (!run || run.taskId !== arm.taskId || run.status !== arm.status) {
 			throw new Error("Pilot run record no longer matches its recorded pair arm.");
@@ -314,19 +324,6 @@ async function systemPromptFingerprintForRun(runId: string) {
 	);
 	if (fingerprints.size !== 1) {
 		throw new Error(`Run ${runId} does not have one stable system prompt fingerprint.`);
-	}
-	return [...fingerprints][0] as string;
-}
-
-export function commonSystemPromptFingerprint(pairs: PilotPair[]) {
-	const fingerprints = new Set(
-		pairs.flatMap((pair) => [
-			pair.baseline.systemPromptFingerprint,
-			pair.catalog.systemPromptFingerprint,
-		]),
-	);
-	if (fingerprints.size !== 1) {
-		throw new Error("Pilot arms do not share one stable system prompt fingerprint.");
 	}
 	return [...fingerprints][0] as string;
 }

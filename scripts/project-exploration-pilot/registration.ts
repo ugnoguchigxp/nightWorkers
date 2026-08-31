@@ -28,7 +28,7 @@ export type PilotRegistration = {
 		evaluatorSet: string;
 		route: string;
 		settings: string;
-		systemPrompt: string;
+		promptContract: string;
 		toolManifest: string;
 	};
 	schedule: {
@@ -191,7 +191,14 @@ function commits(value: Record<string, unknown>): PilotRegistration["commits"] {
 function fingerprints(value: Record<string, unknown>): PilotRegistration["fingerprints"] {
 	assertExactKeys(
 		value,
-		["taskSet", "evaluatorSet", "route", "settings", "systemPrompt", "toolManifest"],
+		[
+			"taskSet",
+			"evaluatorSet",
+			"route",
+			"settings",
+			"promptContract",
+			"toolManifest",
+		],
 		"fingerprints",
 	);
 	return {
@@ -199,7 +206,10 @@ function fingerprints(value: Record<string, unknown>): PilotRegistration["finger
 		evaluatorSet: hash(value.evaluatorSet, "fingerprints.evaluatorSet"),
 		route: hash(value.route, "fingerprints.route"),
 		settings: hash(value.settings, "fingerprints.settings"),
-		systemPrompt: hash(value.systemPrompt, "fingerprints.systemPrompt"),
+		promptContract: hash(
+			value.promptContract,
+			"fingerprints.promptContract",
+		),
 		toolManifest: hash(value.toolManifest, "fingerprints.toolManifest"),
 	};
 }

@@ -28,7 +28,6 @@ import { buildPilotPreflightEvidence } from "./project-exploration-pilot/preflig
 import {
 	activePilotRunCountFor,
 	assertPairEvidenceIntegrity,
-	commonSystemPromptFingerprint,
 	consumedPairAttemptCount,
 	interruptionCode,
 	pilotRunInventory,
@@ -42,11 +41,14 @@ import {
 	gitOutput,
 	listCompetingNightWorkersProcesses,
 	progress,
-	sha256Fingerprint,
 	sleep,
 	writeAtomicJson,
 	writeRawCheckpoint,
 } from "./project-exploration-pilot/runtime-infrastructure";
+import {
+	nativeApiToolManifestFingerprint,
+	sha256Fingerprint,
+} from "./project-exploration-pilot/protocol-fingerprints";
 import {
 	assertRegistrationFingerprints,
 	assertResumeCheckpointMatchesRuntime,
@@ -57,10 +59,10 @@ import {
 	loadResumeCheckpoint,
 	type PilotPair,
 } from "./project-exploration-pilot/runtime-support";
-import { nativeApiToolRegistrations } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import {
 	PILOT_TASKS,
 	PILOT_PREFLIGHT_CANARY_TASK,
+	pilotPromptContractFingerprint,
 	type PilotTask,
 } from "./project-exploration-pilot/tasks";
 
@@ -194,16 +196,18 @@ async function runPilot(options: PilotOptions) {
 	}
 	const settingsFingerprint = sha256Fingerprint(await readFile(settingsPath, "utf8"));
 	const routeFingerprint = sha256Fingerprint(JSON.stringify(routeOverride));
-	const toolManifestFingerprint = sha256Fingerprint(
-		JSON.stringify(
-			nativeApiToolRegistrations.map((tool) => ({
-				name: tool.name,
-				kind: tool.kind,
-				workerToolName: tool.workerToolName ?? null,
-				definition: tool.definition,
-			})),
-		),
-	);
+	const toolManifestFingerprint = nativeApiToolManifestFingerprint();
+	const promptContractFingerprint = pilotPromptContractFingerprint();
+	const sealedControlFingerprints = {
+		routeFingerprint,
+		settingsFingerprint,
+		promptContractFingerprint,
+		toolManifestFingerprint,
+		evaluatorSetFingerprint: evaluatorSetFingerprint(PILOT_TASKS),
+	};
+	if (registration) {
+		assertRegistrationFingerprints(registration, sealedControlFingerprints);
+	}
 	const canaryEvidence = await loadFormalCanaryEvidence(options, {
 		registration,
 		commits: {
@@ -229,8 +233,7 @@ async function runPilot(options: PilotOptions) {
 		controlFingerprints: {
 			route: routeFingerprint,
 			settings: settingsFingerprint,
-			systemPrompt:
-				registration?.registration.fingerprints.systemPrompt ?? "",
+			promptContract: promptContractFingerprint,
 			toolManifest: toolManifestFingerprint,
 			evaluatorSet: evaluatorSetFingerprint(PILOT_TASKS),
 		},
@@ -245,8 +248,9 @@ async function runPilot(options: PilotOptions) {
 		preRegistrationHash: registration?.hash ?? null,
 		preflightCanaryHash: canaryEvidence?.hash ?? null,
 		preflightEvidenceHash: preflightEvidence?.hash ?? null,
-		systemPromptFingerprint:
-			registration?.registration.fingerprints.systemPrompt ?? null,
+		promptContractFingerprint: registration
+			? promptContractFingerprint
+			: null,
 	};
 	assertResumeCheckpointMatchesRuntime({
 		checkpoint: resumedCheckpoint,
@@ -404,8 +408,7 @@ async function runPilot(options: PilotOptions) {
 			controlFingerprints: {
 				route: routeFingerprint,
 				settings: settingsFingerprint,
-				systemPrompt:
-					registration?.registration.fingerprints.systemPrompt ?? "",
+				promptContract: promptContractFingerprint,
 				toolManifest: toolManifestFingerprint,
 				evaluatorSet: evaluatorSetFingerprint(PILOT_TASKS),
 			},
@@ -434,7 +437,7 @@ async function runPilot(options: PilotOptions) {
 	const controlFingerprints = {
 		routeFingerprint,
 		settingsFingerprint,
-		systemPromptFingerprint: commonSystemPromptFingerprint(pairs),
+		promptContractFingerprint,
 		toolManifestFingerprint,
 		evaluatorSetFingerprint: evaluatorSetFingerprint(selectedTasks),
 	};
@@ -452,7 +455,7 @@ async function runPilot(options: PilotOptions) {
 			controlFingerprints: {
 				route: routeFingerprint,
 				settings: settingsFingerprint,
-				systemPrompt: controlFingerprints.systemPromptFingerprint,
+				promptContract: controlFingerprints.promptContractFingerprint,
 				toolManifest: toolManifestFingerprint,
 			},
 		});

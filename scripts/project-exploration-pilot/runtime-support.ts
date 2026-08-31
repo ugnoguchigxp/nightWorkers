@@ -31,7 +31,7 @@ export type PilotPair = {
 	classificationReasonCodes: string[];
 	controls: {
 		sameBaseRef: boolean;
-		samePrompt: boolean;
+		sameTaskPrompt: boolean;
 		sameRoute: boolean;
 		independentWorktrees: boolean;
 	};
@@ -43,6 +43,7 @@ type PilotPairArm = {
 	status: string;
 	baseRef: string | null;
 	worktreePath: string | null;
+	taskPromptFingerprint: string;
 	measurement: ExplorationReductionMeasurement;
 	evaluation: IndependentEvaluation | null;
 	route: Record<string, string | null>;
@@ -67,7 +68,7 @@ export function assertRegistrationFingerprints(
 	const mappings: Array<[keyof typeof expected, string]> = [
 		["route", actual.routeFingerprint],
 		["settings", actual.settingsFingerprint],
-		["systemPrompt", actual.systemPromptFingerprint],
+		["promptContract", actual.promptContractFingerprint],
 		["toolManifest", actual.toolManifestFingerprint],
 		["evaluatorSet", actual.evaluatorSetFingerprint],
 	];
@@ -147,8 +148,8 @@ export async function loadFormalCanaryEvidence(
 		evidence: loaded.evidence,
 		commits: input.commits,
 		controlFingerprints: input.controlFingerprints,
-		registeredSystemPromptFingerprint:
-			input.registration.registration.fingerprints.systemPrompt,
+		registeredPromptContractFingerprint:
+				input.registration.registration.fingerprints.promptContract,
 	});
 	return loaded;
 }
@@ -165,7 +166,7 @@ export async function loadFormalPreflightEvidence(
 		controlFingerprints: {
 			route: string;
 			settings: string;
-			systemPrompt: string;
+				promptContract: string;
 			toolManifest: string;
 			evaluatorSet: string;
 		};
@@ -267,7 +268,7 @@ function parseResumeCheckpointControls(value: unknown) {
 		"preRegistrationHash",
 		"preflightCanaryHash",
 		"preflightEvidenceHash",
-		"systemPromptFingerprint",
+		"promptContractFingerprint",
 	];
 	if (
 		Object.keys(controls).length !== required.length ||
@@ -299,7 +300,7 @@ function parseResumeCheckpointControls(value: unknown) {
 		"preRegistrationHash",
 		"preflightCanaryHash",
 		"preflightEvidenceHash",
-		"systemPromptFingerprint",
+		"promptContractFingerprint",
 	]) {
 		if (
 			controls[key] !== null &&
@@ -337,11 +338,7 @@ export function assertResumeCheckpointMatchesRuntime(input: {
 			pair.attemptNumber < 1 ||
 			pair.promptDigest !== pilotPromptDigest(task) ||
 			JSON.stringify(pair.executionOrder) !==
-				JSON.stringify(counterbalancedOrder(Number(task.id.slice(1)))) ||
-			pair.baseline.systemPromptFingerprint !==
-				input.controls.systemPromptFingerprint ||
-			pair.catalog.systemPromptFingerprint !==
-				input.controls.systemPromptFingerprint
+				JSON.stringify(counterbalancedOrder(Number(task.id.slice(1))))
 		) {
 			throw new Error("Formal pilot resume checkpoint does not match the sealed protocol.");
 		}

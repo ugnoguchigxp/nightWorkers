@@ -29,7 +29,7 @@ type PilotPairForReport = {
 	classificationReasonCodes?: string[];
 	controls: {
 		sameBaseRef: boolean;
-		samePrompt: boolean;
+		sameTaskPrompt: boolean;
 		sameRoute: boolean;
 		independentWorktrees: boolean;
 	};
@@ -127,7 +127,7 @@ export function buildPilotReport(input: {
 	const controlsSatisfied = comparablePairs.every(
 		(pair) =>
 			pair.controls.sameBaseRef &&
-			pair.controls.samePrompt &&
+			pair.controls.sameTaskPrompt &&
 			pair.controls.sameRoute &&
 			pair.controls.independentWorktrees,
 	);
