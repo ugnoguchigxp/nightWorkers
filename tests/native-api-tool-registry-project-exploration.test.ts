@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { requiresFlatToolArgumentsForEndpointKind } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-run-route-preparation";
 import { getNativeApiToolDefinitions } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-registry";
 
 describe("native API Project Exploration tool profile", () => {
+	it("uses flat tool arguments for Azure-compatible function calling", () => {
+		expect(requiresFlatToolArgumentsForEndpointKind("azure")).toBe(true);
+		expect(requiresFlatToolArgumentsForEndpointKind("codex")).toBe(false);
+	});
+
 	it("publishes the catalog definition only for an eligible run", () => {
 		const unavailable = getNativeApiToolDefinitions().map((tool) => tool.name);
 		const availableDefinitions = getNativeApiToolDefinitions({

@@ -124,9 +124,15 @@ function requiresFlatToolArguments(context: AgentRunContext) {
 	const snapshot = context.contextSnapshot as Record<string, unknown>;
 	const routing = record(snapshot.effectiveLlmRouting);
 	const active = record(routing?.active);
+	return requiresFlatToolArgumentsForEndpointKind(active?.endpointKind);
+}
+
+/** Some OpenAI-compatible endpoints also reject or misapply nested oneOf tool schemas. */
+export function requiresFlatToolArgumentsForEndpointKind(endpointKind: unknown) {
 	return (
-		active?.endpointKind === "local" ||
-		active?.endpointKind === "openai-compatible"
+		endpointKind === "local" ||
+		endpointKind === "openai-compatible" ||
+		endpointKind === "azure"
 	);
 }
 
