@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createRepository } from "../api/modules/nightworkers/nightworkers.basic.service";
+import { initializeComposedCodingAgent } from "../api/composition/coding-agent";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
 import * as nightworkersRepo from "../api/modules/nightworkers/nightworkers.repository";
 import {
@@ -70,18 +71,23 @@ async function main() {
 	assertIsolatedRuntimeEnvironment(process.env, [
 		DATABASE_ACCESS_SCOPES.isolatedEvaluation,
 	]);
-	await ensureNightWorkersSchema();
-	const options = parsePilotOptions();
-	if (!options.dedicatedDatabase) {
-		throw new Error(
-			"The paired pilot requires --dedicated-database and the isolated launcher.",
-		);
-	}
-	const releaseRuntimeLease = acquirePilotRuntimeLease(options);
+	const releaseCodingAgentHost = initializeComposedCodingAgent();
 	try {
-		await runPilot(options);
+		await ensureNightWorkersSchema();
+		const options = parsePilotOptions();
+		if (!options.dedicatedDatabase) {
+			throw new Error(
+				"The paired pilot requires --dedicated-database and the isolated launcher.",
+			);
+		}
+		const releaseRuntimeLease = acquirePilotRuntimeLease(options);
+		try {
+			await runPilot(options);
+		} finally {
+			releaseRuntimeLease();
+		}
 	} finally {
-		releaseRuntimeLease();
+		releaseCodingAgentHost();
 	}
 }
 
