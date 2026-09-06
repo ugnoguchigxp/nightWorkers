@@ -8,6 +8,10 @@ import {
 import { migrateStructuredLlmEndpointIds } from "../../../services/structured-llm/endpoint-id-migration";
 import { canonicalizeStructuredLlmEndpoint } from "../../../services/structured-llm/endpoint-target";
 import {
+	MUSE_DEFAULT_BASE_URL,
+	MUSE_DEFAULT_MODEL,
+} from "../../../services/structured-llm/muse-provider-config";
+import {
 	LLM_ROLE_ORDER,
 	type LlmModelTarget,
 	type LlmProviderEndpoint,
@@ -198,6 +202,7 @@ function defaultProviderEndpointKey(
 		"openai-compatible": "OpenAI Compatible",
 		bedrock: "AWS Bedrock",
 		codex: "Codex SDK",
+		muse: "Muse",
 		local: null,
 	};
 	const defaultName = defaultNames[endpoint.kind];
@@ -278,6 +283,19 @@ function buildLegacyProviderEndpoints(
 					(option) => option.value,
 				),
 			),
+			modelDisplayNames: {},
+		},
+		{
+			id: "muse-default",
+			name: "Muse",
+			kind: "muse",
+			enabled: true,
+			apiKey: "",
+			baseUrl: MUSE_DEFAULT_BASE_URL,
+			endpoint: "",
+			apiVersion: "",
+			region: "",
+			models: [MUSE_DEFAULT_MODEL],
 			modelDisplayNames: {},
 		},
 	];

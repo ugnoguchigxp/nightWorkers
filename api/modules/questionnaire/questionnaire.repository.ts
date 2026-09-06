@@ -8,22 +8,6 @@ import {
 } from "../../db/design-questionnaire-schema";
 import { taskMessages } from "../../db/schema";
 
-function _isAppBlueprintDocumentMessage(
-	messageType: string | null | undefined,
-	payloadJson: unknown,
-) {
-	const payload = isRecord(payloadJson) ? payloadJson : {};
-	return Boolean(
-		messageType === "markdown_document" &&
-			((payload.intent === "app_blueprint" && payload.appBlueprint) ||
-				(payload.intent === "mock_blueprint" && payload.mockBlueprint)),
-	);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
 export async function getTaskMessage(id: string) {
 	const [message] = await db
 		.select()

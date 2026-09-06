@@ -14,7 +14,6 @@ const chatCodeBlockThemes = {
 } as const;
 const chatCodeBlockClassName =
 	"nightworkers-code-block dark max-w-full rounded-[var(--radius-md)] text-xs shadow-none [&_.line]:whitespace-pre-wrap [&_code]:break-words [&_code]:whitespace-pre-wrap [&_pre]:overflow-x-hidden";
-const _UNKNOWN_ACTIVITY_TITLE_KEY = "timeline.unknownActivity";
 
 type NightWorkersCodeBlockProps = Omit<
 	CodeBlockProps,

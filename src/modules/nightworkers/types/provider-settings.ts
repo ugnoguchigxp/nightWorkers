@@ -35,6 +35,7 @@ export type LlmProviderEndpointKind =
 	| "openai-compatible"
 	| "bedrock"
 	| "codex"
+	| "muse"
 	| "local";
 export type ImplementationRuntimeLane =
 	| ""

@@ -10,9 +10,13 @@ export function buildProviderEndpointKindPatch(
 	const previousUsesBaseUrl =
 		endpoint.kind === "openai" ||
 		endpoint.kind === "openai-compatible" ||
-		endpoint.kind === "local";
+		endpoint.kind === "local" ||
+		endpoint.kind === "muse";
 	const nextUsesBaseUrl =
-		kind === "openai" || kind === "openai-compatible" || kind === "local";
+		kind === "openai" ||
+		kind === "openai-compatible" ||
+		kind === "local" ||
+		kind === "muse";
 	return {
 		kind,
 		baseUrl:

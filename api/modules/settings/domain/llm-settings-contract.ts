@@ -11,6 +11,7 @@ const providerEndpointKindSchema = z.enum([
 	"openai-compatible",
 	"bedrock",
 	"codex",
+	"muse",
 	"local",
 ]);
 

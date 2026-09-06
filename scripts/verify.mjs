@@ -56,12 +56,6 @@ const desktopPackagedSmokeTask = task('desktop-packaged-smoke', 'desktop package
   'run',
   'desktop:smoke',
 ]);
-const allTestsTask = task('all-tests', 'all vitest tests', [
-  '--silent',
-  'run',
-  'test',
-  'run',
-]);
 const unitCoverageTask = task('unit-coverage', 'unit coverage policy', [
   '--silent',
   'run',
@@ -133,12 +127,6 @@ const basePhases = [
     tasks: [supervisorRegressionTask],
   },
 ];
-const fullTestPhase = {
-  id: 'full-tests',
-  label: 'full serial tests',
-  mode: 'serial',
-  tasks: [allTestsTask],
-};
 const unitCoveragePhase = {
   id: 'unit-coverage',
   label: 'unit coverage policy',
@@ -208,7 +196,6 @@ const desktopPhases = [
 ];
 const deterministicFullPhases = [
   ...basePhases,
-  fullTestPhase,
   unitCoveragePhase,
   e2ePhase,
   demoPhase,

@@ -1,1 +1,0 @@
-export { GeneralSettingsPanel } from "../../settings";

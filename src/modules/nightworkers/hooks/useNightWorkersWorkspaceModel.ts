@@ -1,10 +1,5 @@
 import { isCodingAgentChatTrace } from "../../codingAgent";
-import type {
-	ActivityEvent,
-	ActivityReplay,
-	PlanModeWorkspace,
-	Task,
-} from "../types";
+import type { ActivityEvent, ActivityReplay, Task } from "../types";
 
 export const emptyActivityReplay: ActivityReplay = {
 	events: [],
@@ -25,30 +20,6 @@ export type {
 	ProjectSessionGroups,
 } from "./nightWorkersWorkspaceState";
 
-function _hasPlanModeWorkspaceEvidence(workspace: PlanModeWorkspace) {
-	return Boolean(
-		workspace.featurePlanArtifacts.length ||
-			workspace.blueprintArtifacts.length ||
-			workspace.dataModelArtifacts.length ||
-			workspace.dedicatedViewArtifacts.length ||
-			workspace.questionnaireSessions.length ||
-			workspace.decisionReviews.length ||
-			workspace.implementationReferences.length,
-	);
-}
-
-function _summarizePlanModeWorkspace(workspace: PlanModeWorkspace) {
-	return [
-		`${workspace.featurePlanArtifacts.length} spec`,
-		`${workspace.blueprintArtifacts.length} Blueprint`,
-		`${workspace.dataModelArtifacts.length} Data Model`,
-		`${workspace.dedicatedViewArtifacts.length} Plan Views`,
-		`${workspace.questionnaireSessions.length} Questionnaire`,
-		`${workspace.decisionReviews.length} Decision Review`,
-		`${workspace.implementationReferences.length} Implementation`,
-	].join(" · ");
-}
-
 export function isActiveRunStatus(status: string | undefined): boolean {
 	return (
 		status === "queued" ||
@@ -57,18 +28,6 @@ export function isActiveRunStatus(status: string | undefined): boolean {
 		status === "compiling_context" ||
 		status === "finalizing" ||
 		status === "verifying"
-	);
-}
-
-function _isTerminalRunStatus(status: string | undefined): boolean {
-	return (
-		status === "completed" ||
-		status === "needs_review" ||
-		status === "needs_human" ||
-		status === "failed" ||
-		status === "blocked" ||
-		status === "timed_out" ||
-		status === "cancelled"
 	);
 }
 
@@ -83,21 +42,6 @@ export function normalizeActivityReplay(data: unknown): ActivityReplay {
 			: [],
 		artifacts: Array.isArray(replay.artifacts) ? replay.artifacts : [],
 	};
-}
-
-function _buildPriorityUpdates(sessionIds: string[], sessions: Task[]) {
-	const currentPriorityById = new Map(
-		sessions.map((session) => [session.id, session.priority]),
-	);
-	return sessionIds
-		.map((sessionId, index) => ({
-			sessionId,
-			priority: sessionIds.length - index,
-		}))
-		.filter(
-			({ sessionId, priority }) =>
-				currentPriorityById.get(sessionId) !== priority,
-		);
 }
 
 export function isActiveTaskStatus(status: string | undefined): boolean {

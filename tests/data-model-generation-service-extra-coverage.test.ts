@@ -80,9 +80,15 @@ vi.mock(
 	}),
 );
 
-vi.mock("../api/modules/specification/plan-artifact-input-projection", () => ({
-	projectPlanArtifactInput: mocks.projectPlanArtifactInput,
-}));
+vi.mock(
+	"../api/modules/specification/plan-artifact-input-projection",
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../api/modules/specification/plan-artifact-input-projection")
+		>()),
+		projectPlanArtifactInput: mocks.projectPlanArtifactInput,
+	}),
+);
 
 vi.mock("../api/modules/specification/plan-artifact-input-renderer", () => ({
 	buildPlanArtifactPromptBudgetMetadata:

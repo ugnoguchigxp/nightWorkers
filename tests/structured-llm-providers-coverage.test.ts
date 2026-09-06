@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
 	callOpenAI: vi.fn(),
 	callBedrock: vi.fn(),
 	callCodex: vi.fn(),
+	callMuse: vi.fn(),
+	callMuseTool: vi.fn(),
 	callFixture: vi.fn(),
 	callBedrockTool: vi.fn(),
 	callCodexTool: vi.fn(),
@@ -47,6 +49,10 @@ vi.mock("../api/services/structured-llm/bedrock-provider", () => ({
 vi.mock("../api/services/structured-llm/codex-provider", () => ({
 	callCodexProvider: mocks.callCodex,
 	callCodexProviderToolTurn: mocks.callCodexTool,
+}));
+vi.mock("../api/services/structured-llm/muse-provider", () => ({
+	callMuseProvider: mocks.callMuse,
+	callMuseProviderToolTurn: mocks.callMuseTool,
 }));
 vi.mock("../api/services/structured-llm/fixture-provider", () => ({
 	callFixtureProvider: mocks.callFixture,
@@ -144,6 +150,7 @@ describe("structured LLM providers coverage", () => {
 			mocks.callOpenAI,
 			mocks.callBedrock,
 			mocks.callCodex,
+			mocks.callMuse,
 			mocks.callFixture,
 		])
 			fn.mockResolvedValue({ ok: true });
@@ -155,6 +162,11 @@ describe("structured LLM providers coverage", () => {
 		mocks.callCodexTool.mockResolvedValue({
 			type: "supported",
 			content: "codex",
+			toolCalls: [],
+		});
+		mocks.callMuseTool.mockResolvedValue({
+			type: "supported",
+			content: "muse",
 			toolCalls: [],
 		});
 		mocks.callFixtureTool.mockResolvedValue({
@@ -171,6 +183,7 @@ describe("structured LLM providers coverage", () => {
 			["openai", mocks.callOpenAI],
 			["bedrock", mocks.callBedrock],
 			["codex", mocks.callCodex],
+			["muse", mocks.callMuse],
 			["fixture", mocks.callFixture],
 		] as const) {
 			await expect(callProvider(rawInput(provider))).resolves.toEqual({
@@ -213,10 +226,11 @@ describe("structured LLM providers coverage", () => {
 		expect(mocks.hasFixtureTurns).toHaveBeenCalledWith("task-2", "default");
 	});
 
-	it("dispatches Bedrock, Codex, fixture, and unsupported tool turns", async () => {
+	it("dispatches Bedrock, Codex, Muse, fixture, and unsupported tool turns", async () => {
 		for (const [provider, expected] of [
 			["bedrock", "bedrock"],
 			["codex", "codex"],
+			["muse", "muse"],
 			["fixture", "fixture"],
 		] as const) {
 			const input = toolInput({

@@ -39,7 +39,10 @@ import {
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
 import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
-import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
+import {
+	createPlanArtifactProjectionMetadata,
+	projectPlanArtifactInput,
+} from "../specification/plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
 	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
@@ -201,7 +204,7 @@ export async function generatePlanViewArtifact(
 				sourceMessageIds,
 				generation: {
 					promptVersion: PLAN_API_CONTRACT_PROMPT_VERSION,
-					inputProjection: projectionMetadata(
+					inputProjection: createPlanArtifactProjectionMetadata(
 						projection,
 						canonical.questionnaire?.sessionId ?? null,
 					),
@@ -254,7 +257,7 @@ export async function generatePlanViewArtifact(
 				sourceMessageIds,
 				generation: {
 					promptVersion: PLAN_ZOD_SCHEMA_PROMPT_VERSION,
-					inputProjection: projectionMetadata(
+					inputProjection: createPlanArtifactProjectionMetadata(
 						projection,
 						canonical.questionnaire?.sessionId ?? null,
 					),
@@ -305,7 +308,7 @@ export async function generatePlanViewArtifact(
 			sourceMessageIds,
 			generation: {
 				promptVersion: PLAN_DEDICATED_VIEW_PROMPT_VERSION,
-				inputProjection: projectionMetadata(
+				inputProjection: createPlanArtifactProjectionMetadata(
 					projection,
 					canonical.questionnaire?.sessionId ?? null,
 				),
@@ -540,23 +543,4 @@ async function generateZodSchemaArtifactFromLlm(input: {
 			lastRawText: lastRawOutput,
 		});
 	}
-}
-
-function projectionMetadata(
-	projection: ReturnType<typeof projectPlanArtifactInput>,
-	questionnaireSessionId: string | null,
-) {
-	return {
-		version: projection.version,
-		target: projection.target,
-		digest: projection.diagnostics.projectionDigest,
-		contextRevision: projection.provenance.contextRevision,
-		contextDigest: projection.provenance.contextDigest,
-		routingRevision: projection.provenance.routingRevision,
-		questionnaireSessionId,
-		questionnaireDigest: projection.provenance.questionnaireDigest,
-		sourceMessageIds: projection.provenance.sourceMessageIds,
-		sourceDigests: projection.provenance.sourceDigests,
-		sectionBytes: projection.diagnostics.sectionBytes,
-	};
 }

@@ -40,6 +40,10 @@ Use `test:coverage:backend` or `test:coverage:frontend` for a single report.
 `NIGHTWORKERS_COVERAGE_SHARDS` accepts 1–8 (default: up to 3); each shard has a
 finite timeout. Normal and coverage tests share `vitest.shared.ts`.
 
+`verify:full` and `verify:release` use this coverage run for the full non-live
+suite, without a separate full test run beforehand. Focused supervisor and
+desktop runtime checks remain in their existing phases.
+
 E2E starts separate API and Vite processes, and waits for both API readiness
 and the web entry point. Run E2E after the unit/coverage suite to avoid local
 resource contention.

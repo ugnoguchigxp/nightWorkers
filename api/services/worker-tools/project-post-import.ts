@@ -11,20 +11,6 @@ const GIT_COMMIT_TIMEOUT_MS = 120_000;
 const GIT_INIT_MAX_BUFFER = 5 * 1024 * 1024;
 const GIT_COMMIT_MAX_BUFFER = 5 * 1024 * 1024;
 const BASELINE_COMMIT_MESSAGE = "Initialize project from template";
-const _PACKAGE_MANAGER_LOCKFILES = [
-	{ file: "bun.lock", packageManager: "bun" },
-	{ file: "bun.lockb", packageManager: "bun" },
-	{ file: "pnpm-lock.yaml", packageManager: "pnpm" },
-	{ file: "yarn.lock", packageManager: "yarn" },
-	{ file: "package-lock.json", packageManager: "npm" },
-] as const;
-const _VERIFICATION_SCRIPT_ORDER = [
-	"verify",
-	"typecheck",
-	"lint",
-	"test",
-	"build",
-] as const;
 
 export type PackageManager = "bun" | "npm" | "pnpm" | "yarn";
 export * from "./project-post-import-inspection";
@@ -206,7 +192,7 @@ async function initializeFreshGitRepository(input: {
 		};
 	}
 
-	const result = await runGitInitCommand(command, targetPath);
+	const result = await runGitCommand(command, targetPath);
 	const finishedAt = new Date();
 	return {
 		status: result.exitCode === 0 ? "passed" : "failed",
@@ -374,46 +360,6 @@ function runInstallCommand(command: string[], cwd: string) {
 				env: buildChildProcessEnvironment({ purpose: "workspace_bootstrap" }),
 				timeout: INSTALL_TIMEOUT_MS,
 				maxBuffer: INSTALL_MAX_BUFFER,
-			},
-			(error, stdout, stderr) => {
-				const execError = error as
-					| (Error & { code?: string | number; signal?: string | null })
-					| null;
-				const exitCode =
-					typeof execError?.code === "number"
-						? execError.code
-						: error
-							? null
-							: 0;
-				resolve({
-					exitCode,
-					signal: execError?.signal ?? null,
-					stdout: String(stdout || ""),
-					stderr: String(stderr || ""),
-					errorMessage: error ? error.message : undefined,
-				});
-			},
-		);
-	});
-}
-
-function runGitInitCommand(command: string[], cwd: string) {
-	const [file, ...args] = command;
-	return new Promise<{
-		exitCode: number | null;
-		signal: string | null;
-		stdout: string;
-		stderr: string;
-		errorMessage?: string;
-	}>((resolve) => {
-		execFile(
-			file,
-			args,
-			{
-				cwd,
-				env: buildChildProcessEnvironment({ purpose: "git" }),
-				timeout: GIT_INIT_TIMEOUT_MS,
-				maxBuffer: GIT_INIT_MAX_BUFFER,
 			},
 			(error, stdout, stderr) => {
 				const execError = error as

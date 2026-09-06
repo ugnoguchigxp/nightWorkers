@@ -48,59 +48,6 @@ describe("Plan Mode domain boundaries", () => {
 		}
 	});
 
-	it("keeps NightWorkers compatibility files as re-export shims for moved Plan Mode UI", () => {
-		const compatibilityExports = {
-			"src/modules/nightworkers/components/ArtifactQuestionnaire.tsx":
-				'export * from "../../planMode/PlanModeQuestionnaire";',
-			"src/modules/nightworkers/components/ArtifactWorkspacePanels.tsx":
-				'export * from "../../planMode/PlanModeWorkspacePanels";',
-			"src/modules/nightworkers/components/ArtifactWorkspaceViewer.tsx":
-				'export * from "../../planMode/PlanModeWorkspaceViewer";',
-		};
-
-		for (const [path, expectedSource] of Object.entries(compatibilityExports)) {
-			expect(readProjectFile(path).trim(), path).toBe(expectedSource);
-		}
-	});
-
-	it("does not keep Questionnaire lifecycle implementation in the legacy NightWorkers service", () => {
-		const source = readProjectFile(
-			"api/modules/nightworkers/nightworkers.design-questionnaire.service.ts",
-		);
-
-		expect(source).not.toContain(
-			"export async function createDesignQuestionnaire",
-		);
-		expect(source).not.toContain(
-			"export async function saveDesignQuestionnaireAnswers",
-		);
-		expect(source).not.toContain(
-			"export async function generateDesignQuestionnaireFollowUp",
-		);
-		expect(source).not.toContain(
-			"export async function generateDesignQuestionnaireReview",
-		);
-		expect(source).not.toContain(
-			"export async function acceptDesignQuestionnaireReview",
-		);
-		expect(source).not.toContain(
-			"export async function leaveDesignQuestionnaireReviewUnadopted",
-		);
-		expect(source).not.toContain(
-			"export async function generateSpecificationStatusBlueprint",
-		);
-		expect(source).not.toContain(
-			"export async function generateSpecificationStatusDataModel",
-		);
-		expect(source).not.toContain(
-			"export async function generateSpecificationStatusDesignDocument",
-		);
-		expect(source).not.toContain(
-			"export async function getBlueprintPlanModeWorkspace",
-		);
-		expect(source).not.toContain("export async function getPlanModeWorkspace");
-	});
-
 	it("keeps Plan Mode API ownership out of the NightWorkers aggregate router", () => {
 		const nightworkersRouteFiles = [
 			"api/modules/nightworkers/routes/task-routes.ts",

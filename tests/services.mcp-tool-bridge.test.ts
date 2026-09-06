@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mcpClientManager } from "../api/services/mcp/mcp-client-manager";
 import { createMcpServer } from "../api/services/mcp/mcp-settings";
-import { DefaultToolPolicyGate } from "../api/services/tool-policy/tool-policy-gate";
 import { executeWorkerTool } from "../api/services/worker-tools/dispatcher";
 
 let tempDir: string;
@@ -94,20 +93,20 @@ rl.on('line', (line) => {
 }
 
 describe("MCP worker tool bridge", () => {
-	it("blocks invalid mcp_call_tool arguments in policy preflight", async () => {
-		const gate = new DefaultToolPolicyGate();
-		const decision = await gate.beforeToolCall({
-			runId: "run-1",
-			iteration: 1,
+	it("rejects invalid mcp_call_tool arguments through the worker dispatcher", async () => {
+		const dispatch = await executeWorkerTool({
 			toolName: "mcp_call_tool",
 			args: { serverId: "", toolName: "lookup" },
 			repoRoot: process.cwd(),
 			readFiles: [],
 		});
 
-		expect(decision).toMatchObject({
-			allowed: false,
-			code: "INVALID_TOOL_ARGS",
+		expect(dispatch.result).toMatchObject({
+			ok: false,
+			error: {
+				code: "MCP_TOOL_CALL_FAILED",
+				message: "mcp_call_tool requires serverId and toolName.",
+			},
 		});
 	});
 

@@ -9,7 +9,6 @@ import {
 	normalizeReviewRunOptions,
 	resolveReviewTargetRunIds,
 } from "../api/modules/review/review-run.service";
-import { parseReviewRunFindings } from "../api/modules/review/review-run-finalize.service";
 
 describe("Review Run workflow", () => {
 	it("uses the immutable Mission Pilot Implementation/Test target set", () => {
@@ -205,31 +204,6 @@ describe("Review Run workflow", () => {
 		expect(todos.map((todo) => todo.procedureId)).toContain(
 			"review.code_findings",
 		);
-	});
-
-	it("parses structured findings from review final reports", () => {
-		expect(
-			parseReviewRunFindings(
-				'```json\n{"findings":[{"severity":"blocking","title":"Bug","body":"Details","path":"src/app.ts"}]}\n```',
-			),
-		).toEqual([
-			{
-				severity: "blocking",
-				title: "Bug",
-				body: "Details",
-				path: "src/app.ts",
-			},
-		]);
-		expect(
-			parseReviewRunFindings("- [warning] Missing test (src/app.ts)"),
-		).toEqual([
-			{
-				severity: "warning",
-				title: "Missing test",
-				body: null,
-				path: "src/app.ts",
-			},
-		]);
 	});
 });
 

@@ -16,7 +16,10 @@ import {
 import { assertPlanModeCapabilityEnabled } from "../nightworkers/nightworkers.plan-mode-settings.service";
 import type { PlanArtifactSourceSelection } from "../specification/plan-artifact-input.types";
 import { resolvePlanArtifactCanonicalInput } from "../specification/plan-artifact-input-context.service";
-import { projectPlanArtifactInput } from "../specification/plan-artifact-input-projection";
+import {
+	createPlanArtifactProjectionMetadata,
+	projectPlanArtifactInput,
+} from "../specification/plan-artifact-input-projection";
 import { renderPlanArtifactInput } from "../specification/plan-artifact-input-renderer";
 import { createPlanArtifactSourceSelection } from "../specification/plan-artifact-source-selection";
 import { getPlanModeWorkspace } from "../specification/plan-mode-workspace.service";
@@ -85,7 +88,7 @@ export async function generateBlueprintArtifact(
 			mockBlueprint,
 			generation: {
 				...generationWithUsage,
-				inputProjection: projectionMetadata(
+				inputProjection: createPlanArtifactProjectionMetadata(
 					projection,
 					canonical.questionnaire?.sessionId ?? null,
 				),
@@ -96,7 +99,7 @@ export async function generateBlueprintArtifact(
 				sourceBlueprintMessageId:
 					input.sourceSelection?.previousTargetMessageId ?? null,
 				userRegenerationRequest: input.prompt?.trim() || null,
-				inputProjection: projectionMetadata(
+				inputProjection: createPlanArtifactProjectionMetadata(
 					projection,
 					canonical.questionnaire?.sessionId ?? null,
 				),
@@ -126,7 +129,7 @@ export async function generateBlueprintArtifact(
 				mockBlueprint,
 				generation: {
 					...generationWithUsage,
-					inputProjection: projectionMetadata(
+					inputProjection: createPlanArtifactProjectionMetadata(
 						projection,
 						canonical.questionnaire?.sessionId ?? null,
 					),
@@ -200,25 +203,6 @@ export async function generateBlueprintArtifact(
 					: "application",
 		});
 	}
-}
-
-function projectionMetadata(
-	projection: ReturnType<typeof projectPlanArtifactInput>,
-	questionnaireSessionId: string | null,
-) {
-	return {
-		version: projection.version,
-		target: projection.target,
-		digest: projection.diagnostics.projectionDigest,
-		contextRevision: projection.provenance.contextRevision,
-		contextDigest: projection.provenance.contextDigest,
-		routingRevision: projection.provenance.routingRevision,
-		questionnaireSessionId,
-		questionnaireDigest: projection.provenance.questionnaireDigest,
-		sourceMessageIds: projection.provenance.sourceMessageIds,
-		sourceDigests: projection.provenance.sourceDigests,
-		sectionBytes: projection.diagnostics.sectionBytes,
-	};
 }
 
 async function resolveLatestMockBlueprintUsage(taskId: string) {

@@ -11,6 +11,7 @@ import {
 	callFixtureProviderToolTurn,
 	hasFixtureProviderToolTurns,
 } from "./fixture-tool-provider";
+import { callMuseProvider, callMuseProviderToolTurn } from "./muse-provider";
 import { callOpenAIProvider } from "./openai-provider";
 import {
 	type OpenAIChatCompletionResponse,
@@ -94,6 +95,7 @@ export async function callProvider(input: {
 				openai: () => callOpenAIProvider(input, isEnabled, settings),
 				bedrock: () => callBedrockProvider(input, isEnabled, settings),
 				codex: () => callCodexProvider(input, isEnabled, settings),
+				muse: () => callMuseProvider(input, settings),
 				fixture: async () => callFixtureProvider(input),
 			},
 			onUnsupported: () => {
@@ -160,6 +162,7 @@ export async function callProviderToolTurn(input: {
 				azure: () => callAzureProviderToolTurn(input, isEnabled, settings),
 				bedrock: () => callBedrockProviderToolTurn(input, isEnabled, settings),
 				codex: () => callCodexProviderToolTurn(input, isEnabled, settings),
+				muse: () => callMuseProviderToolTurn(input, settings),
 				fixture: async () =>
 					callFixtureProviderToolTurn({
 						taskId: input.options.taskId ?? "",

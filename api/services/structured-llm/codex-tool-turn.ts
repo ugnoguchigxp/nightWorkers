@@ -8,9 +8,10 @@ import type {
 	ProviderToolMessage,
 } from "./tool-calls";
 
-export const CODEX_TOOL_TURN_SCHEMA_NAME = "mission_pilot_tool_turn";
+export const PROVIDER_TOOL_TURN_SCHEMA_NAME = "mission_pilot_tool_turn";
+export const CODEX_TOOL_TURN_SCHEMA_NAME = PROVIDER_TOOL_TURN_SCHEMA_NAME;
 
-export function buildCodexToolTurnJsonSchema(
+export function buildProviderToolTurnJsonSchema(
 	tools: ProviderToolDefinition[],
 ): Record<string, unknown> {
 	const toolNames = [...new Set(tools.map((tool) => tool.name))];
@@ -40,13 +41,16 @@ export function buildCodexToolTurnJsonSchema(
 	};
 }
 
-export function buildCodexToolTurnPrompt(input: {
+export const buildCodexToolTurnJsonSchema = buildProviderToolTurnJsonSchema;
+
+export function buildProviderToolTurnPrompt(input: {
+	providerLabel: string;
 	messages: ProviderToolMessage[];
 	tools: ProviderToolDefinition[];
 }) {
 	return [
 		"現在のMission Pilot conversationを読み、次の応答を一度だけ決めてください。",
-		"このCodex turnではMCP、command、filesystem、network、その他のtoolを直接実行しないでください。",
+		`この${input.providerLabel} turnではMCP、command、filesystem、network、その他のtoolを直接実行しないでください。`,
 		"情報取得または操作が必要なら、下記の利用可能toolをtoolCallsへ出力してください。実行と権限検証はNightWorkersが行います。",
 		"toolCalls[].argumentsJsonには、対象toolのinputSchemaに従うJSON objectを文字列として入れてください。",
 		"複数toolを同時に要求する必要がなければ、一つだけ返してください。toolが不要ならtoolCallsは空配列にしてください。",
@@ -60,9 +64,22 @@ export function buildCodexToolTurnPrompt(input: {
 	].join("\n");
 }
 
-export function parseCodexToolTurnResponse(
+export function buildCodexToolTurnPrompt(
+	input: Omit<
+		Parameters<typeof buildProviderToolTurnPrompt>[0],
+		"providerLabel"
+	>,
+) {
+	return buildProviderToolTurnPrompt({ ...input, providerLabel: "Codex" });
+}
+
+export function parseProviderToolTurnResponse(
 	raw: string,
 	tools: readonly ProviderToolDefinition[] = [],
+	provider: { name: string; callIdPrefix: string } = {
+		name: "Provider",
+		callIdPrefix: "provider_call_",
+	},
 ):
 	| { ok: true; content: string; toolCalls: ProviderToolCall[] }
 	| { ok: false; reason: string; error?: StructuredProviderError } {
@@ -90,9 +107,9 @@ export function parseCodexToolTurnResponse(
 		try {
 			toolCalls.push(
 				decodeProviderToolCall({
-					provider: "Codex",
+					provider: provider.name,
 					call: {
-						id: `codex_call_${randomUUID()}`,
+						id: `${provider.callIdPrefix}${randomUUID()}`,
 						name: candidate.name,
 						arguments: candidate.argumentsJson,
 					},
@@ -110,6 +127,16 @@ export function parseCodexToolTurnResponse(
 		}
 	}
 	return { ok: true, content: envelope.content, toolCalls };
+}
+
+export function parseCodexToolTurnResponse(
+	raw: string,
+	tools: readonly ProviderToolDefinition[] = [],
+) {
+	return parseProviderToolTurnResponse(raw, tools, {
+		name: "Codex",
+		callIdPrefix: "codex_call_",
+	});
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

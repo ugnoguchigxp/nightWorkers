@@ -3,12 +3,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureNightWorkersSchema } from "../api/db/bootstrap";
+import { generatePlanModeMockBlueprintDraft } from "../api/modules/blueprint";
 import * as repo from "../api/modules/nightworkers/nightworkers.repository";
 import {
 	renderMockBlueprintMarkdown,
 	summarizeMockBlueprintForDataModel,
 } from "../api/services/blueprints/mock-draft";
-import { generatePlanModeMockBlueprintDraft } from "../api/services/blueprints/mock-llm-draft";
 import {
 	buildMockBlueprintSectionCatalog,
 	buildMockBlueprintStructuredOutputJsonSchema,

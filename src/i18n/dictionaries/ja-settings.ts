@@ -392,6 +392,7 @@ export const jaSettings = {
 	"settings.llm.endpoint.unreachable": "接続不可",
 	"settings.llm.endpoint.kind": "種類",
 	"settings.llm.endpoint.kind.openaiCompatible": "OpenAI互換",
+	"settings.llm.endpoint.kind.muse": "Muse Agent",
 	"settings.llm.endpoint.kind.local": "ローカルLLM",
 	"settings.llm.endpoint.url": "エンドポイントURL",
 	"settings.llm.endpoint.models": "モデル",

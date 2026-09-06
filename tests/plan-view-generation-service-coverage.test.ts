@@ -86,7 +86,12 @@ vi.mock(
 );
 vi.mock(
 	"../api/modules/specification/plan-artifact-input-projection",
-	() => projection,
+	async (importOriginal) => ({
+		...(await importOriginal<
+			typeof import("../api/modules/specification/plan-artifact-input-projection")
+		>()),
+		...projection,
+	}),
 );
 vi.mock(
 	"../api/modules/specification/plan-artifact-source-selection",

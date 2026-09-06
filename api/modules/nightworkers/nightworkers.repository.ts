@@ -32,59 +32,6 @@ export type {
 	ActivityStatus,
 } from "./nightworkers.activity-types";
 
-const _ACTIVE_IMPLEMENTATION_QUEUE_STATUSES = [
-	"queued",
-	"claimed",
-	"processing",
-	"needs_human",
-	"awaiting_commit_decision",
-	"execution_completed",
-	"failed",
-	"cancelled",
-] as const;
-const _OCCUPIED_PROCESSOR_STATUSES = [
-	"claimed",
-	"processing",
-	"needs_human",
-	"awaiting_commit_decision",
-] as const;
-
-const _KNOWN_ACTIVITY_KINDS = new Set([
-	"user.message",
-	"assistant.delta",
-	"assistant.message",
-	"assistant.pause",
-	"assistant.resume",
-	"assistant.raw_output",
-	"llm.request",
-	"llm.response_delta",
-	"llm.response_final",
-	"llm.decision_json",
-	"llm.schema_result",
-	"llm.error",
-	"llm.usage",
-	"llm.provider_activity",
-	"runtime.decision",
-	"runtime.state",
-	"tool.call",
-	"tool.result",
-	"tool.error",
-	"command.output",
-	"file.diff",
-	"file.patch",
-	"file.write",
-	"verification.output",
-	"run.status",
-	"todo.status",
-	"transport.subscribe",
-	"transport.replay",
-	"transport.publish",
-	"ui.optimistic",
-	"system.info",
-	"system.error",
-	"unknown.activity",
-]);
-
 // --- Repositories ---
 export async function createRepository(data: {
 	name: string;

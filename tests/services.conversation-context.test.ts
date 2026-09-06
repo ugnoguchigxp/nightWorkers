@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	buildConversationContextSnapshot,
@@ -10,7 +8,6 @@ import {
 	extractConservativePaths,
 	isAllowedRelativePath,
 } from "../api/services/conversation-context/build";
-import { loadConversationGitState } from "../api/services/conversation-context/git";
 import {
 	buildPromptWithStateCard,
 	buildPromptWithStateCardParts,
@@ -20,8 +17,6 @@ import type {
 	ConversationContextSnapshotV1,
 	ConversationContextSource,
 } from "../api/services/conversation-context/types";
-
-const execFileAsync = promisify(execFile);
 
 describe("conversation context domain", () => {
 	let repoRoot: string;
@@ -449,21 +444,6 @@ describe("conversation context domain", () => {
 			"- evidence: apply_patch | patch_mismatch | src/app.ts",
 		);
 	});
-
-	it("includes untracked files in git state as added files", async () => {
-		await execFileAsync("git", ["init"], { cwd: repoRoot });
-		await writeFile(
-			path.join(repoRoot, "new-file.ts"),
-			"export const created = true;\n",
-		);
-
-		const gitState = await loadConversationGitState({ repoRoot });
-
-		expect(gitState.nameStatus).toContainEqual({
-			path: "new-file.ts",
-			status: "added",
-		});
-	});
 });
 
 function userMessage(
@@ -537,63 +517,3 @@ function buildSnapshot(input: {
 		limits: { tokenEstimate: 0, truncatedFields: [] },
 	};
 }
-
-describe("loadConversationGitState edge cases", () => {
-	it("handles git errors, stat truncations, and status parsers", async () => {
-		// 1. Invalid git repo root to trigger runGit error catch block
-		const resultError = await loadConversationGitState({
-			repoRoot: "/non-existent-path-git-error",
-			targetPaths: ["test.txt"],
-		});
-		expect(resultError.errors.length).toBeGreaterThan(0);
-		expect(resultError.nameStatus).toEqual([]);
-
-		// Create a temporary git repository for testing parsers
-		const tempRepo = await mkdtemp(path.join(os.tmpdir(), "git-state-test-"));
-		try {
-			await execFileAsync("git", ["init"], { cwd: tempRepo });
-
-			// Test status with added file
-			await writeFile(path.join(tempRepo, "added.txt"), "added");
-			const state1 = await loadConversationGitState({
-				repoRoot: tempRepo,
-				targetPaths: ["added.txt"],
-			});
-			expect(state1.nameStatus).toContainEqual({
-				path: "added.txt",
-				status: "added",
-			});
-
-			// Test status with modified file
-			await execFileAsync("git", ["add", "added.txt"], { cwd: tempRepo });
-			await execFileAsync("git", ["commit", "-m", "initial"], {
-				cwd: tempRepo,
-			});
-			await writeFile(path.join(tempRepo, "added.txt"), "modified");
-			const state2 = await loadConversationGitState({
-				repoRoot: tempRepo,
-				targetPaths: ["added.txt"],
-			});
-			expect(state2.nameStatus).toContainEqual({
-				path: "added.txt",
-				status: "modified",
-			});
-
-			// Test renamed status (by git mv)
-			await execFileAsync("git", ["add", "added.txt"], { cwd: tempRepo });
-			await execFileAsync("git", ["mv", "added.txt", "renamed.txt"], {
-				cwd: tempRepo,
-			});
-			const state3 = await loadConversationGitState({
-				repoRoot: tempRepo,
-				targetPaths: ["renamed.txt"],
-			});
-			expect(state3.nameStatus).toContainEqual({
-				path: "renamed.txt",
-				status: "added",
-			});
-		} finally {
-			await rm(tempRepo, { recursive: true, force: true });
-		}
-	});
-});

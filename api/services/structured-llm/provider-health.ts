@@ -1,25 +1,22 @@
 import {
-	buildStructuredLlmTargetDigest,
-	canonicalizeStructuredLlmEndpoint,
+	buildStructuredLlmProviderTargetMetadata,
+	redactStructuredLlmProbeUrl,
 	resolveStructuredLlmProviderBaseUrl,
 } from "./endpoint-target";
+import {
+	buildMuseProviderExecutionReadinessUrl,
+	buildMuseProviderHealthUrl,
+	checkMuseExecutionReadiness,
+	checkMuseModelAvailability,
+} from "./muse-provider-health";
 import { readBoundedProviderResponseText } from "./provider-failure";
+import type { StructuredLlmProviderHealthResult } from "./provider-health-contract";
 import type { StructuredLlmProviderEndpoint } from "./settings";
 
-export type StructuredLlmProviderHealthResult = {
-	ok: boolean;
-	reachable: boolean;
-	providerEndpointId: string;
-	providerKind: StructuredLlmProviderEndpoint["kind"];
-	url: string | null;
-	status: number | null;
-	durationMs: number;
-	checkedAt: string;
-	message: string;
-	probeKind?: "connectivity" | "execution_readiness";
-	model?: string | null;
-	targetDigest?: string | null;
-};
+export type {
+	StructuredLlmProviderHealthResult,
+	StructuredLlmProviderTargetMetadata,
+} from "./provider-health-contract";
 
 const DEFAULT_TIMEOUT_MS = 3000;
 const DEFAULT_EXECUTION_READINESS_TIMEOUT_MS = 30_000;
@@ -54,6 +51,17 @@ export async function checkStructuredLlmProviderHealth(
 		options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 	);
 	const fetchImpl = options.fetchImpl ?? fetch;
+	if (endpoint.kind === "muse") {
+		return checkMuseModelAvailability(endpoint, {
+			started,
+			checkedAt,
+			targetMetadata,
+			url: urlResult.url,
+			controller,
+			fetchImpl,
+			clear: () => clearTimeout(timeout),
+		});
+	}
 	try {
 		const res = await fetchImpl(urlResult.url, {
 			method: getHealthMethod(endpoint),
@@ -105,6 +113,13 @@ export async function checkStructuredLlmProviderExecutionReadiness(
 	endpoint: StructuredLlmProviderEndpoint,
 	options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<StructuredLlmProviderHealthResult> {
+	if (endpoint.kind === "muse") {
+		return checkMuseExecutionReadiness(
+			endpoint,
+			options,
+			buildStructuredLlmProviderTargetMetadata(endpoint),
+		);
+	}
 	if (endpoint.kind === "bedrock" || endpoint.kind === "codex") {
 		const started = Date.now();
 		return {
@@ -218,6 +233,9 @@ export function buildProviderHealthUrl(
 			url: `https://bedrock-runtime.${endpoint.region.trim()}.amazonaws.com/health`,
 		};
 	}
+	if (endpoint.kind === "muse") {
+		return buildMuseProviderHealthUrl(endpoint);
+	}
 
 	const rawBase = resolveStructuredLlmProviderBaseUrl(endpoint);
 	if (!rawBase) {
@@ -271,6 +289,9 @@ export function buildProviderExecutionReadinessUrl(
 	>,
 ): { ok: true; url: string } | { ok: false; message: string } {
 	if (endpoint.kind === "azure") return buildProviderHealthUrl(endpoint);
+	if (endpoint.kind === "muse") {
+		return buildMuseProviderExecutionReadinessUrl(endpoint);
+	}
 	if (
 		endpoint.kind !== "openai" &&
 		endpoint.kind !== "openai-compatible" &&
@@ -308,24 +329,6 @@ export function buildProviderExecutionReadinessUrl(
 	url.search = "";
 	url.hash = "";
 	return { ok: true, url: url.toString() };
-}
-
-export function buildStructuredLlmProviderTargetMetadata(
-	endpoint: StructuredLlmProviderEndpoint,
-): { model: string | null; targetDigest: string } {
-	const canonical = canonicalizeStructuredLlmEndpoint(endpoint);
-	const model = canonical.models[0]?.trim() || null;
-	return {
-		model,
-		targetDigest: buildStructuredLlmTargetDigest({
-			providerEndpointId: canonical.id,
-			providerKind: canonical.kind,
-			endpoint: resolveStructuredLlmProviderBaseUrl(canonical),
-			apiVersion: canonical.apiVersion,
-			region: canonical.region,
-			model,
-		}),
-	};
 }
 
 function buildExecutionReadinessHeaders(
@@ -468,11 +471,4 @@ function stripKnownApiSuffix(pathname: string) {
 	return normalized;
 }
 
-function redactStructuredLlmProbeUrl(value: string) {
-	const url = new URL(value);
-	url.username = "";
-	url.password = "";
-	url.search = "";
-	url.hash = "";
-	return url.toString();
-}
+export { buildStructuredLlmProviderTargetMetadata } from "./endpoint-target";

@@ -89,13 +89,6 @@ vi.mock("../api/modules/specification/plan-mode-routing-query", () => ({
 	})),
 }));
 
-vi.mock(
-	"../api/modules/specification/specification-questionnaire-session",
-	() => ({
-		resolveOptionalReadyQuestionnaireSession: vi.fn(async () => null),
-	}),
-);
-
 vi.mock("../api/modules/specification/plan-mode-project-stack-context", () => ({
 	resolvePlanModeProjectStackContext: vi.fn(async () =>
 		[

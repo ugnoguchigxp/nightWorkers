@@ -17,7 +17,6 @@ import {
 } from "./ThreadTimelineStreaming";
 import { sanitizeTerminalText } from "./terminalText";
 
-const _UNKNOWN_ACTIVITY_TITLE_KEY = "timeline.unknownActivity";
 export function childEventId(child: TranscriptChild) {
 	if (child.kind === "tool")
 		return child.events.map((event) => event.id).join("-");

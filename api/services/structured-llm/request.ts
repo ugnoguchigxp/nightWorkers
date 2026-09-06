@@ -3,6 +3,10 @@ import {
 	resolveStructuredLlmProviderBaseUrl,
 } from "./endpoint-target";
 import {
+	MUSE_DEFAULT_BASE_URL,
+	MUSE_DEFAULT_MODEL,
+} from "./muse-provider-config";
+import {
 	type ResolvedStructuredLlmRoute,
 	resolveStructuredLlmRoleRoute,
 	resolveStructuredLlmRoleRouteCandidates,
@@ -204,6 +208,7 @@ export function normalizeProviderId(value: string): SupervisorProviderId {
 		value === "azure-openai" ||
 		value === "bedrock" ||
 		value === "codex" ||
+		value === "muse" ||
 		value === "fixture" ||
 		value === "test"
 	) {
@@ -222,6 +227,7 @@ function resolveProviderClass(
 	providerId: SupervisorProviderId,
 ): SupervisorProviderClass {
 	if (providerId === "bedrock") return "converse_message";
+	if (providerId === "muse") return "agent_session";
 	if (providerId === "fixture" || providerId === "test") return "fixture";
 	return "chat_completion";
 }
@@ -275,6 +281,7 @@ function resolveModelOrDeployment(
 	if (providerId === "codex") {
 		return getStructuredLlmSetting(settings, "CODEX_MODEL", "gpt-5.4-mini");
 	}
+	if (providerId === "muse") return MUSE_DEFAULT_MODEL;
 	return null;
 }
 
@@ -292,5 +299,6 @@ function resolveEndpoint(
 	if (providerId === "azure-openai") {
 		return getStructuredLlmSetting(settings, "AZURE_OPENAI_ENDPOINT", "");
 	}
+	if (providerId === "muse") return MUSE_DEFAULT_BASE_URL;
 	return null;
 }

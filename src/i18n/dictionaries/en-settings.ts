@@ -389,6 +389,7 @@ export const enSettings = {
 	"settings.llm.endpoint.unreachable": "Unreachable",
 	"settings.llm.endpoint.kind": "Kind",
 	"settings.llm.endpoint.kind.openaiCompatible": "OpenAI Compatible",
+	"settings.llm.endpoint.kind.muse": "Muse Agent",
 	"settings.llm.endpoint.kind.local": "Local LLM",
 	"settings.llm.endpoint.url": "Endpoint URL",
 	"settings.llm.endpoint.models": "Models",

@@ -104,12 +104,14 @@ export type SupervisorProviderId =
 	| "azure"
 	| "bedrock"
 	| "codex"
+	| "muse"
 	| "fixture"
 	| "test";
 
 export type SupervisorProviderClass =
 	| "chat_completion"
 	| "converse_message"
+	| "agent_session"
 	| "fixture";
 
 export type ProviderCapabilityPolicy = {

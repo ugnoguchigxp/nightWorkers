@@ -52,7 +52,6 @@ describe("release verification plan", () => {
 
 		expect(taskIds).toEqual(
 			expect.arrayContaining([
-				"all-tests",
 				"unit-coverage",
 				"e2e-coverage",
 				"demo-smoke",
@@ -71,13 +70,20 @@ describe("release verification plan", () => {
 		expect(taskSets.full.map((phase) => phase.id)).toEqual(
 			expect.arrayContaining(["unit-coverage", "e2e-coverage"]),
 		);
-		expect(taskIds.indexOf("unit-coverage")).toBeGreaterThan(
-			taskIds.indexOf("all-tests"),
-		);
 		expect(taskIds.indexOf("unit-coverage")).toBeLessThan(
 			taskIds.indexOf("e2e-coverage"),
 		);
 		expect(taskIds).not.toContain("e2e-accessibility");
+	});
+
+	it("uses coverage to run the full suite once in full and release gates", () => {
+		for (const target of ["full", "release"] as const) {
+			const taskIds = taskSets[target].flatMap((phase) =>
+				phase.tasks.map((task) => task.id),
+			);
+			expect(taskIds.filter((id) => id === "unit-coverage")).toHaveLength(1);
+			expect(taskIds).not.toContain("all-tests");
+		}
 	});
 
 	it("runs the E2E target without an environment opt-in", () => {
@@ -127,7 +133,6 @@ describe("release verification plan", () => {
 			"typecheck",
 			"lint",
 			"supervisor-regression",
-			"all-tests",
 			"unit-coverage",
 			"e2e-coverage",
 			"dependency-audit",

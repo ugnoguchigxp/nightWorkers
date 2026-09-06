@@ -11,7 +11,6 @@ import {
 	maybeLoadConversationStateCard,
 	resolveLatestJobTypeFromMessages,
 	resolveRuntimeLaneForRoleRoute,
-	safelyCreateReviewRecommendation,
 	safelyRefreshConversationContext,
 } from "../api/modules/nightworkers/run-orchestration/runtime-routing";
 import type { ResolvedStructuredLlmRoute } from "../api/services/structured-llm/role-routing";
@@ -27,8 +26,6 @@ const mocks = vi.hoisted(() => ({
 	getConversationContext: vi.fn(async () => null),
 	buildOnIdleEnabled: vi.fn(() => false),
 	stateCardEnabled: vi.fn(() => false),
-	getRecommendation: vi.fn(async () => null),
-	createRunEvent: vi.fn(async () => undefined),
 	getRuntimeState: vi.fn(async () => null),
 }));
 
@@ -40,12 +37,6 @@ vi.mock("../api/services/conversation-context", () => ({
 vi.mock("../api/services/conversation-context/flags", () => ({
 	isConversationContextBuildOnIdleEnabled: mocks.buildOnIdleEnabled,
 	isConversationContextStateCardEnabled: mocks.stateCardEnabled,
-}));
-vi.mock("../api/modules/review/review-recommendation.service", () => ({
-	getOrCreateReviewRecommendation: mocks.getRecommendation,
-}));
-vi.mock("../api/modules/nightworkers/nightworkers.repository", () => ({
-	createRunEvent: mocks.createRunEvent,
 }));
 vi.mock("../api/services/runtime-session-state", () => ({
 	RuntimeSessionStateStore: class {
@@ -73,8 +64,6 @@ beforeEach(() => {
 	mocks.stateCardEnabled.mockReturnValue(false);
 	mocks.refreshConversationContext.mockResolvedValue(undefined);
 	mocks.getConversationContext.mockResolvedValue(null);
-	mocks.getRecommendation.mockResolvedValue(null);
-	mocks.createRunEvent.mockResolvedValue(undefined);
 	mocks.getRuntimeState.mockResolvedValue(null);
 });
 
@@ -261,80 +250,6 @@ describe("conversation and review side effects", () => {
 		expect(mocks.warn).toHaveBeenCalledWith(
 			{ error: "refresh offline", taskId: "task-1", runId: "run-1" },
 			"conversation context refresh failed",
-		);
-	});
-
-	it.each([
-		null,
-		{ level: "none" },
-	])("does not emit an event for an absent or none recommendation", async (recommendation) => {
-		mocks.getRecommendation.mockResolvedValueOnce(recommendation);
-		await safelyCreateReviewRecommendation({
-			taskId: "task-1",
-			runId: "run-1",
-		});
-		expect(mocks.createRunEvent).not.toHaveBeenCalled();
-	});
-
-	it.each([
-		["required", "warning"],
-		["recommended", "info"],
-	] as const)("emits a %s review recommendation", async (level, severity) => {
-		mocks.getRecommendation.mockResolvedValueOnce({
-			id: `recommendation-${level}`,
-			level,
-			defaultAction: "start_review",
-			reasons: [
-				{
-					code: "large_diff",
-					severity: "warning",
-					label: "Large diff",
-					evidenceRefs: [{ kind: "run_event", id: "event-1" }],
-				},
-			],
-		});
-		await safelyCreateReviewRecommendation({
-			taskId: "task-1",
-			runId: "run-1",
-		});
-		expect(mocks.createRunEvent).toHaveBeenCalledWith({
-			version: 1,
-			runId: "run-1",
-			taskId: "task-1",
-			timestamp: expect.any(String),
-			type: "review.recommendation_created",
-			severity,
-			actor: "system",
-			message: `Review recommendation created: ${level}`,
-			data: {
-				recommendationId: `recommendation-${level}`,
-				level,
-				defaultAction: "start_review",
-				reasons: [
-					{ code: "large_diff", severity: "warning", label: "Large diff" },
-				],
-			},
-		});
-	});
-
-	it("logs failures and emits a recommendation_failed event", async () => {
-		mocks.getRecommendation.mockRejectedValueOnce(
-			new Error("review unavailable"),
-		);
-		await safelyCreateReviewRecommendation({
-			taskId: "task-1",
-			runId: "run-1",
-		});
-		expect(mocks.warn).toHaveBeenCalledWith(
-			{ error: "review unavailable", taskId: "task-1", runId: "run-1" },
-			"review recommendation creation failed",
-		);
-		expect(mocks.createRunEvent).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "review.recommendation_failed",
-				severity: "warning",
-				data: { error: "review unavailable" },
-			}),
 		);
 	});
 

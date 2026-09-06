@@ -141,3 +141,22 @@ function removeRepeatedInitialPrompt(content: string, initialPrompt: string) {
 		"[Task BaselineのInitial promptを参照]",
 	);
 }
+
+export function createPlanArtifactProjectionMetadata(
+	projection: PlanArtifactInputProjection,
+	questionnaireSessionId: string | null,
+) {
+	return {
+		version: projection.version,
+		target: projection.target,
+		digest: projection.diagnostics.projectionDigest,
+		contextRevision: projection.provenance.contextRevision,
+		contextDigest: projection.provenance.contextDigest,
+		routingRevision: projection.provenance.routingRevision,
+		questionnaireSessionId,
+		questionnaireDigest: projection.provenance.questionnaireDigest,
+		sourceMessageIds: projection.provenance.sourceMessageIds,
+		sourceDigests: projection.provenance.sourceDigests,
+		sectionBytes: projection.diagnostics.sectionBytes,
+	};
+}

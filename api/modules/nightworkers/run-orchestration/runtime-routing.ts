@@ -26,8 +26,7 @@ import type {
 	AgentExecutionMode,
 	RuntimeLaneResolution,
 } from "../../codingAgent";
-import { getOrCreateReviewRecommendation } from "../../review/review-recommendation.service";
-import * as repo from "../nightworkers.repository";
+import type * as repo from "../nightworkers.repository";
 import { toErrorMessage, toRecord } from "./utils";
 
 export const IMPLEMENTATION_PHASE_PREAMBLE = [
@@ -174,56 +173,6 @@ export async function safelyRefreshConversationContext(
 			},
 			"conversation context refresh failed",
 		);
-	}
-}
-
-export async function safelyCreateReviewRecommendation(input: {
-	taskId: string;
-	runId: string;
-}) {
-	try {
-		const recommendation = await getOrCreateReviewRecommendation(input.runId);
-		if (!recommendation || recommendation.level === "none") return;
-		await repo.createRunEvent({
-			version: 1,
-			runId: input.runId,
-			taskId: input.taskId,
-			timestamp: new Date().toISOString(),
-			type: "review.recommendation_created",
-			severity: recommendation.level === "required" ? "warning" : "info",
-			actor: "system",
-			message: `Review recommendation created: ${recommendation.level}`,
-			data: {
-				recommendationId: recommendation.id,
-				level: recommendation.level,
-				defaultAction: recommendation.defaultAction,
-				reasons: recommendation.reasons.map((reason) => ({
-					code: reason.code,
-					severity: reason.severity,
-					label: reason.label,
-				})),
-			},
-		});
-	} catch (error) {
-		logger.warn(
-			{
-				error: toErrorMessage(error),
-				taskId: input.taskId,
-				runId: input.runId,
-			},
-			"review recommendation creation failed",
-		);
-		await repo.createRunEvent({
-			version: 1,
-			runId: input.runId,
-			taskId: input.taskId,
-			timestamp: new Date().toISOString(),
-			type: "review.recommendation_failed",
-			severity: "warning",
-			actor: "system",
-			message: "Review recommendation could not be created.",
-			data: { error: toErrorMessage(error) },
-		});
 	}
 }
 

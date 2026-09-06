@@ -26,14 +26,6 @@ import {
 	toObjectArray,
 } from "./previewModel";
 
-const _chartTooltipStyle = {
-	background: "var(--card)",
-	border: "1px solid var(--border)",
-	borderRadius: "var(--radius)",
-	color: "var(--foreground)",
-	fontSize: 11,
-};
-
 export function BlueprintPreviewSection({
 	section,
 }: {

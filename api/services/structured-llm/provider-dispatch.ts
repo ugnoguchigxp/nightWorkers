@@ -3,6 +3,7 @@ export type StructuredLlmProviderAdapter =
 	| "openai"
 	| "bedrock"
 	| "codex"
+	| "muse"
 	| "fixture";
 
 export function normalizeStructuredLlmProviderAdapter(provider: string) {

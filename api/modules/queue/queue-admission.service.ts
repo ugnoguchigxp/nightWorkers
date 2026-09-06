@@ -19,8 +19,6 @@ export type QueueRecoveryAction =
 	| "cancel"
 	| "archive"
 	| "complete";
-const _DEFAULT_STALE_PROCESSING_MS = 30 * 60 * 1000;
-const _DEFAULT_MAX_QUEUE_ATTEMPTS = 3;
 
 type TaskMessageRows = Awaited<
 	ReturnType<typeof nightworkersRepo.listTaskMessages>

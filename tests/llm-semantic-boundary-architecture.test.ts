@@ -49,7 +49,7 @@ describe("LLM semantic freedom architecture boundary", () => {
 			),
 			read("api/modules/questionnaire/questionnaire-parser.service.ts"),
 			read("api/modules/taskGeneration/task-candidate-semantics.ts"),
-			read("api/services/blueprints/llm-draft.ts"),
+			read("api/modules/blueprint/mock-blueprint-generation.service.ts"),
 		].join("\n");
 
 		expect(sources).not.toMatch(

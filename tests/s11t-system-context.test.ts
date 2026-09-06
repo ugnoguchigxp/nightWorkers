@@ -644,10 +644,6 @@ describe("S11t SystemContext catalog", () => {
 				"Playでpush",
 			],
 			[
-				"../packages/mission-pilot/src/backend/runtime/prompts/mission-pilot-plan-review.ts",
-				"Queue投入前",
-			],
-			[
 				"../packages/mission-pilot/src/backend/runtime/agent/mission-pilot-agent-runtime.ts",
 				"[Mission Pilot 現在のStep文脈]",
 			],

@@ -48,18 +48,6 @@ async function requireRepository(repositoryId: string) {
 	return repository;
 }
 
-function _defaultMissionTitle(goalText: string) {
-	const normalized = goalText.trim().replace(/\s+/g, " ");
-	return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized;
-}
-
-function _normalizeMissionTitle(title: string) {
-	return title
-		.normalize("NFKC")
-		.toLowerCase()
-		.replace(/[\s　"'`.,:;!?()[\]{}<>「」『』【】・_-]+/g, "");
-}
-
 async function sourceGoalsForMission(mission: Mission) {
 	const goals = await taskGenerationRepo.listMissionGoals(mission.repositoryId);
 	const selected = mission.sourceGoalIds.length

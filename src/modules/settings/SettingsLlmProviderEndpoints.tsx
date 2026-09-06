@@ -70,6 +70,7 @@ export function SettingsLlmProviderEndpoints({
 			label: t("settings.llm.endpoint.kind.openaiCompatible"),
 		},
 		{ value: "bedrock", label: "AWS Bedrock" },
+		{ value: "muse", label: t("settings.llm.endpoint.kind.muse") },
 		{ value: "local", label: t("settings.llm.endpoint.kind.local") },
 	];
 
@@ -215,7 +216,8 @@ export function SettingsLlmProviderEndpoints({
 								) : null}
 								{endpoint.kind === "openai" ||
 								endpoint.kind === "openai-compatible" ||
-								endpoint.kind === "local" ? (
+								endpoint.kind === "local" ||
+								endpoint.kind === "muse" ? (
 									<Field
 										id={`${endpoint.id}-base-url`}
 										label={t("settings.field.baseUrl")}

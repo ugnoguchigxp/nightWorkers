@@ -47,7 +47,10 @@ import {
 import { resolveFeaturePlanUpstreamArtifacts } from "./feature-plan-upstream-artifacts";
 import type { PlanArtifactSourceSelection } from "./plan-artifact-input.types";
 import { resolvePlanArtifactCanonicalInput } from "./plan-artifact-input-context.service";
-import { projectPlanArtifactInput } from "./plan-artifact-input-projection";
+import {
+	createPlanArtifactProjectionMetadata,
+	projectPlanArtifactInput,
+} from "./plan-artifact-input-projection";
 import {
 	buildPlanArtifactPromptBudgetMetadata,
 	PLAN_ARTIFACT_GENERATION_TIMEOUT_MS,
@@ -248,7 +251,7 @@ export async function generateFeaturePlanArtifact(
 						context.planViewReferences.trim(),
 					),
 					planModeReferencesIncluded: false,
-					inputProjection: projectionMetadata(
+					inputProjection: createPlanArtifactProjectionMetadata(
 						projection,
 						canonical.questionnaire?.sessionId ?? null,
 					),
@@ -323,25 +326,6 @@ export async function generateFeaturePlanArtifact(
 	return {
 		message: persistedMessage ?? message,
 		workspace: await getPlanModeWorkspace(taskId),
-	};
-}
-
-function projectionMetadata(
-	projection: ReturnType<typeof projectPlanArtifactInput>,
-	questionnaireSessionId: string | null,
-) {
-	return {
-		version: projection.version,
-		target: projection.target,
-		digest: projection.diagnostics.projectionDigest,
-		contextRevision: projection.provenance.contextRevision,
-		contextDigest: projection.provenance.contextDigest,
-		routingRevision: projection.provenance.routingRevision,
-		questionnaireSessionId,
-		questionnaireDigest: projection.provenance.questionnaireDigest,
-		sourceMessageIds: projection.provenance.sourceMessageIds,
-		sourceDigests: projection.provenance.sourceDigests,
-		sectionBytes: projection.diagnostics.sectionBytes,
 	};
 }
 

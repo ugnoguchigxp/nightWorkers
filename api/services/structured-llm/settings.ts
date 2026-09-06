@@ -51,6 +51,7 @@ export type StructuredLlmProviderEndpointKind =
 	| "openai-compatible"
 	| "bedrock"
 	| "codex"
+	| "muse"
 	| "local";
 
 export type { StructuredLlmRole };

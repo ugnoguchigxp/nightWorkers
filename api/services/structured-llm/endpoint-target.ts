@@ -6,6 +6,7 @@ export type StructuredLlmEndpointKind =
 	| "openai-compatible"
 	| "bedrock"
 	| "codex"
+	| "muse"
 	| "local";
 
 export type CanonicalizableStructuredLlmEndpoint = {
@@ -20,6 +21,7 @@ const OPENAI_COMPATIBLE_KINDS = new Set<StructuredLlmEndpointKind>([
 	"openai",
 	"openai-compatible",
 	"local",
+	"muse",
 ]);
 
 /**
@@ -100,6 +102,36 @@ export function buildStructuredLlmTargetDigest(input: {
 			model: input.model?.trim() || null,
 		}),
 	);
+}
+
+export function buildStructuredLlmProviderTargetMetadata(
+	endpoint: CanonicalizableStructuredLlmEndpoint & {
+		id: string;
+		models: string[];
+	},
+): { model: string | null; targetDigest: string } {
+	const canonical = canonicalizeStructuredLlmEndpoint(endpoint);
+	const model = canonical.models[0]?.trim() || null;
+	return {
+		model,
+		targetDigest: buildStructuredLlmTargetDigest({
+			providerEndpointId: canonical.id,
+			providerKind: canonical.kind,
+			endpoint: resolveStructuredLlmProviderBaseUrl(canonical),
+			apiVersion: canonical.apiVersion,
+			region: canonical.region,
+			model,
+		}),
+	};
+}
+
+export function redactStructuredLlmProbeUrl(value: string) {
+	const url = new URL(value);
+	url.username = "";
+	url.password = "";
+	url.search = "";
+	url.hash = "";
+	return url.toString();
 }
 
 function normalizeTargetDigestProviderKind(kind: string) {

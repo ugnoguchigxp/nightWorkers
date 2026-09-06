@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { defaultDesignPreset } from "../api/services/design-governance";
 import {
 	blueprintPreviewDesignOptions,
 	createBlueprintDesignReference,
@@ -22,9 +21,16 @@ describe("Blueprint Preview design settings", () => {
 		).toBe("dark");
 	});
 
-	it("creates preview settings from the default backend design preset", () => {
-		const settings =
-			createBlueprintPreviewDesignSettingsFromPreset(defaultDesignPreset);
+	it("creates preview settings from a saved dark design preset", () => {
+		const settings = createBlueprintPreviewDesignSettingsFromPreset({
+			theme: "nightworkers-dark",
+			density: "compact",
+			radius: "default",
+			shadow: "subtle",
+			fontScale: "default",
+			contrast: "standard",
+			motion: "standard",
+		});
 
 		expect(settings).toMatchObject({
 			theme: "dark",

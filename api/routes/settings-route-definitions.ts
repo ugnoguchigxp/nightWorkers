@@ -25,6 +25,7 @@ const llmProviderHealthSchema = z.object({
 		"openai-compatible",
 		"bedrock",
 		"codex",
+		"muse",
 		"local",
 	]),
 	url: z.string().nullable(),

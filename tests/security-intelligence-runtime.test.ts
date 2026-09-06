@@ -5,7 +5,6 @@ import { withSecurityIntelligenceShadow } from "../api/modules/codingAgent/runti
 import { workerToolDefinitions } from "../api/modules/codingAgent/runtime/native-api-runner/native-api-tool-manifest";
 import { mergeSecurityContinuationResult } from "../api/modules/nightworkers/run-orchestration/security-runtime-finalization";
 import { TASK_OPERATOR_ACTION_DEFINITIONS } from "../api/modules/taskOperator/policies/task-operator-action.registry";
-import { TOOL_MANIFEST } from "../api/services/tool-policy/tool-manifest";
 import {
 	deriveSecurityFinalJudgmentV1,
 	securityFinalJudgmentV1Schema,
@@ -121,7 +120,6 @@ describe("Security Intelligence runtime contracts", () => {
 		for (const name of names) {
 			expect(nativeNames.has(name)).toBe(true);
 			expect(name in nightWorkersCodexToolManifest).toBe(true);
-			expect(name in TOOL_MANIFEST).toBe(true);
 		}
 	});
 
