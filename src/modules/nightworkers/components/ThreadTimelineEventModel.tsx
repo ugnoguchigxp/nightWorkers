@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { TranscriptItem } from "../activityTranscript";
 import type { ActivityEvent, TaskEvent, TaskMessage, TaskRun } from "../types";
-import { schemaFirstAgentEventType } from "./ThreadTimelineActivityTranscript";
 import { asNumber, asString } from "./ThreadTimelineDiffModel";
 import { RuntimePromptSnapshotCard } from "./ThreadTimelineStreaming";
 import { sanitizeTerminalText } from "./terminalText";
@@ -525,4 +524,11 @@ export function toMs(value: unknown): number {
 	if (!value) return Number.MAX_SAFE_INTEGER;
 	const n = Date.parse(String(value));
 	return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
+}
+
+export function schemaFirstAgentEventType(event: ActivityEvent): string {
+	const payload = asRecord(event.payloadJson);
+	return typeof payload?.agentEventType === "string"
+		? payload.agentEventType
+		: "";
 }

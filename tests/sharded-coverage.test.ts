@@ -3,6 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	assertCoverageScope,
+	coverageSegmentFor,
+	coverageSourceRoots,
+} from "../scripts/coverage/coverage-scope.mjs";
+import {
 	describeCoverageGitLeak,
 	mergeCoverageShardReports,
 	resolveCoverageShardCount,
@@ -28,6 +33,73 @@ afterEach(() => {
 });
 
 describe("sharded coverage execution", () => {
+	it("partitions one run without dropping Mission Pilot or double counting sources", () => {
+		const root = path.resolve("/workspace/nightworkers");
+		const files = Object.values(coverageSourceRoots)
+			.flat()
+			.map((directory) => path.join(root, directory, "feature.ts"));
+		for (const segment of ["backend", "frontend"]) {
+			const selected = files.filter(
+				(file) => coverageSegmentFor(file, root) === segment,
+			);
+			expect(() => assertCoverageScope(selected, root, segment)).not.toThrow();
+			expect(() =>
+				assertCoverageScope(
+					selected.filter((file) => !file.includes("mission-pilot")),
+					root,
+					segment,
+				),
+			).toThrow("Coverage is missing production roots");
+		}
+		expect(
+			coverageSegmentFor(path.join(root, "api-extra", "file.ts"), root),
+		).toBeNull();
+		expect(
+			coverageSegmentFor(path.join(root, "..", "api", "file.ts"), root),
+		).toBeNull();
+	});
+
+	it("writes disjoint reports from the same shard input", () => {
+		temporaryRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-coverage-partition-"),
+		);
+		const shard = path.join(temporaryRoot, "shard");
+		fs.mkdirSync(shard);
+		const entries = Object.entries(coverageSourceRoots).flatMap(
+			([segment, roots]) =>
+				roots.map((directory) => ({
+					segment,
+					file: path.join(shard, "..", directory, "feature.ts"),
+				})),
+		);
+		fs.writeFileSync(
+			path.join(shard, "coverage-final.json"),
+			JSON.stringify(
+				Object.assign({}, ...entries.map(({ file }) => fileCoverage(file, 1))),
+			),
+		);
+		for (const segment of ["backend", "frontend"]) {
+			const outputDirectory = path.join(temporaryRoot, segment);
+			mergeCoverageShardReports({
+				shardDirectories: [shard],
+				outputDirectory,
+				segment,
+				repositoryRoot: temporaryRoot,
+			});
+			const report = JSON.parse(
+				fs.readFileSync(
+					path.join(outputDirectory, "coverage-final.json"),
+					"utf8",
+				),
+			);
+			expect(Object.keys(report).sort()).toEqual(
+				entries
+					.filter((entry) => entry.segment === segment)
+					.map((entry) => entry.file)
+					.sort(),
+			);
+		}
+	});
 	it("uses a bounded default and validates explicit shard counts", () => {
 		expect(resolveCoverageShardCount(undefined, 1)).toBe(1);
 		expect(resolveCoverageShardCount(undefined, 16)).toBe(3);

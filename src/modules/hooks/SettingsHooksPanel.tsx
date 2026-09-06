@@ -1,14 +1,14 @@
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/Button";
-import type { AgentHookEvent } from "../nightworkers/types";
 import {
 	Field,
 	NumberField,
 	SelectField,
-	SettingsSaveActions,
-} from "../settings";
+} from "@/components/settings/SettingsFields";
+import { SettingsSaveActions } from "@/components/settings/SettingsSaveActions";
+import { Button } from "@/components/ui/Button";
+import type { AgentHookEvent } from "../nightworkers/types";
 import {
 	emptyHookForm,
 	formFromAgentHook,

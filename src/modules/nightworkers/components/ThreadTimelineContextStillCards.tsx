@@ -1,10 +1,10 @@
+import { asString } from "./ThreadTimelineDiffModel";
 import {
 	asRecord,
-	asString,
 	getToolArguments,
 	getToolName,
 	getToolResult,
-} from "./ThreadTimeline";
+} from "./ThreadTimelineEventModel";
 import { ChatMarkdown, NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 
 type ContextStillCardKind =

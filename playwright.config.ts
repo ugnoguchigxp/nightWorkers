@@ -4,6 +4,7 @@ import { assertIsolatedE2eEnvironment } from "./scripts/e2e-environment.mjs";
 assertIsolatedE2eEnvironment();
 
 const e2eWebPort = Number(process.env.NIGHTWORKERS_E2E_WEB_PORT || 39274);
+const e2eApiPort = Number(process.env.NIGHTWORKERS_E2E_API_PORT || 39174);
 const e2eBaseUrl = `http://localhost:${e2eWebPort}`;
 const legacyReviewE2eEnabled =
 	process.env.NIGHTWORKERS_E2E_LEGACY_REVIEW === "1";
@@ -73,9 +74,18 @@ export default defineConfig({
 	],
 
 	/* Run your local dev server before starting the tests */
-	webServer: {
-		command: "bun run dev",
-		url: e2eBaseUrl,
-		reuseExistingServer: false,
-	},
+	webServer: [
+		{
+			command: "bun run dev:api",
+			url: `http://127.0.0.1:${e2eApiPort}/api/health/ready`,
+			timeout: 120_000,
+			reuseExistingServer: false,
+		},
+		{
+			command: "bun run dev:web",
+			url: e2eBaseUrl,
+			timeout: 120_000,
+			reuseExistingServer: false,
+		},
+	],
 });

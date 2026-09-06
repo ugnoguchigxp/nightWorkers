@@ -7,7 +7,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import { repositories, tasks } from "./schema";
+import { repositories, tasks } from "./schema-base";
 
 const projectEvaluationCommonColumns = {
 	id: text("id")

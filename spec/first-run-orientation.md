@@ -1,149 +1,64 @@
-# First Run Orientation
+# はじめてのNightWorkers
 
-This walkthrough can use either an existing disposable repository or the bundled
-fixed-seed [Support Ops CRM demo](../demo/support-ops-crm/README.md). The demo
-requires no provider credential and never reads a production repository.
+NightWorkersは、PC内のリポジトリを登録し、AIに調査や実装を依頼するアプリです。最初は小さな調査を依頼し、対象のフォルダーと実行結果を確認してください。
 
-To reproduce Project registration, Plan, Queue, implementation, verification,
-Review, and evidence capture before connecting a provider, run:
+## 起動する
 
-```bash
-bun run demo:setup
-bun run demo:run
-```
+ソースから使う場合は、リポジトリのルートで実行します。
 
-Use `.nightworkers-demo/project` as the Project Folder and reset it afterward
-with `bun run demo:reset`.
-
-## 1. Install and Start
 ```bash
 bun run setup
 bun run dev
 ```
 
-Open `http://localhost:39174`.
+ブラウザーで `http://localhost:39174` を開きます。`setup`は依存パッケージのインストール、未作成の場合の`.env`作成、DBのマイグレーションを行います。サンプルデータの投入は行いません。
 
-Expected result:
-- The Overview route loads.
-- The local SQLite database has been migrated and seeded.
-- Settings, Project Folder registration, and Workbench navigation are available.
+デスクトップ版はインストールしたアプリを開きます。プロジェクトが未登録なら、概要画面に最初の操作が表示されます。
 
-If setup fails, check the failing phase first: dependency install, `.env`
-creation, migration, seed, API startup, or Vite startup.
+## AIの接続先とモデルを選ぶ
 
-## 2. Register Project Folder
-Register a local repository that you are comfortable using for investigation.
-For a first run, prefer a throwaway repository or a repository where all changes
-can be reviewed before commit.
+概要画面の「AI接続設定を開く」から、利用するプロバイダーの認証情報を設定します。接続を確認し、「LLM Routing」で使用するモデルを選びます。詳しい設定項目は[設定ガイド](./configuration.md)にあります。
 
-The Project Folder is the repo root that worker tools use for file and command
-activity. It is not the NightWorkers checkout unless you intentionally register
-this repository as the target project.
+実際のプロバイダー呼び出しには、選択したサービスの利用料金がかかる場合があります。使用量は概要画面で確認できます。
 
-## 3. Create Session
-Create or select a Workbench Session under the Project Folder. A Session is the
-chat-first workspace for intake, planning, Blueprint generation, direct coding
-requests, and run review.
+## 作業フォルダーを登録する
 
-## 4. Send a Workbench Message
-Start with a read-only investigation request:
+「フォルダーを選んで登録」で、調査・編集したいリポジトリのルートを選びます。サイドバーのフォルダー追加ボタンからも登録できます。
+
+ここで選ぶのは**作業対象のリポジトリ**です。NightWorkers自体を変更する場合を除き、NightWorkersのインストール先を選ぶ必要はありません。最初の試行には、変更を確認しやすい小さなリポジトリが向いています。
+
+## タスクを作って依頼する
+
+サイドバーに表示されたプロジェクトの「＋」からタスクを作ります。タスクの目的（Task Goal）に、たとえば次のように依頼を入力します。
 
 ```text
-Inspect the repository structure and summarize the available test commands. Do
-not edit files.
+このリポジトリの構成と、利用できるテストコマンドを調べてください。
+ファイルの変更やコミットはしないでください。
 ```
 
-This keeps the first experience focused on evidence and routing before asking
-NightWorkers to change code.
+Mission Pilotを使う場合は「Mission Pilotを再生」で開始します。初回のPlay時にMission Pilotのセッションが作成されます。タスクを作っただけでは再生されません。
 
-This first request should prove three things before you trust write automation:
-- NightWorkers is using the Project Folder you intended.
-- The Workbench can separate normal chat/intake from execution runs.
-- Any execution evidence is visible in the timeline instead of disappearing into
-  a transient chat response.
+- **Mission Pilot**は、依頼の整理、必要な確認、計画、実装の依頼、結果の評価を進めます。
+- **Coding Agent**は、登録したリポジトリで調査・編集・コマンド実行を担当します。Mission Pilotが停止中なら、Coding Agentへ直接依頼することもできます。
 
-## 5. Confirm Chat-Only vs Execution Run
-A Workbench message may stay as normal chat/intake or start an execution run.
-The distinction matters:
+画面に確認事項が表示されたら内容を確認し、回答します。実行内容は依頼と設定によって変わります。初回からすべての計画・キュー・レビュー機能を操作する必要はありません。
 
-- Chat-only/intake messages update the conversation and may produce planning or
-  Blueprint artifacts.
-- Execution runs create task events, tool outcomes, todos, diffs, test results,
-  and final reports.
-- Implementation Queue entries are explicit user-approved automation items and
-  are separate from normal Session chat.
+## 結果と停止を確認する
 
-If you expected a run but only see chat activity, check whether the Session has
-an implementation-ready plan and whether you admitted it into the Queue or made
-a direct execution request.
+タスク画面のタイムラインで、調査したファイル、実行したコマンド、その結果を確認できます。編集を依頼した場合は、変更差分とテスト結果も確認します。
 
-## 6. Inspect Run Timeline
-When a run starts, inspect the timeline for:
-- State changes.
-- Tool calls and policy blocks.
-- Todo updates.
-- Diff/test/final-report events.
-- LLM usage events when provider calls are made.
+Mission Pilotを止めるには「Mission Pilotを停止」を使います。Coding Agentを直接実行している場合は、入力欄の「停止」を使います。失敗後は記録されたエラーと実行済みの操作を確認してから再開してください。
 
-The timeline is persisted in SQLite and can be replayed after reconnect.
+## うまく進まないとき
 
-For a successful first execution run, you should be able to answer:
-- Which Project Folder and Session were used?
-- Which tools were called?
-- Were any commands blocked by policy?
-- Was a diff created?
-- Which verification command or test result was recorded?
-- What did the final report conclude?
+| 状況 | 確認する場所 |
+| --- | --- |
+| 起動できない | ターミナルの失敗したコマンド。APIと画面の両方が起動しているか確認します。 |
+| AIから返事がない | 設定の認証情報、接続確認、LLM Routingのモデル選択。 |
+| 対象フォルダーが違う | サイドバーで選択中のプロジェクトと、登録したルートフォルダー。 |
+| 実行が止まっている | タスクの状態、タイムラインのエラー、回答待ちの確認事項。 |
+| 原因を詳しく調べたい | 開発時は`logs`、デスクトップ版はアプリのruntime配下の`logs`。起動診断は`GET /api/settings/preflight/startup`。 |
 
-## 7. Inspect Artifact Pane
-Open the Artifact Pane when artifacts exist. Depending on the Session, it can
-show:
-- Project tree and source previews.
-- Diff artifacts.
-- App Blueprint artifacts.
-- Plan Mode Workspace artifacts, including Feature Plan, Blueprint, Data Model,
-  and additional dedicated design views.
+認証情報なしで決まったデモを試す場合は、[Support Ops CRMデモ](../demo/support-ops-crm/README.md)の手順を使えます。これはデモ専用の環境で動きます。
 
-If the pane is empty, the Session may not have produced an artifact yet.
-
-## 8. Check LLM Usage and Settings
-Open Settings before connecting real credentials. Confirm:
-- Selected provider and model.
-- Smoke-test result.
-- Masked secret behavior.
-- MCP servers are OFF unless you intentionally enable them.
-- Agent Hooks are empty or disabled unless you intentionally configure them.
-
-## 9. Stop, Retry, or Review
-Use the Workbench and Queue state to decide what happens next:
-- Leave the Session in chat if you only needed investigation.
-- Queue implementation only after you trust the plan.
-- Confirm managed evidence plus `completion_check` in the Implementation Run.
-- Complete Review Run and resolve blocking findings.
-- Rerun implementation verification after Review applies fixes.
-- Confirm the implementation Security Oracle pass or explicit policy skip.
-- Review server-side closeout evidence, diff, and final report before explicit
-  commit or push.
-- Retry only after you understand the failed event or tool output.
-
-Do not treat a run as adoption-ready just because the final response sounds
-confident. Adoption should be based on the recorded diff, verification evidence,
-and final report together.
-
-## 10. Where to Look When Nothing Happens
-- Overview: broad workspace status, warnings, queue state, and usage summary.
-- Project Sidebar: Project Folder and Session selection.
-- Workbench Timeline: chat messages, intake output, execution events, and
-  artifacts.
-- Implementation Queue: queued work, Processor lanes, and queue controls.
-- Settings: provider, MCP, hooks, and appearance configuration.
-- Logs: development logs under `logs`; desktop logs under the app data runtime
-  `logs` directory.
-- Startup diagnostics: `GET /api/settings/preflight/startup`.
-
-For security and local execution boundaries, read
-[Trust Model](./trust-model.md).
-
-For a broader adoption view, read:
-- [Feature Tour](./feature-tour.md)
-- [Adoption Checklist](./adoption-checklist.md)
+実行権限とデータの扱いは[Trust Model](./trust-model.md)、機能全体は[Feature Tour](./feature-tour.md)を参照してください。

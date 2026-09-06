@@ -9,6 +9,7 @@ import {
 	OverviewContextBar,
 	ProjectSnapshotPanel,
 } from "./components/OverviewContextSections";
+import { OverviewGettingStarted } from "./components/OverviewGettingStarted";
 import { OverviewHeader } from "./components/OverviewHeader";
 import { OverviewMetrics } from "./components/OverviewMetrics";
 import { EmptyState } from "./components/OverviewPrimitives";
@@ -23,6 +24,9 @@ import {
 
 type OverviewScreenProps = {
 	projects: Repository[];
+	isProjectsLoading: boolean;
+	onOpenProviderSettings: () => void;
+	onRegisterProject: () => void;
 	range: OverviewRange;
 	projectFilterId: string | null;
 	onRangeChange: (range: OverviewRange) => void;
@@ -37,6 +41,9 @@ type OverviewScreenProps = {
 
 export function OverviewDashboard({
 	projects,
+	isProjectsLoading,
+	onOpenProviderSettings,
+	onRegisterProject,
 	range,
 	projectFilterId,
 	onRangeChange,
@@ -91,6 +98,16 @@ export function OverviewDashboard({
 				{startupWarnings.map((warning) => (
 					<StartupWarning key={warning.id} warning={warning} />
 				))}
+
+				{!isProjectsLoading &&
+				projects.length === 0 &&
+				!projectFilterId &&
+				scopedDashboard ? (
+					<OverviewGettingStarted
+						onOpenProviderSettings={onOpenProviderSettings}
+						onRegisterProject={onRegisterProject}
+					/>
+				) : null}
 
 				{scopedDashboard && viewModel ? (
 					<OverviewContent

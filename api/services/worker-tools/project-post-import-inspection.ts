@@ -6,7 +6,6 @@ import type {
 	ProjectLlmContextInspection,
 	ProjectManifestInspection,
 } from "./project-post-import";
-import { stringRecord } from "./project-post-import";
 
 const PACKAGE_MANAGER_LOCKFILES = [
 	{ file: "bun.lock", packageManager: "bun" },
@@ -217,4 +216,13 @@ export function buildRecommendedVerificationCommands(
 	return VERIFICATION_SCRIPT_ORDER.filter(
 		(script) => typeof scripts[script] === "string",
 	).map((script) => runCommandFor(packageManager, script));
+}
+
+export function stringRecord(value: unknown): Record<string, string> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	return Object.fromEntries(
+		Object.entries(value as Record<string, unknown>).filter(
+			(entry): entry is [string, string] => typeof entry[1] === "string",
+		),
+	);
 }

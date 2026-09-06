@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/modules/nightworkers/components/ThreadTimeline", () => ({
+const timelineModels = vi.hoisted(() => ({
 	asNumber: (value: unknown) =>
 		typeof value === "number" && Number.isFinite(value) ? value : undefined,
 	asRecord: (value: unknown) =>
@@ -34,6 +34,15 @@ vi.mock("../src/modules/nightworkers/components/ThreadTimeline", () => ({
 				]
 			: [],
 }));
+
+vi.mock(
+	"../src/modules/nightworkers/components/ThreadTimelineDiffModel",
+	() => timelineModels,
+);
+vi.mock(
+	"../src/modules/nightworkers/components/ThreadTimelineEventModel",
+	() => timelineModels,
+);
 
 vi.mock(
 	"../src/modules/nightworkers/components/ThreadTimelineActivityTranscript",

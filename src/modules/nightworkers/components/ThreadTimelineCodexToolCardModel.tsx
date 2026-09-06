@@ -6,14 +6,14 @@ import {
 	type VerificationToolLifecycle,
 } from "../../codingAgent";
 import type { ActivityEvent } from "../types";
+import { asString } from "./ThreadTimelineDiffModel";
 import {
 	asRecord,
-	asString,
 	getActivityChangedFiles,
 	getToolActivityModel,
 	isChangedFilesOnlyDiffActivity,
 	type ToolActivityLifecycle,
-} from "./ThreadTimeline";
+} from "./ThreadTimelineEventModel";
 import {
 	sanitizeTerminalPreviewValue,
 	sanitizeTerminalText,

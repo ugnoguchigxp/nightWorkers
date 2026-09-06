@@ -97,9 +97,9 @@ or several agents racing in the same repository workspace.
 
 ### Mission Pilot
 
-Every Task created through the shared task-creation path receives a Mission
-Pilot session in the same database transaction. Its desired state is initially
-`stopped`.
+Creating a Task does not start Mission Pilot. Its session is created on the first
+Play command. See the [first-run guide](./spec/first-run-orientation.md) for setup
+and initial use.
 
 Pressing Play creates a versioned authorization snapshot for the current Task
 context. The saved authorization covers planning, Queue admission,

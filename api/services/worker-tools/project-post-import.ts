@@ -588,11 +588,4 @@ function runGitCommand(command: string[], cwd: string) {
 	});
 }
 
-export function stringRecord(value: unknown): Record<string, string> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-	return Object.fromEntries(
-		Object.entries(value as Record<string, unknown>).filter(
-			(entry): entry is [string, string] => typeof entry[1] === "string",
-		),
-	);
-}
+export { stringRecord } from "./project-post-import-inspection";

@@ -1,4 +1,16 @@
 export const jaOverview = {
+	"overview.gettingStarted.title": "はじめての方へ",
+	"overview.gettingStarted.provider.title": "AIの接続先を設定",
+	"overview.gettingStarted.provider.description":
+		"設定で利用するプロバイダーを選び、認証情報を保存して接続を確認します。モデルは「LLM Routing」で選べます。",
+	"overview.gettingStarted.provider.action": "AI接続設定を開く",
+	"overview.gettingStarted.project.title": "作業するフォルダーを登録",
+	"overview.gettingStarted.project.description":
+		"変更したいリポジトリのルートフォルダーを選びます。登録したフォルダーが調査・編集の対象になります。",
+	"overview.gettingStarted.project.action": "フォルダーを選んで登録",
+	"overview.gettingStarted.task.title": "タスクを作って開始",
+	"overview.gettingStarted.task.description":
+		"登録したプロジェクトの「＋」でタスクを作成します。タスクの目的を入力し「Mission Pilotを再生」で開始すると、計画から実装結果の確認まで進められます。",
 	"overview.title": "概要",
 	"overview.subtitle": "LLM 使用量、モデル、推定コストを確認します",
 	"overview.projectTitle": "{{name}} の概要",

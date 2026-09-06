@@ -32,6 +32,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 	readonly kind = "native-local" as const;
 	private readonly runner: NativeApiRunnerLike;
 	private readonly runHooks: AgentHooksRunner;
+	private readonly activeRunControllers = new Map<string, AbortController>();
 
 	constructor(
 		input: { runner?: NativeApiRunnerLike; runHooks?: AgentHooksRunner } = {},
@@ -45,6 +46,11 @@ export class NativeAgentRuntime implements AgentRuntime {
 		sink: AgentRuntimeSink,
 		signal?: AbortSignal,
 	): Promise<AgentRuntimeResult> {
+		const controller = new AbortController();
+		const runSignal = signal
+			? AbortSignal.any([signal, controller.signal])
+			: controller.signal;
+		this.activeRunControllers.set(context.runId, controller);
 		const logs: string[] = [];
 		const appendLog = (line: string) => {
 			logs.push(line);
@@ -84,17 +90,18 @@ export class NativeAgentRuntime implements AgentRuntime {
 		let sessionHookOpened = false;
 		let sessionHookClosed = false;
 		const runSessionEndHook = async (result?: AgentRuntimeResult) => {
-			if (!sessionHookOpened || sessionHookClosed) return;
+			if (!sessionHookOpened || sessionHookClosed || runSignal.aborted) return;
 			sessionHookClosed = true;
 			await this.runHooks({
 				input: buildSessionHookInput("SessionEnd", context, result),
+				signal: runSignal,
 				repoRoot: context.repoRoot,
 				onEvent: emitHookEvent,
 			});
 		};
 
 		try {
-			if (signal?.aborted) {
+			if (runSignal.aborted) {
 				return this.toCancelled(logs.join("\n"));
 			}
 
@@ -105,12 +112,15 @@ export class NativeAgentRuntime implements AgentRuntime {
 
 			await this.runHooks({
 				input: buildSessionHookInput("SessionStart", context),
+				signal: runSignal,
 				repoRoot: context.repoRoot,
 				onEvent: emitHookEvent,
 			});
 			sessionHookOpened = true;
+			runSignal.throwIfAborted();
 
 			const promptHook = await this.runHooks({
+				signal: runSignal,
 				input: {
 					...buildBaseHookInput("UserPromptSubmit", context),
 					hook_event_name: "UserPromptSubmit",
@@ -119,6 +129,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 				repoRoot: context.repoRoot,
 				onEvent: emitHookEvent,
 			});
+			runSignal.throwIfAborted();
 			if (promptHook.decision === "block") {
 				const finalReport =
 					promptHook.reason || "User prompt was blocked by an agent hook.";
@@ -134,7 +145,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 				return result;
 			}
 
-			const runnerResult = await this.runner.run(context, { emit }, signal);
+			const runnerResult = await this.runner.run(context, { emit }, runSignal);
 			const result: AgentRuntimeResult = {
 				...runnerResult,
 				logContent: logs.join("\n"),
@@ -155,6 +166,7 @@ export class NativeAgentRuntime implements AgentRuntime {
 			await runSessionEndHook(result);
 			return result;
 		} catch (err) {
+			if (runSignal.aborted) return this.toCancelled(logs.join("\n"));
 			const errorMessage =
 				err instanceof Error
 					? err.message
@@ -186,14 +198,18 @@ export class NativeAgentRuntime implements AgentRuntime {
 					: DEFAULT_RESULT.summary,
 				logContent: logs.join("\n"),
 			};
+		} finally {
+			this.activeRunControllers.delete(context.runId);
 		}
 	}
 
 	async stop(runId: string): Promise<void> {
+		this.activeRunControllers.get(runId)?.abort();
 		await this.runner.stop(runId);
 	}
 
 	async suspendForHostShutdown(runId: string): Promise<void> {
+		this.activeRunControllers.get(runId)?.abort();
 		await this.runner.suspendForHostShutdown(runId);
 	}
 

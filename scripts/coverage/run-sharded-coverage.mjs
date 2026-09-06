@@ -11,6 +11,8 @@ import {
 	readNightWorkersBranchRefs,
 } from "../git-worktree-leak-guard.mjs";
 
+import { assertCoverageScope, coverageSegmentFor } from "./coverage-scope.mjs";
+
 const require = createRequire(import.meta.url);
 const { createCoverageMap } = require("istanbul-lib-coverage");
 const { createContext } = require("istanbul-lib-report");
@@ -19,6 +21,7 @@ const reports = require("istanbul-reports");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const coverageRoot = path.join(repositoryRoot, "coverage");
 const segmentConfigs = {
+	all: { config: "vitest.config.ts" },
 	backend: {
 		config: "vitest.backend.config.ts",
 		output: path.join(coverageRoot, "backend"),
@@ -46,7 +49,12 @@ export function resolveCoverageShardCount(
 }
 
 export function mergeCoverageShardReports(input) {
-	const { shardDirectories, outputDirectory } = input;
+	const {
+		shardDirectories,
+		outputDirectory,
+		segment,
+		repositoryRoot: sourceRoot = repositoryRoot,
+	} = input;
 	if (!Array.isArray(shardDirectories) || shardDirectories.length === 0) {
 		throw new Error("At least one coverage shard report is required.");
 	}
@@ -57,6 +65,12 @@ export function mergeCoverageShardReports(input) {
 			throw new Error(`Coverage shard report is missing: ${reportPath}`);
 		}
 		coverageMap.merge(JSON.parse(fs.readFileSync(reportPath, "utf8")));
+	}
+	if (segment) {
+		coverageMap.filter(
+			(file) => coverageSegmentFor(file, sourceRoot) === segment,
+		);
+		assertCoverageScope(coverageMap.files(), sourceRoot, segment);
 	}
 	fs.rmSync(outputDirectory, { recursive: true, force: true });
 	fs.mkdirSync(outputDirectory, { recursive: true });
@@ -122,14 +136,19 @@ async function runCoverageSegment(segment) {
 		);
 	}
 
-	const summary = mergeCoverageShardReports({
-		shardDirectories,
-		outputDirectory: config.output,
-	});
+	for (const reportSegment of segment === "all"
+		? ["backend", "frontend"]
+		: [segment]) {
+		const summary = mergeCoverageShardReports({
+			shardDirectories,
+			outputDirectory: segmentConfigs[reportSegment].output,
+			segment: reportSegment,
+		});
+		process.stdout.write(
+			`[coverage] ${reportSegment}: merged ${shardCount} shards (${JSON.stringify(summary)})\n`,
+		);
+	}
 	fs.rmSync(shardRoot, { recursive: true, force: true });
-	process.stdout.write(
-		`[coverage] ${segment}: merged ${shardCount} shards (${JSON.stringify(summary)})\n`,
-	);
 }
 
 function runShard(input) {

@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCodingAgentHostAdapter } from "../api/composition/coding-agent";
 import { CODING_AGENT_SYSTEM_CONTEXT_VERSION } from "../api/modules/codingAgent/context";
+import { handleNightWorkersCodexMcpRequest } from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp";
 import {
-	handleNightWorkersCodexMcpRequest,
 	requestContextMismatchToMcp,
 	resolveRequestScopedIdentity,
 } from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-support";

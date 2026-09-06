@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type {
 	DedicatedDesignView,
 	MermaidRenderRepair,
@@ -81,23 +80,14 @@ export {
 } from "./plan-view-mermaid-validator";
 
 const PLAN_VIEW_MERMAID_MAX_ATTEMPTS = 2;
-export const genericPlanViewSchema = z.enum([
-	"user_flow",
-	"api_io_contract",
-	"activity_flow",
-	"sequence_flow",
-	"zod_schema_design",
-]);
 
-export type GenericPlanView = z.infer<typeof genericPlanViewSchema>;
+export * from "./plan-view-schema";
 
-export const markdownPlanViewSchema = z.enum([
-	"user_flow",
-	"activity_flow",
-	"sequence_flow",
-]);
-
-export type MarkdownPlanView = z.infer<typeof markdownPlanViewSchema>;
+import {
+	genericPlanViewSchema,
+	type MarkdownPlanView,
+	markdownPlanViewSchema,
+} from "./plan-view-schema";
 
 export type PlanViewGenerationInput = {
 	prompt?: string;

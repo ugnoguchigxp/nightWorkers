@@ -1,10 +1,9 @@
+import { asNumber, asString } from "./ThreadTimelineDiffModel";
 import {
-	asNumber,
 	asRecord,
-	asString,
 	getToolActivityModel,
 	type ToolActivityLifecycle,
-} from "./ThreadTimeline";
+} from "./ThreadTimelineEventModel";
 import { NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 
 export type InspectionToolName =

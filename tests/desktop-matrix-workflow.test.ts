@@ -8,6 +8,7 @@ describe("desktop OS matrix workflow", () => {
 			"utf8",
 		);
 		expect(workflow).toContain("fail-fast: false");
+		expect(workflow).toMatch(/^ {2}workflow_dispatch:/m);
 		for (const value of [
 			"platform: macos",
 			"target: darwin:arm64",

@@ -13,7 +13,7 @@ on:
   #     - "bun.lock"
   # push:
   #   branches: [main]
-  # workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -54,6 +54,8 @@ jobs:
           libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Test desktop runtime and packaging contracts
+        run: bun run test:desktop-runtime
       - name: Install and checksum pinned Node sidecar runtime
         run: node scripts/desktop/install-node-runtime.mjs
       - name: Rebuild native modules for pinned Node runtime

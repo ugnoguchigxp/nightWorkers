@@ -3,7 +3,7 @@ import type { TraceProvenance } from "../../../shared/schemas/trace-provenance.s
 import type { DbTransaction } from "../../db/client";
 import { db } from "../../db/client";
 import { llmUsageCounterCheckpoints, llmUsageRecords } from "../../db/schema";
-import * as nightWorkersRepo from "../../modules/nightworkers/nightworkers.repository";
+import { appendActivityEvent } from "../../modules/nightworkers/nightworkers.activity-persistence.repository";
 import {
 	resolveLlmUsageTrace,
 	withTraceProvenance,
@@ -161,7 +161,7 @@ export async function recordLlmUsage(input: {
 	});
 
 	if (record) {
-		await nightWorkersRepo.appendActivityEvent({
+		await appendActivityEvent({
 			taskId: input.taskId,
 			runId: input.runId ?? null,
 			kind: "llm.usage",

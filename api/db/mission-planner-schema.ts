@@ -6,7 +6,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import { repositories, tasks } from "./schema";
+import { repositories, tasks } from "./schema-base";
 
 const missionPlannerCommonColumns = {
 	id: text("id")

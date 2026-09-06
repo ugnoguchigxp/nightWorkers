@@ -194,6 +194,14 @@ export function NightWorkersShellLayout(props: ShellLayoutProps) {
 							/>
 						) : isOverviewActive ? (
 							<OverviewScreen
+								isProjectsLoading={workspace.isProjectsLoading}
+								onRegisterProject={props.onOpenFolderBrowser}
+								onOpenProviderSettings={() =>
+									shellProps.onNavigate({
+										kind: "settings",
+										section: "llm-providers",
+									})
+								}
 								projects={workspace.projects}
 								range={
 									routeState.kind === "overview" ? routeState.range : "30d"

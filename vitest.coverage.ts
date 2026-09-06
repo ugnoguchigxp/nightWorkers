@@ -1,4 +1,5 @@
 import path from "node:path";
+import { coverageSourceRoots } from "./scripts/coverage/coverage-scope.mjs";
 
 export const coverageExclusionReasons = {
 	generated: ["**/*.d.ts", "api/db/schema.ts", "src/routeTree.gen.ts"],
@@ -13,6 +14,7 @@ export const coverageExclusionReasons = {
 		"**/*.test.{ts,tsx}",
 		"**/*.spec.{ts,tsx}",
 		"tests/**",
+		"packages/mission-pilot/src/testing/**",
 		"scripts/**",
 		"dist/**",
 		"dist-api/**",
@@ -30,15 +32,24 @@ export const coverageReportPaths = {
 } as const;
 
 export const backendCoverage = {
-	include: ["api/**/*.ts", "shared/**/*.ts"],
+	include: coverageSourceRoots.backend.map((root: string) => `${root}**/*.ts`),
 	exclude: coverageExcludes,
 	reportsDirectory: `./${coverageReportPaths.backend}`,
 };
 
 export const frontendCoverage = {
-	include: ["src/**/*.ts", "src/**/*.tsx"],
+	include: coverageSourceRoots.frontend.flatMap((root: string) => [
+		`${root}**/*.ts`,
+		`${root}**/*.tsx`,
+	]),
 	exclude: coverageExcludes,
 	reportsDirectory: `./${coverageReportPaths.frontend}`,
+};
+
+export const allCoverage = {
+	include: [...backendCoverage.include, ...frontendCoverage.include],
+	exclude: coverageExcludes,
+	reportsDirectory: `./${coverageReportPaths.root}`,
 };
 
 export function resolveCoverageRuntime(defaultReportsDirectory: string): {

@@ -128,7 +128,9 @@ function requiresFlatToolArguments(context: AgentRunContext) {
 }
 
 /** Some OpenAI-compatible endpoints also reject or misapply nested oneOf tool schemas. */
-export function requiresFlatToolArgumentsForEndpointKind(endpointKind: unknown) {
+export function requiresFlatToolArgumentsForEndpointKind(
+	endpointKind: unknown,
+) {
 	return (
 		endpointKind === "local" ||
 		endpointKind === "openai-compatible" ||

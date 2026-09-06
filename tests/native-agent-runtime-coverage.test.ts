@@ -259,4 +259,55 @@ describe("NativeAgentRuntime coverage", () => {
 		expect(testRunner.stop).toHaveBeenCalledWith("run-1");
 		expect(testRunner.suspendForHostShutdown).toHaveBeenCalledWith("run-2");
 	});
+
+	it.each([
+		"stop",
+		"suspendForHostShutdown",
+		"external",
+	] as const)("cancels a pending startup hook through %s without launching the runner", async (method) => {
+		const controller = new AbortController();
+		const testRunner = runner();
+		const runtime = nativeRuntime(testRunner);
+		mocks.runHooks.mockImplementation(
+			({ signal }) =>
+				new Promise((_resolve, reject) => {
+					signal.addEventListener("abort", () => reject(signal.reason), {
+						once: true,
+					});
+				}),
+		);
+		const sink = { emit: vi.fn() };
+		const running = runtime.start(context(), sink, controller.signal);
+		await vi.waitFor(() => expect(mocks.runHooks).toHaveBeenCalledOnce());
+		if (method === "external") controller.abort();
+		else await runtime[method]("run-1");
+		await expect(running).resolves.toMatchObject({
+			terminalState: "cancelled",
+			stoppedBy: "cancelled",
+		});
+		expect(testRunner.run).not.toHaveBeenCalled();
+		expect(mocks.runHooks).toHaveBeenCalledOnce();
+		expect(
+			sink.emit.mock.calls.some(([event]) => event.type === "runtime_error"),
+		).toBe(false);
+	});
+
+	it("cancels an in-flight SessionEnd hook", async () => {
+		const runtime = nativeRuntime(runner());
+		mocks.runHooks.mockImplementation(({ input, signal }) =>
+			input.hook_event_name === "SessionEnd"
+				? new Promise((_resolve, reject) =>
+						signal.addEventListener("abort", () => reject(signal.reason), {
+							once: true,
+						}),
+					)
+				: Promise.resolve({ decision: "allow" }),
+		);
+		const running = runtime.start(context(), { emit: vi.fn() });
+		await vi.waitFor(() => expect(mocks.runHooks).toHaveBeenCalledTimes(3));
+		await runtime.stop("run-1");
+		await expect(running).resolves.toMatchObject({
+			terminalState: "cancelled",
+		});
+	});
 });

@@ -80,7 +80,7 @@ hosted team SaaS、browser-only onboarding、分散multi-host scheduling、pull 
 
 ### Mission Pilot
 
-共通Task作成pathで生成されるすべてのTaskには、同じdatabase transaction内でMission Pilot sessionが作成されます。初期`desiredState`は`stopped`です。
+Taskを作成しただけではMission Pilotは起動しません。初回のPlay時にMission Pilot sessionが作成されます。初めて使う場合は[操作ガイド](./spec/first-run-orientation.md)を参照してください。
 
 Playを押すと、その時点のTask contextに対するversion付きauthorization snapshotが作成されます。保存される権限は、planning、Queue admission、implementation、test mutation、review、local commit、Task completion、Task archiveを対象とします。pushの動作は保存済みpush policyに従います。
 

@@ -8,7 +8,8 @@ import {
 	getActivityDiffPayload,
 	getCodexCommandOutput,
 	getToolActivityModel,
-} from "./ThreadTimeline";
+	schemaFirstAgentEventType,
+} from "./ThreadTimelineEventModel";
 import {
 	formatVisibleAssistantText,
 	stringValue,
@@ -249,12 +250,7 @@ function formatApplyPatchDiff(patchContent: string): string {
 		.trimEnd();
 }
 
-export function schemaFirstAgentEventType(event: ActivityEvent): string {
-	const payload = toDeepRecord(event.payloadJson);
-	return typeof payload?.agentEventType === "string"
-		? payload.agentEventType
-		: "";
-}
+export { schemaFirstAgentEventType } from "./ThreadTimelineEventModel";
 
 export function activityDisplayTitle(
 	event: ActivityEvent,

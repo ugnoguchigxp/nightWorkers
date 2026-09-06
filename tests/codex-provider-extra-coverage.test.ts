@@ -101,10 +101,13 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("@openai/codex-sdk", () => ({ Codex: mocks.MockCodex }));
-vi.mock("../api/services/structured-llm/providers", () => ({
-	getResolvedProviderEndpoint: () => mocks.endpoint,
-	toCodexReasoningEffort: (value: string) => `effort:${value}`,
-}));
+vi.mock(
+	"../api/services/structured-llm/openai-compatible-provider-support",
+	() => ({
+		getResolvedProviderEndpoint: () => mocks.endpoint,
+		toCodexReasoningEffort: (value: string) => `effort:${value}`,
+	}),
+);
 vi.mock("../api/services/structured-llm/codex-auth-scope", () => ({
 	resolveCodexEndpointAccessToken: () => mocks.accessToken,
 }));

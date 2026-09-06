@@ -36,10 +36,13 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => ({
 		}
 	},
 }));
-vi.mock("../api/services/structured-llm/providers", () => ({
-	getResolvedProviderEndpoint: () => mocks.endpoint,
-	readProviderUsage: () => mocks.usage,
-}));
+vi.mock(
+	"../api/services/structured-llm/openai-compatible-provider-support",
+	() => ({
+		getResolvedProviderEndpoint: () => mocks.endpoint,
+		readProviderUsage: () => mocks.usage,
+	}),
+);
 vi.mock("../api/services/structured-llm/events", () => ({
 	rejectProviderActivity: async (input: unknown) => {
 		mocks.rejectedActivities.push(input);

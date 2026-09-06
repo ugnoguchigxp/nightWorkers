@@ -1,4 +1,4 @@
-import { normalizeProviderUsage } from "../llm-usage";
+import { normalizeProviderUsage } from "../llm-usage/normalize";
 import {
 	getResolvedProviderEndpoint,
 	readProviderUsage,

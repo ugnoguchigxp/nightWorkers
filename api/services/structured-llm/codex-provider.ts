@@ -7,7 +7,7 @@ import {
 	type StructuredProviderExecutionPolicy,
 } from "../../modules/agentsShare";
 import { buildChildProcessEnvironment } from "../execution/child-process-environment";
-import { normalizeProviderUsage } from "../llm-usage";
+import { normalizeProviderUsage } from "../llm-usage/normalize";
 import { RuntimeSessionStateStore } from "../runtime-session-state";
 import { resolveCodexEndpointAccessToken } from "./codex-auth-scope";
 import { resolveCodexOutputSchemaMode } from "./codex-output-schema";
@@ -18,12 +18,12 @@ import {
 	parseCodexToolTurnResponse,
 } from "./codex-tool-turn";
 import { traceProviderActivity } from "./events";
-import { StructuredProviderError } from "./provider-failure";
-import type { RawLlmCallOptions } from "./providers";
 import {
 	getResolvedProviderEndpoint,
 	toCodexReasoningEffort,
-} from "./providers";
+} from "./openai-compatible-provider-support";
+import { StructuredProviderError } from "./provider-failure";
+import type { RawLlmCallOptions } from "./providers";
 import {
 	type getStructuredLlmBoolSetting,
 	getStructuredLlmSetting,

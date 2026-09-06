@@ -1,4 +1,4 @@
-import { normalizeProviderUsage } from "../llm-usage";
+import { normalizeProviderUsage } from "../llm-usage/normalize";
 import { rejectProviderActivity } from "./events";
 import {
 	buildOpenAIChatCompletionBody,
@@ -10,6 +10,10 @@ import {
 	toOpenAIReasoningEffort,
 } from "./openai-compatible-provider-support";
 import {
+	emitOpenAICompatibilityRetryEvents,
+	retryOpenAITransientUnavailableOnce,
+} from "./openai-provider-retry";
+import {
 	normalizeStructuredProviderError,
 	providerHttpError,
 	providerInvalidResponseError,
@@ -20,10 +24,6 @@ import type {
 	OpenAIChatCompletionResponse,
 	OpenAIResponseFormat,
 	RawLlmCallOptions,
-} from "./providers";
-import {
-	emitOpenAICompatibilityRetryEvents,
-	retryOpenAITransientUnavailableOnce,
 } from "./providers";
 import {
 	type getStructuredLlmBoolSetting,

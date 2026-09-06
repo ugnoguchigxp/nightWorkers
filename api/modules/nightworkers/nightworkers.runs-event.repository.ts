@@ -20,7 +20,7 @@ import {
 } from "./nightworkers.activity.repository";
 import type { JsonRecord } from "./nightworkers.json-adapters";
 import { readRunEventPayload } from "./nightworkers.json-adapters";
-import { isSqliteUniqueConstraintError } from "./nightworkers.runs.repository";
+import { isSqliteUniqueConstraintError } from "./nightworkers.runs-support";
 import { resolveRunCodingAgentTrace } from "./nightworkers.trace-provenance";
 
 export async function createTaskEvent(data: {

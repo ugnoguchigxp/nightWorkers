@@ -5,7 +5,7 @@ import { parseRepairedJsonWithSchema } from "../../services/structured-llm/json"
 import {
 	type MarkdownPlanView,
 	markdownPlanViewSchema,
-} from "./planView-generation.service";
+} from "./plan-view-schema";
 
 export function parseGenericDedicatedViewOutput(
 	rawOutput: string,

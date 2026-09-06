@@ -1,5 +1,3 @@
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { ensureNightWorkersSchema } from "../../../db/bootstrap";
 import type { WorkerToolResult } from "../../../services/worker-tools/types";
 import {
 	assertRequestedRunWorkspaceRoot,
@@ -16,10 +14,7 @@ import {
 	projectWorkerResultToMcpStructuredPayload,
 	projectWorkerResultToNativeApiToolResult,
 } from "../runtime/native-api-runner/native-api-tool-result-projector";
-import {
-	createNightWorkersCodexMcpServer,
-	type NightWorkersMcpRequestContext,
-} from "./nightworkers-codex-mcp";
+import type { NightWorkersMcpRequestContext } from "./nightworkers-codex-mcp-server";
 
 export function firstNonEmpty(...values: Array<string | undefined | null>) {
 	return (
@@ -252,33 +247,6 @@ export async function readOnlyOntologyTool<TPayload>(
 			},
 		};
 	}
-}
-
-export async function handleNightWorkersCodexMcpRequest(
-	request: Request,
-): Promise<Response> {
-	if (!isLoopbackNightWorkersMcpRequest(request)) {
-		return Response.json(
-			{
-				jsonrpc: "2.0",
-				id: null,
-				error: {
-					code: -32000,
-					message: "NightWorkers MCP is only available from loopback hosts.",
-				},
-			},
-			{ status: 403 },
-		);
-	}
-	await ensureNightWorkersSchema();
-	const transport = new WebStandardStreamableHTTPServerTransport({
-		sessionIdGenerator: undefined,
-	});
-	const server = createNightWorkersCodexMcpServer(
-		readNightWorkersMcpRequestContext(request),
-	);
-	await server.connect(transport);
-	return transport.handleRequest(request);
 }
 
 export function isLoopbackNightWorkersMcpRequest(request: Request) {

@@ -1,4 +1,16 @@
 export const enOverview = {
+	"overview.gettingStarted.title": "Get started",
+	"overview.gettingStarted.provider.title": "Connect your AI provider",
+	"overview.gettingStarted.provider.description":
+		"Choose a provider in Settings, save your credentials, and check the connection. Choose models under LLM Routing.",
+	"overview.gettingStarted.provider.action": "Open AI connection settings",
+	"overview.gettingStarted.project.title": "Register your project folder",
+	"overview.gettingStarted.project.description":
+		"Choose the root folder of the repository you want to work on. Investigation and edits use this registered folder.",
+	"overview.gettingStarted.project.action": "Choose and register a folder",
+	"overview.gettingStarted.task.title": "Create a task and start",
+	"overview.gettingStarted.task.description":
+		"Use “+” beside your registered project to create a task. Enter the Task Goal and select “Play Mission Pilot” to proceed from planning through evaluating the implementation.",
 	"overview.title": "Overview",
 	"overview.subtitle": "Inspect LLM usage, models, and estimated cost",
 	"overview.projectTitle": "{{name}} Overview",

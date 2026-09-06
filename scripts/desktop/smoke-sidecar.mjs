@@ -1,117 +1,133 @@
-import fs from 'node:fs';
-import http from 'node:http';
-import net from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { getNodeExecutableName } from './platform-targets.mjs';
+import fs from "node:fs";
+import http from "node:http";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { stopSmokeProcess } from "./stop-smoke-process.mjs";
+import { getNodeExecutableName } from "./platform-targets.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, '../..');
-const stagedRoot = path.join(repoRoot, 'scripts/desktop/staged');
-const nodeBinary = path.join(stagedRoot, 'node/bin', getNodeExecutableName());
-const backendEntry = path.join(stagedRoot, 'dist-api-desktop/index.js');
+const repoRoot = path.resolve(scriptDir, "../..");
+const stagedRoot = path.join(repoRoot, "scripts/desktop/staged");
+const nodeBinary = path.join(stagedRoot, "node/bin", getNodeExecutableName());
+const backendEntry = path.join(stagedRoot, "dist-api-desktop/index.js");
 
 if (!fs.existsSync(nodeBinary) || !fs.existsSync(backendEntry)) {
-  throw new Error('Desktop sidecar staging is missing. Run bun run desktop:prepare-sidecar first.');
+	throw new Error(
+		"Desktop sidecar staging is missing. Run bun run desktop:prepare-sidecar first.",
+	);
 }
 
 const port = await pickFreePort();
-const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightworkers-sidecar-smoke-'));
+const runtimeDir = fs.mkdtempSync(
+	path.join(os.tmpdir(), "nightworkers-sidecar-smoke-"),
+);
 const apiOrigin = `http://127.0.0.1:${port}`;
 
 const child = spawn(nodeBinary, [backendEntry], {
-  cwd: stagedRoot,
-  env: {
-    ...process.env,
-    NODE_ENV: 'production',
-    DOTENV_CONFIG_QUIET: 'true',
-    NIGHTWORKERS_DATABASE_ACCESS_SCOPE: 'operational',
-    NIGHTWORKERS_DESKTOP: '1',
-    NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
-    NIGHTWORKERS_RESOURCE_DIR: stagedRoot,
-    NIGHTWORKERS_FRONTEND_DIST: path.join(stagedRoot, 'dist'),
-    NIGHTWORKERS_API_ORIGIN: apiOrigin,
-    PORT: String(port),
-    CORS_ORIGIN: `${apiOrigin},http://tauri.localhost,tauri://localhost`,
-  },
-  stdio: 'inherit',
+	cwd: stagedRoot,
+	env: {
+		...process.env,
+		NODE_ENV: "production",
+		DOTENV_CONFIG_QUIET: "true",
+		NIGHTWORKERS_DATABASE_ACCESS_SCOPE: "operational",
+		NIGHTWORKERS_DESKTOP: "1",
+		NIGHTWORKERS_RUNTIME_DIR: runtimeDir,
+		NIGHTWORKERS_RESOURCE_DIR: stagedRoot,
+		NIGHTWORKERS_FRONTEND_DIST: path.join(stagedRoot, "dist"),
+		NIGHTWORKERS_API_ORIGIN: apiOrigin,
+		PORT: String(port),
+		CORS_ORIGIN: `${apiOrigin},http://tauri.localhost,tauri://localhost`,
+	},
+	stdio: "inherit",
+});
+
+let spawnError = null;
+child.once("error", (error) => {
+	spawnError = error;
 });
 
 try {
-  await waitForReady(apiOrigin, child, 30_000);
-  console.log(`Desktop sidecar smoke passed at ${apiOrigin}`);
+	await waitForReady(apiOrigin, child, 30_000);
+	console.log(`Desktop sidecar smoke passed at ${apiOrigin}`);
 } finally {
-  if (child.exitCode === null) {
-    child.kill('SIGTERM');
-    await new Promise((resolve) => child.once('exit', resolve));
-  }
-  await waitForPortClosed('127.0.0.1', port, 10_000);
-  fs.rmSync(runtimeDir, { recursive: true, force: true });
+	await stopSmokeProcess(child);
+	await waitForPortClosed("127.0.0.1", port, 10_000);
+	fs.rmSync(runtimeDir, { recursive: true, force: true });
 }
 
 function pickFreePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : null;
-      server.close(() => (port ? resolve(port) : reject(new Error('No free port found'))));
-    });
-    server.on('error', reject);
-  });
+	return new Promise((resolve, reject) => {
+		const server = net.createServer();
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			const port = typeof address === "object" && address ? address.port : null;
+			server.close(() =>
+				port ? resolve(port) : reject(new Error("No free port found")),
+			);
+		});
+		server.on("error", reject);
+	});
 }
 
 async function waitForReady(apiOrigin, child, timeoutMs) {
-  const started = Date.now();
-  let lastError = null;
-  while (Date.now() - started < timeoutMs) {
-    if (child.exitCode !== null) {
-      throw new Error(`Sidecar exited before readiness: code=${child.exitCode}`);
-    }
-    try {
-      const status = await getStatus(`${apiOrigin}/api/health/ready`);
-      if (status === 200) return;
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`Sidecar did not become ready: ${lastError?.message || 'timeout'}`);
+	const started = Date.now();
+	let lastError = null;
+	while (Date.now() - started < timeoutMs) {
+		if (spawnError) throw spawnError;
+		if (child.exitCode !== null || child.signalCode !== null) {
+			throw new Error(
+				`Sidecar exited before readiness: code=${child.exitCode} signal=${child.signalCode}`,
+			);
+		}
+		try {
+			const status = await getStatus(`${apiOrigin}/api/health/ready`);
+			if (status === 200) return;
+		} catch (error) {
+			lastError = error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+	throw new Error(
+		`Sidecar did not become ready: ${lastError?.message || "timeout"}`,
+	);
 }
 
 function getStatus(url) {
-  return new Promise((resolve, reject) => {
-    const req = http.get(url, (res) => {
-      res.resume();
-      resolve(res.statusCode);
-    });
-    req.on('error', reject);
-    req.setTimeout(2000, () => req.destroy(new Error('health request timed out')));
-  });
+	return new Promise((resolve, reject) => {
+		const req = http.get(url, (res) => {
+			res.resume();
+			resolve(res.statusCode);
+		});
+		req.on("error", reject);
+		req.setTimeout(2000, () =>
+			req.destroy(new Error("health request timed out")),
+		);
+	});
 }
 
 async function waitForPortClosed(host, port, timeoutMs) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (!(await canConnect(host, port))) return;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`Sidecar port remained open after shutdown: ${host}:${port}`);
+	const started = Date.now();
+	while (Date.now() - started < timeoutMs) {
+		if (!(await canConnect(host, port))) return;
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+	throw new Error(`Sidecar port remained open after shutdown: ${host}:${port}`);
 }
 
 function canConnect(host, port) {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port });
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('error', () => resolve(false));
-    socket.setTimeout(1_000, () => {
-      socket.destroy();
-      resolve(false);
-    });
-  });
+	return new Promise((resolve) => {
+		const socket = net.createConnection({ host, port });
+		socket.once("connect", () => {
+			socket.destroy();
+			resolve(true);
+		});
+		socket.once("error", () => resolve(false));
+		socket.setTimeout(1_000, () => {
+			socket.destroy();
+			resolve(false);
+		});
+	});
 }

@@ -1,10 +1,9 @@
+import { asNumber, asString } from "./ThreadTimelineDiffModel";
 import {
-	asNumber,
 	asRecord,
-	asString,
 	getToolName,
 	getToolResult,
-} from "./ThreadTimeline";
+} from "./ThreadTimelineEventModel";
 import { NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 
 type ImportProjectCardEvent = {

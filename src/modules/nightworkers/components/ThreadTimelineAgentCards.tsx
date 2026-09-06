@@ -5,19 +5,21 @@ import type { CodeBlockData } from "@/components/ui/CodeBlock";
 import type { ReviewResult, TaskEvent } from "../types";
 import {
 	asNumber,
-	asRecord,
 	asString,
 	buildApplyPatchCodeBlockData,
 	buildReplaceContentCodeBlockData,
 	estimateReplacementStats,
+	parseApplyPatchSections,
+	parseUnifiedDiffSections,
+} from "./ThreadTimelineDiffModel";
+import {
+	asRecord,
 	getActivityDiffPayload,
 	getApplyPatchContent,
 	getChangedFilesFromResult,
 	getToolActivityModel,
 	getToolName,
-	parseApplyPatchSections,
-	parseUnifiedDiffSections,
-} from "./ThreadTimeline";
+} from "./ThreadTimelineEventModel";
 import { NightWorkersCodeBlock } from "./ThreadTimelineMarkdown";
 
 export function AgentEditSummaryCard({ event }: { event: TaskEvent }) {

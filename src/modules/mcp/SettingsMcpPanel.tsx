@@ -1,12 +1,13 @@
 import { RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Field, SelectField } from "@/components/settings/SettingsFields";
+import { SettingsSaveActions } from "@/components/settings/SettingsSaveActions";
 import { Button } from "@/components/ui/Button";
 import type {
 	McpServerConfig,
 	McpServerTransport,
 } from "../nightworkers/types";
-import { Field, SelectField, SettingsSaveActions } from "../settings";
 import {
 	emptyMcpForm,
 	formFromMcpServer,

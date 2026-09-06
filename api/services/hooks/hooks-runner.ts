@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
-import { buildChildProcessEnvironment } from "../execution/child-process-environment";
 import { redactSecretText } from "../security/secret-redaction";
+import { runCommandHook } from "./hooks-command";
 import { listEffectiveAgentHooks } from "./hooks-effective-settings";
+import { runHttpHook } from "./hooks-http";
 import { hookMatchesInput } from "./hooks-matcher";
 import { parseHookOutput } from "./hooks-output";
 import { updateAgentHookLastRun } from "./hooks-settings";
@@ -15,20 +15,20 @@ import type {
 	NormalizedHookDecision,
 } from "./types";
 
-const DEFAULT_TIMEOUT_SECONDS = 30;
-const MAX_OUTPUT_BYTES = 64 * 1024;
 const MAX_CONTEXT_CHARS = 10_000;
 
 export type RunAgentHooksOptions = {
 	input: AgentHookInput;
 	hooks?: AgentHookConfig[];
 	repoRoot?: string;
+	signal?: AbortSignal;
 	onEvent?: (event: AgentHookRunEvent) => Promise<void>;
 };
 
 export async function runAgentHooks(
 	options: RunAgentHooksOptions,
 ): Promise<AgentHookRunResult> {
+	options.signal?.throwIfAborted();
 	const hooks = (
 		options.hooks ?? listEffectiveAgentHooks(options.repoRoot)
 	).filter((hook) => hookMatchesInput(hook, options.input));
@@ -37,6 +37,7 @@ export async function runAgentHooks(
 	let aggregate: NormalizedHookDecision = { decision: "no_decision" };
 
 	for (const hook of hooks) {
+		options.signal?.throwIfAborted();
 		await options.onEvent?.(
 			buildHookEvent("hook.started", hook, options.input, "info", "started"),
 		);
@@ -47,8 +48,13 @@ export async function runAgentHooks(
 		try {
 			const rawResult =
 				hook.handler.type === "command"
-					? await runCommandHook(hook, options.input, options.repoRoot)
-					: await runHttpHook(hook, options.input);
+					? await runCommandHook(
+							hook,
+							options.input,
+							options.repoRoot,
+							options.signal,
+						)
+					: await runHttpHook(hook, options.input, options.signal);
 			decision = parseHookOutput(rawResult.stdout);
 			if (rawResult.exitCode !== 0) {
 				ok = false;
@@ -109,6 +115,7 @@ export async function runAgentHooks(
 				},
 			),
 		);
+		options.signal?.throwIfAborted();
 		if (decision.decision === "deny" || decision.decision === "block") {
 			aggregate = decision;
 			await options.onEvent?.(
@@ -225,140 +232,6 @@ function sanitizeHookEventData(
 	);
 }
 
-async function runCommandHook(
-	hook: AgentHookConfig,
-	input: AgentHookInput,
-	repoRoot?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-	if (hook.handler.type !== "command")
-		throw new Error("Hook handler is not command.");
-	const timeoutSeconds = hook.handler.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
-	const cwd = hook.handler.cwd || repoRoot || input.cwd || process.cwd();
-	const env = buildChildProcessEnvironment({
-		purpose: "hook",
-		overrides: hook.handler.env,
-	});
-	const stdin = `${JSON.stringify(input)}\n`;
-	const args = buildCommandHookArgs(hook, input);
-	const child =
-		args.length > 0
-			? spawn(hook.handler.command, args, {
-					cwd,
-					env,
-					stdio: ["pipe", "pipe", "pipe"],
-				})
-			: spawn(hook.handler.command, {
-					cwd,
-					env,
-					shell: true,
-					stdio: ["pipe", "pipe", "pipe"],
-				});
-	return await collectChildProcess(child, stdin, timeoutSeconds);
-}
-
-function buildCommandHookArgs(
-	hook: AgentHookConfig,
-	input: AgentHookInput,
-): string[] {
-	const args =
-		hook.handler.type === "command" ? [...(hook.handler.args || [])] : [];
-	const source = (hook as { source?: string }).source;
-	if (
-		source === "codex_global" &&
-		hook.name === "Codex notify" &&
-		input.hook_event_name === "SessionEnd"
-	) {
-		args.push(JSON.stringify(input.payload ?? input));
-	}
-	return args;
-}
-
-async function runHttpHook(
-	hook: AgentHookConfig,
-	input: AgentHookInput,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-	if (hook.handler.type !== "http")
-		throw new Error("Hook handler is not http.");
-	const timeoutSeconds = hook.handler.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
-	try {
-		const res = await fetch(hook.handler.url, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...resolveAllowedEnvHeaders(
-					hook.handler.headers || {},
-					hook.handler.allowedEnvVars || [],
-				),
-			},
-			body: JSON.stringify(input),
-			signal: controller.signal,
-		});
-		const text = (await res.text()).slice(0, MAX_OUTPUT_BYTES);
-		return {
-			stdout: text,
-			stderr: res.ok ? "" : `HTTP ${res.status}`,
-			exitCode: res.ok ? 0 : 1,
-		};
-	} finally {
-		clearTimeout(timeout);
-	}
-}
-
-function resolveAllowedEnvHeaders(
-	headers: Record<string, string>,
-	allowedEnvVars: string[],
-): Record<string, string> {
-	const allowed = new Set(allowedEnvVars);
-	return Object.fromEntries(
-		Object.entries(headers).map(([key, value]) => [
-			key,
-			value.replace(
-				/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g,
-				(_match, name: string) =>
-					allowed.has(name) ? (process.env[name] ?? "") : "",
-			),
-		]),
-	);
-}
-
 function sanitizeHookMessage(message: string): string {
 	return redactSecretText(message);
-}
-
-function collectChildProcess(
-	child: ReturnType<typeof spawn>,
-	stdin: string,
-	timeoutSeconds: number,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-	return new Promise((resolve, reject) => {
-		let stdout = "";
-		let stderr = "";
-		const timeout = setTimeout(() => {
-			child.kill("SIGTERM");
-			reject(new Error(`Hook timed out after ${timeoutSeconds}s`));
-		}, timeoutSeconds * 1000);
-		child.stdout?.on("data", (chunk) => {
-			stdout = boundedAppend(stdout, chunk);
-		});
-		child.stderr?.on("data", (chunk) => {
-			stderr = boundedAppend(stderr, chunk);
-		});
-		child.on("error", (err) => {
-			clearTimeout(timeout);
-			reject(err);
-		});
-		child.on("close", (code) => {
-			clearTimeout(timeout);
-			resolve({ stdout, stderr, exitCode: code ?? 0 });
-		});
-		child.stdin?.write(stdin);
-		child.stdin?.end();
-	});
-}
-
-function boundedAppend(current: string, chunk: unknown): string {
-	if (current.length >= MAX_OUTPUT_BYTES) return current;
-	return `${current}${String(chunk)}`.slice(0, MAX_OUTPUT_BYTES);
 }

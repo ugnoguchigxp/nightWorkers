@@ -1,20 +1,6 @@
 import type { TranscriptChild, TranscriptItem } from "../activityTranscript";
 import type { ActivityEvent } from "../types";
 import {
-	asNumber,
-	asRecord,
-	asString,
-	estimateReplacementStats,
-	getActivityChangedFiles,
-	getCodexCommandOutput,
-	getToolActivityModel,
-	getToolArguments,
-	getToolName,
-	getToolResult,
-	parseApplyPatchSections,
-	parseUnifiedDiffSections,
-} from "./ThreadTimeline";
-import {
 	getActivityDiffCode,
 	getEditToolCall,
 	getEditToolCallDiff,
@@ -25,6 +11,22 @@ import {
 	isNormalCodexToolCardVisible,
 } from "./ThreadTimelineCodexToolCard";
 import { getContextStillToolCardModel } from "./ThreadTimelineContextStillCards";
+import {
+	asNumber,
+	asString,
+	estimateReplacementStats,
+	parseApplyPatchSections,
+	parseUnifiedDiffSections,
+} from "./ThreadTimelineDiffModel";
+import {
+	asRecord,
+	getActivityChangedFiles,
+	getCodexCommandOutput,
+	getToolActivityModel,
+	getToolArguments,
+	getToolName,
+	getToolResult,
+} from "./ThreadTimelineEventModel";
 import { getImportProjectToolCardModel } from "./ThreadTimelineImportProjectCard";
 import { getInspectionToolCardModel } from "./ThreadTimelineInspectionToolCard";
 import { stringValue } from "./ThreadTimelineStreaming";

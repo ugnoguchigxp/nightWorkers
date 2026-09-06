@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handleNightWorkersCodexMcpRequest } from "../api/modules/codingAgent/mcp/nightworkers-codex-mcp-request";
 
 const mocks = vi.hoisted(() => {
 	type ToolInput = {
@@ -96,14 +97,13 @@ vi.mock("../api/services/workspace/run-workspace-authority.service", () => ({
 	assertRequestedRunWorkspaceRoot: mocks.assertRequestedRunWorkspaceRoot,
 	resolveRunWorkspaceAuthority: mocks.resolveRunWorkspaceAuthority,
 }));
-vi.mock("../api/modules/codingAgent/mcp/nightworkers-codex-mcp", () => ({
+vi.mock("../api/modules/codingAgent/mcp/nightworkers-codex-mcp-server", () => ({
 	createNightWorkersCodexMcpServer: mocks.createNightWorkersCodexMcpServer,
 }));
 
 import {
 	controlledToolResult,
 	firstNonEmpty,
-	handleNightWorkersCodexMcpRequest,
 	isLoopbackHostname,
 	isLoopbackNightWorkersMcpRequest,
 	readNightWorkersMcpRequestContext,

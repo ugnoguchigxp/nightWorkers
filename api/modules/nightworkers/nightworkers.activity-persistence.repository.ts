@@ -11,7 +11,7 @@ import { logEvent } from "../../lib/logger";
 import { nightWorkersRealtimeBroker } from "../../services/realtime/nightworkers-ws";
 import { sanitizePersistenceValue } from "../../services/security/secret-persistence-firewall";
 import { validateWorkspaceArtifactRef } from "../../services/workspace/workspace-artifact-provenance";
-import { normalizeActivityKind } from "./nightworkers.activity.repository";
+import { normalizeActivityKind } from "./nightworkers.activity-kind";
 import type {
 	ActivitySource,
 	ActivityStatus,

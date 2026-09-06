@@ -10,6 +10,39 @@ Cross-projectのSecurity Intelligence循環と、NightWorkersのTask/Run authori
 - `drizzle/`: database schema migrations and seed data
 - `src/components/ui/`: NightWorkers-owned reusable UI primitives
 
+## Import Direction and Cycle Checks
+
+同じmodule内では、部品が親のscreen、service、barrelを経由せず、定義元を直接importする。
+module外からは既存のpublic API境界を維持する。共通化した部品にrole固有の実装を移して境界を迂回しない。
+
+| 責務 | 定義元 |
+| --- | --- |
+| Timelineのイベント解釈・差分計算 | `ThreadTimelineEventModel` / `ThreadTimelineDiffModel` |
+| 設定パネル共通の入力・保存UI | `src/components/settings/` |
+| Coding Agent MCPの組み立て・HTTP受付 | `nightworkers-codex-mcp-server` / `nightworkers-codex-mcp-request` |
+| Plan Viewの値schema | `api/modules/planViews/plan-view-schema.ts` |
+| LLM使用量の正規化・記録 | `api/services/llm-usage/normalize.ts` / `repository.ts` |
+
+`bun run check:architecture`は静的な値importとreexportの循環群を検査する。
+type-onlyと遅延importは対象外で、別名pathもTypeScript設定に従って解決する。
+`node scripts/check-import-cycles.mjs --json`で群と参照辺を確認できる。
+残存する循環群は`.agent-ontology/import-cycles.json`に記録し、新規・拡大した群は検査を失敗させる。
+縮小・解消した場合は基準も更新する。検査を通すために新しい循環を基準へ追加しない。
+
+## Hook Execution Lifecycle
+
+`hooks-runner.ts`はHookの選択、判定の集約、履歴・イベント記録を担当し、
+commandとHTTPの実行はそれぞれ`hooks-command.ts`、`hooks-http.ts`が担当する。
+既定timeoutは30秒で、出力は64 KiBまでとする。commandではstdoutとstderrの合計byte数を使う。
+超過時は処理を停止して失敗を記録し、切れた本文を正常な判定として扱わない。
+PreToolUseのcommand Hookは従来どおり、失敗時に既定でdenyを返す。
+
+標準入力の切断やシグナル終了は失敗として記録する。
+timeout・停止時はmacOS/LinuxでHookのprocess groupへTERMを送り、500 ms後も残る場合はKILLを送る。
+Windowsでは`taskkill /T /F`で子孫を含む終了を要求する。
+commandのcloseを待って結果を返し、HTTPでは受信中のbodyもAbortSignalで中断する。
+NativeAgentRuntimeのstop、host shutdown、外部AbortSignalは実行中のHookにも伝わり、後続Hookやrunnerの開始を止める。
+
 ## Runtime Model
 NightWorkers manages Project Folder sessions through a chat-first task lifecycle:
 1. Draft Session creation

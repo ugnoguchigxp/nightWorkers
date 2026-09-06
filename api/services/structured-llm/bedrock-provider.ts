@@ -4,10 +4,13 @@ import type {
 	Tool as BedrockTool,
 	ToolChoice as BedrockToolChoice,
 } from "@aws-sdk/client-bedrock-runtime";
-import { normalizeProviderUsage } from "../llm-usage";
+import { normalizeProviderUsage } from "../llm-usage/normalize";
+import {
+	getResolvedProviderEndpoint,
+	readProviderUsage,
+} from "./openai-compatible-provider-support";
 import { StructuredProviderError } from "./provider-failure";
 import type { RawLlmCallOptions } from "./providers";
-import { getResolvedProviderEndpoint, readProviderUsage } from "./providers";
 import {
 	type getStructuredLlmBoolSetting,
 	getStructuredLlmSetting,
