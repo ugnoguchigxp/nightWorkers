@@ -258,6 +258,12 @@ export async function createProjectQualityRun(input: {
 		if (latest) return latest;
 		throw new NotFoundError("Project quality run not found");
 	}
+	if (completed.coverageSummary) {
+		await repo.retainLatestCoverageSummary({
+			repositoryId: repository.id,
+			keepRunId: completed.id,
+		});
+	}
 	return completed;
 }
 

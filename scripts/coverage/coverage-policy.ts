@@ -16,7 +16,7 @@ export type CoverageMetric = {
 
 export const globalCoverageThresholds = {
 	statements: 80,
-	branches: 75,
+	branches: 80,
 	functions: 80,
 	lines: 80,
 } as const satisfies Record<CoverageMetricName, number>;

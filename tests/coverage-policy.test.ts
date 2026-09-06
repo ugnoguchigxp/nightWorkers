@@ -70,7 +70,7 @@ describe("release coverage policy", () => {
 		expect(report.passed).toBe(true);
 		expect(report.thresholds).toEqual({
 			statements: 80,
-			branches: 75,
+			branches: 80,
 			functions: 80,
 			lines: 80,
 		});
@@ -80,14 +80,14 @@ describe("release coverage policy", () => {
 	it("reports every global metric below its threshold", () => {
 		const summary = passingGlobalSummary();
 		summary.total.statements = metric(79.99);
-		summary.total.branches = metric(74.99);
+		summary.total.branches = metric(79.99);
 
 		const report = evaluateGlobalCoverage(summary);
 
 		expect(report.passed).toBe(false);
 		expect(report.failures).toEqual([
 			"statements=79.99% < 80%",
-			"branches=74.99% < 75%",
+			"branches=79.99% < 80%",
 		]);
 	});
 

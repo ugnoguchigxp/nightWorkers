@@ -379,6 +379,60 @@ describe("Quality backend", () => {
 		}
 	});
 
+	it("keeps coverage JSON only on the latest completed run", async () => {
+		const repoRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "nightworkers-detail-coverage-latest-"),
+		);
+		try {
+			writeCoverageSummary(repoRoot);
+			fs.writeFileSync(
+				path.join(repoRoot, "package.json"),
+				JSON.stringify({
+					scripts: { test: "echo unit", "test:coverage": "echo coverage" },
+				}),
+				"utf8",
+			);
+			const project = await createRepository(repoRoot);
+
+			const firstRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ runType: "unit" }),
+				},
+			);
+			expect(firstRes.status).toBe(201);
+			const firstRun = (await firstRes.json()) as { id: string };
+
+			const secondRes = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ runType: "unit" }),
+				},
+			);
+			expect(secondRes.status).toBe(201);
+			const secondRun = (await secondRes.json()) as { id: string };
+
+			const firstStored = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs/${firstRun.id}`,
+			);
+			const secondStored = await app.request(
+				`http://localhost/api/repositories/${project.id}/quality/runs/${secondRun.id}`,
+			);
+			expect(firstStored.status).toBe(200);
+			expect(secondStored.status).toBe(200);
+			expect((await firstStored.json()).coverageSummary).toBeNull();
+			expect((await secondStored.json()).coverageSummary.total.lines.pct).toBe(
+				87.5,
+			);
+		} finally {
+			fs.rmSync(repoRoot, { recursive: true, force: true });
+		}
+	});
+
 	it("uses all quality runs as the latest coverage and E2E display source", async () => {
 		const repoRoot = fs.mkdtempSync(
 			path.join(os.tmpdir(), "nightworkers-detail-quality-all-"),

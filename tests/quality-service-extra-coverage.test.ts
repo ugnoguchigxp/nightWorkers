@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 	getRun: vi.fn(),
 	getLatestRun: vi.fn(),
 	listRunningRuns: vi.fn(),
+	retainLatestCoverage: vi.fn(),
 	detectCapabilities: vi.fn(),
 	coverageCommand: vi.fn(),
 	e2eCommand: vi.fn((command: string) => `json:${command}`),
@@ -46,6 +47,7 @@ vi.mock("../api/modules/quality/quality.repository", () => ({
 	getProjectQualityRun: mocks.getRun,
 	getLatestProjectQualityRun: mocks.getLatestRun,
 	listRunningProjectQualityRuns: mocks.listRunningRuns,
+	retainLatestCoverageSummary: mocks.retainLatestCoverage,
 }));
 vi.mock("../api/modules/quality/quality-capabilities", () => ({
 	detectQualityCapabilities: mocks.detectCapabilities,
@@ -307,6 +309,29 @@ describe("quality command and process boundaries", () => {
 		});
 		expect(mocks.readCoverage).toHaveBeenCalledWith("/workspace/canonical");
 		expect(mocks.readE2e).not.toHaveBeenCalled();
+	});
+
+	it("replaces older coverage snapshots so only the latest run keeps coverage data", async () => {
+		mocks.completeRun.mockResolvedValue(
+			qualityRun({ status: "completed", coverageSummary: { total: {} } }),
+		);
+
+		await createProjectQualityRun({ repositoryId, runType: "unit" });
+
+		expect(mocks.retainLatestCoverage).toHaveBeenCalledWith({
+			repositoryId,
+			keepRunId: runId,
+		});
+	});
+
+	it("does not clear coverage snapshots when the completed run stored none", async () => {
+		mocks.completeRun.mockResolvedValue(
+			qualityRun({ status: "completed", coverageSummary: null }),
+		);
+
+		await createProjectQualityRun({ repositoryId, runType: "e2e" });
+
+		expect(mocks.retainLatestCoverage).not.toHaveBeenCalled();
 	});
 
 	it("wraps the e2e command and skips coverage reading", async () => {

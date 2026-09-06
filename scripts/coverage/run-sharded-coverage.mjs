@@ -91,6 +91,15 @@ export function mergeCoverageShardReports(input) {
 	return coverageMap.getCoverageSummary().toJSON();
 }
 
+function removeLegacyCoverageDirectories() {
+	for (const directory of ["coverage-backend", "coverage-frontend"]) {
+		fs.rmSync(path.join(repositoryRoot, directory), {
+			recursive: true,
+			force: true,
+		});
+	}
+}
+
 async function runCoverageSegment(segment) {
 	const config = segmentConfigs[segment];
 	if (!config) {
@@ -98,6 +107,7 @@ async function runCoverageSegment(segment) {
 			`Coverage segment must be one of: ${Object.keys(segmentConfigs).join(", ")}`,
 		);
 	}
+	removeLegacyCoverageDirectories();
 	const shardCount = resolveCoverageShardCount();
 	const timeoutMs = resolveCoverageShardTimeoutMs(
 		process.env.NIGHTWORKERS_COVERAGE_SHARD_TIMEOUT_MS,

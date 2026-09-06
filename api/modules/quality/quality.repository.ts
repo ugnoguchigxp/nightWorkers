@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import {
 	type ProjectQualityRun,
 	projectQualityRunSchema,
@@ -128,4 +128,22 @@ export async function listRunningProjectQualityRuns(repositoryId: string) {
 		)
 		.orderBy(desc(projectQualityRuns.createdAt), desc(sql`rowid`));
 	return rows.map(mapQualityRun);
+}
+
+export async function retainLatestCoverageSummary(input: {
+	repositoryId: string;
+	keepRunId: string;
+}) {
+	await db
+		.update(projectQualityRuns)
+		.set({
+			coverageSummaryJson: null,
+			updatedAt: new Date(),
+		})
+		.where(
+			and(
+				eq(projectQualityRuns.repositoryId, input.repositoryId),
+				ne(projectQualityRuns.id, input.keepRunId),
+			),
+		);
 }

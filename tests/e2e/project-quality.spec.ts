@@ -79,7 +79,7 @@ async function cleanupQualityFixture(
 }
 
 test.describe("Project Quality @regression", () => {
-	test("persists unit coverage and E2E artifacts into Quality history", {
+	test("persists unit coverage and E2E artifacts as the latest Quality result", {
 		tag: ["@deterministic", "@p1", "@scenario:NW-E2E-QUALITY-001"],
 	}, async ({ request }) => {
 		const fixture = await createCompletedQualityFixture(request);

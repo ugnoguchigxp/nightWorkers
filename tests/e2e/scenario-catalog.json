@@ -246,7 +246,7 @@
 		},
 		{
 			"id": "NW-E2E-QUALITY-001",
-			"title": "fixture repositoryのunit coverage E2E結果をQuality履歴へ表示する",
+			"title": "fixture repositoryのunit coverageとE2E結果を最新のQuality結果として表示する",
 			"priority": "P1",
 			"suite": "regression",
 			"gateStatus": "required",
